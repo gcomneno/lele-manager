@@ -63,7 +63,7 @@ python -m lele_manager.cli.file_watcher data
   Servizio FastAPI: endpoints per aggiungere, cercare e recuperare lezioni simili; tests, README, (opzionale) Docker.
 
 ## Progress
-- [ ] Step 1: Setup Python & tooling
+- [X] Step 1: Setup Python & tooling
 - [ ] Step 2: Data & EDA lesson learned
 - [ ] Step 3: ML classico (classificazione / similarità)
 - [ ] Step 4: Pipeline & feature engineering
