@@ -1,0 +1,54 @@
+# Ambiente virtuale
+.venv/
+env/
+venv/
+
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dll
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Notebook
+.ipynb_checkpoints/
+
+# Log / temp
+*.log
+*.tmp
+*.bak
+
+# Dati locali di LeLe Manager (non versionare l'archivio privato)
+data/*.jsonl
+data/*.db
+data/*.sqlite
+data/private/
+
+# Uvicorn / FastAPI
+*.pid
+
+# Vari
+*.env
+.env
+.env.*
