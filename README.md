@@ -23,6 +23,28 @@ Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Mana
 - FastAPI+Uvicorn per esporre API
 - Storage: JSONL/SQLite (a seconda della fase del progetto)
 
+## Setup
+Clona il repository e crea un ambiente virtuale:
+
+```bash
+git clone git@github.com:gcomneno/lele-manager.git
+cd lele-manager
+```
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # su Windows: .venv\Scripts\activate
+
+pip install -e .[dev]
+```
+
+Esempio di utilizzo dei primi tool CLI (palestra):
+
+```bash
+python -m lele_manager.cli.csv2json samples/input.csv samples/output.json
+python -m lele_manager.cli.file_watcher data
+```
+
 ## Roadmap (8 settimane “Scimmia Turbo”)
 
 - **Step 1 – Setup Python & tooling (Week 1–2)**  
@@ -41,7 +63,7 @@ Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Mana
   Servizio FastAPI: endpoints per aggiungere, cercare e recuperare lezioni simili; tests, README, (opzionale) Docker.
 
 ## Progress
-- [-] Step 1: Setup Python & tooling
+- [ ] Step 1: Setup Python & tooling
 - [ ] Step 2: Data & EDA lesson learned
 - [ ] Step 3: ML classico (classificazione / similarità)
 - [ ] Step 4: Pipeline & feature engineering

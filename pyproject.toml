@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lele-manager"
+version = "0.1.0"
+description = "Lesson Learned Manager: archivio intelligente di lesson learned testuali."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Giancarlo Cicellyn Comneno" }
+]
+
+[project.optional-dependencies]
+dev = [
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "scikit-learn",
+  "fastapi",
+  "uvicorn[standard]",
+  "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
