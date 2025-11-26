@@ -45,6 +45,23 @@ python -m lele_manager.cli.csv2json samples/input.csv samples/output.json
 python -m lele_manager.cli.file_watcher data
 ```
 
+## Uso rapido (CLI lesson learned)
+
+Aggiungere una lesson:
+```bash
+python -m lele_manager.cli.add_lesson \
+  --text "Con layout src/ devo configurare PYTHONPATH o usare un conftest per pytest." \
+  --source chatgpt \
+  --topic python \
+  --importance 4 \
+  --tags "python,pytest,tooling"
+```
+
+Elencare le lesson:
+```bash
+python -m lele_manager.cli.list_lessons --limit 10
+```
+
 ## Roadmap (8 settimane “Scimmia Turbo”)
 
 - **Step 1 – Setup Python & tooling (Week 1–2)**  
