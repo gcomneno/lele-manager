@@ -81,7 +81,7 @@ python -m lele_manager.cli.list_lessons --limit 10
 
 ## Progress
 - [X] Step 1: Setup Python & tooling
-- [ ] Step 2: Data & EDA lesson learned
+- [X] Step 2: Data & EDA lesson learned (“L’EDA in notebook è rimandata a una fase successiva”.)
 - [ ] Step 3: ML classico (classificazione / similarità)
 - [ ] Step 4: Pipeline & feature engineering
 - [ ] Step 5: API & capstone end-to-end
