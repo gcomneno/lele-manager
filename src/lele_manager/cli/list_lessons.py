@@ -55,17 +55,17 @@ def main(argv: Sequence[str] | None = None) -> None:
             return False
         return True
 
-    filtered = [l for l in lessons if matches(l)]
-    filtered.sort(key=lambda l: l.created_at, reverse=True)
+    filtered = [lesson for lesson in lessons if matches(lesson)]
+    filtered.sort(key=lambda lesson: lesson.created_at, reverse=True)
 
     count = 0
-    for l in filtered[: args.limit]:
+    for lesson in filtered[: args.limit]:
         count += 1
-        ts = l.created_at.isoformat(timespec="seconds")
-        tags = ", ".join(l.tags) if l.tags else "-"
-        print(f"- [{l.id}] {ts}")
-        print(f"  source={l.source} topic={l.topic} importance={l.importance} tags={tags}")
-        print(f"  {l.text}")
+        ts = lesson.created_at.isoformat(timespec="seconds")
+        tags = ", ".join(lesson.tags) if lesson.tags else "-"
+        print(f"- [{lesson.id}] {ts}")
+        print(f"  source={lesson.source} topic={lesson.topic} importance={lesson.importance} tags={tags}")
+        print(f"  {lesson.text}")
         print()
 
     print(f"{count} lesson mostrate su {len(filtered)} trovate.")

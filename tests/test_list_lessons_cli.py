@@ -29,8 +29,8 @@ def test_list_lessons_filters_and_limit(tmp_path: Path, capsys) -> None:
         tags=["ml", "pytest"],
     )
 
-    for l in (l1, l2, l3):
-        append_lesson(l, db_path)
+    for lesson in (l1, l2, l3):
+        append_lesson(lesson, db_path)
 
     argv = [
         "--db",

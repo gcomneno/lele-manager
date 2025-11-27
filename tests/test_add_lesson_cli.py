@@ -32,12 +32,15 @@ def test_add_lesson_cli_writes_to_db(tmp_path: Path) -> None:
     lessons = load_lessons(db_path)
     assert len(lessons) == 1
 
-    l = lessons[0]
-    assert l.text == "Lesson from CLI"
-    assert l.source == "chatgpt"
-    assert l.topic == "python"
-    assert l.importance == 5
-    assert l.tags == ["python", "cli"]
+    lessons = load_lessons(db_path)
+    assert len(lessons) == 1
+
+    saved_lesson = lessons[0]
+    assert saved_lesson.text == "Lesson from CLI"
+    assert saved_lesson.source == "chatgpt"
+    assert saved_lesson.topic == "python"
+    assert saved_lesson.importance == 5
+    assert saved_lesson.tags == ["python", "cli"]
 
 def test_add_lesson_cli_invalid_importance(tmp_path: Path) -> None:
     db_path = tmp_path / "lessons.jsonl"
