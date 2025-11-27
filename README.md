@@ -82,6 +82,24 @@ LeLe Manager non è mission-critical, ma cerco comunque di "non far uscire la sc
 - **Dati locali**
   - I file reali delle lesson learned vivono in `data/` e sono esclusi dal versioning (vedi `.gitignore`), così l’archivio personale resta fuori dal repo pubblico.
 
+
+## 🧠 ML classico (bozza)
+
+LeLe Manager include già una prima infrastruttura ML testuale:
+
+- **Classificatore di topic**
+  - `train_topic_classifier(lessons)`: usa TF-IDF (unigrammi+bigrammi) + LogisticRegression
+    per predire il campo `topic` a partire dal testo della lesson.
+- **Indice di similarità tra lesson**
+  - `LessonSimilarityIndex.from_lessons(lessons)`: costruisce un indice TF-IDF.
+  - `most_similar(query_text, top_k)`: restituisce gli ID delle lesson più simili e
+    il relativo score (coseno).
+
+L’idea è usare questo strato come base per:
+- raccomandare lesson correlate quando ne aggiungo una nuova,
+- in futuro, auto-proporre topic/cluster a partire dal testo.
+
+
 ## Roadmap (8 settimane “Scimmia Turbo”)
 
 - **Step 1 – Setup Python & tooling (Week 1–2)**
