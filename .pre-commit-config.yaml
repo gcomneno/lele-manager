@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0  # versione indicativa, puoi aggiornarla con `pre-commit autoupdate`
+    hooks:
+      - id: trailing-whitespace      # toglie spazi a fine riga
+      - id: end-of-file-fixer        # garantisce newline finale
+      - id: check-yaml               # evita YAML rotti (compresi i workflow)
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    # versione indicativa, aggiorna con `pre-commit autoupdate`
+    rev: v0.4.7
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        # Lascia che ruff sistemi automaticamente quello che può.
