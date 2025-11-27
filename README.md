@@ -120,6 +120,6 @@ L’idea è usare questo strato come base per:
 ## Progress
 - [X] Step 1: Setup Python & tooling
 - [X] Step 2: Data & EDA lesson learned (“L’EDA in notebook è rimandata a una fase successiva”.)
-- [ ] Step 3: ML classico (classificazione / similarità)
+- [ ] Step 3: ML classico (classificazione / similarità) [COMPLETATO]
 - [ ] Step 4: Pipeline & feature engineering
 - [ ] Step 5: API & capstone end-to-end
