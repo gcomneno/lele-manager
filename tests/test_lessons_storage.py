@@ -19,10 +19,13 @@ def test_append_and_load_lessons(tmp_path: Path) -> None:
     loaded = load_lessons(db_path)
     assert len(loaded) == 1
 
-    l = loaded[0]
-    assert l.id == lesson.id
-    assert l.source == "chatgpt"
-    assert l.topic == "python"
-    assert l.importance == 4
-    assert l.text == "Una lesson di prova."
-    assert "test" in l.tags
+    loaded = load_lessons(db_path)
+    assert len(loaded) == 1
+
+    loaded_lesson = loaded[0]
+    assert loaded_lesson.id == lesson.id
+    assert loaded_lesson.source == "chatgpt"
+    assert loaded_lesson.topic == "python"
+    assert loaded_lesson.importance == 4
+    assert loaded_lesson.text == "Una lesson di prova."
+    assert "test" in loaded_lesson.tags
