@@ -1,5 +1,5 @@
 # LeLe Manager 🐒 (Lesson-Learned Manager)
-Sistema ML end-to-end per gestire e cercare le mie "lesson learned" testuali: 
+Sistema ML end-to-end per gestire e cercare le mie "lesson learned" testuali:
 raccolta, tagging, ricerca e suggerimenti intelligenti.
 
 Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Manager diventa il mio archivio centrale:
@@ -62,21 +62,41 @@ Elencare le lesson:
 python -m lele_manager.cli.list_lessons --limit 10
 ```
 
+## 🔐 Sicurezza
+LeLe Manager non è mission-critical, ma cerco comunque di "non far uscire la scimmia senza casco":
+
+- **Security workflow GitHub Actions**
+  - Workflow `.github/workflows/security.yml` che gira su push/PR + weekly scan:
+    - `pip-audit` per vulnerabilità sulle dipendenze Python.
+    - `bandit` per analisi statica del codice sotto `src/`.
+- **pre-commit minimal ma ad alto valore**
+  - `.pre-commit-config.yaml` con:
+    - cleanup di base (spazi a fine riga, newline finale),
+    - `check-yaml` per non rompere i workflow,
+    - `ruff` per lint/fix del codice Python.
+  - Attivazione locale:
+    ```bash
+    pip install pre-commit
+    pre-commit install
+    ```
+- **Dati locali**
+  - I file reali delle lesson learned vivono in `data/` e sono esclusi dal versioning (vedi `.gitignore`), così l’archivio personale resta fuori dal repo pubblico.
+
 ## Roadmap (8 settimane “Scimmia Turbo”)
 
-- **Step 1 – Setup Python & tooling (Week 1–2)**  
+- **Step 1 – Setup Python & tooling (Week 1–2)**
   Ambiente, struttura progetto, primi tool CLI per salvare e ispezionare lesson learned.
 
-- **Step 2 – Data & EDA sulle lesson learned (Week 3–4)**  
+- **Step 2 – Data & EDA sulle lesson learned (Week 3–4)**
   Formato di storage (JSONL/SQLite), funzioni di ingest, notebook di analisi sulle lesson (per fonte, topic, lunghezza, tempo).
 
-- **Step 3 – ML classico (Week 5–6)**  
+- **Step 3 – ML classico (Week 5–6)**
   Modelli base per classificazione di topic / importanza e primi modelli di similarità (TF-IDF + k-NN).
 
-- **Step 4 – Pipeline & feature engineering (Week 6)**  
+- **Step 4 – Pipeline & feature engineering (Week 6)**
   Pipeline scikit-learn completa: testo → feature → modello + API interne per suggerimenti di lesson simili.
 
-- **Step 5 – API & capstone end-to-end (Week 7–8)**  
+- **Step 5 – API & capstone end-to-end (Week 7–8)**
   Servizio FastAPI: endpoints per aggiungere, cercare e recuperare lezioni simili; tests, README, (opzionale) Docker.
 
 ## Progress
