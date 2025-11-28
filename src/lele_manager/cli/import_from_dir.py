@@ -127,11 +127,14 @@ def derive_date(frontmatter: Dict[str, object], md_path: Path) -> Optional[str]:
 def compute_frontmatter_hash(frontmatter: Dict[str, object]) -> str:
     """
     Restituisce un hash stabile del frontmatter (solo metadati, no body).
+
+    Nota: usiamo SHA-256 pur non avendo esigenze di sicurezza crittografica,
+    così evitiamo i warning degli static analyzer (Bandit B324 su SHA-1).
     """
     # Dump YAML con chiavi ordinate per avere stabilità
     text = yaml.safe_dump(frontmatter, sort_keys=True)
-    h = hashlib.sha1(text.encode("utf-8")).hexdigest()
-    return f"sha1:{h}"
+    h = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"sha256:{h}"
 
 # ---------------------------------------------------------------------------
 # Importer
