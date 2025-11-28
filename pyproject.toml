@@ -20,6 +20,7 @@ dev = [
   "scikit-learn",
   "fastapi",
   "uvicorn[standard]",
+  "pyyaml",
   "pytest",
 ]
 
