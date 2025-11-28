@@ -52,4 +52,18 @@ data/private/
 *.env
 .env
 .env.*
-data
+
+# Dati e modelli locali (non versionati)
+data/
+models/
+
+# DB locali
+*.db
+*.sqlite
+
+# Notebook e cache
+*.ipynb_checkpoints
+.ipynb_checkpoints/
+
+# Log
+*.log
