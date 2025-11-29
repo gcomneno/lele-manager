@@ -1,4 +1,5 @@
 # LeLe Manager 🐒 — Lesson-Learned Manager
+
 Sistema ML end-to-end per gestire e cercare le mie *lesson learned* testuali: raccolta, tagging, ricerca e suggerimenti intelligenti.
 
 Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Manager diventa il mio archivio centrale:
@@ -374,6 +375,126 @@ Risultato: l’archivio personale e i modelli restano **fuori** dal repo pubblic
 
 ---
 
+## 🌐 API (FastAPI)
+LeLe Manager espone anche un’API HTTP (FastAPI) sopra il motore interno:
+- lettura e ricerca delle LeLe,
+- training del topic model,
+- similarità tra lesson.
+
+### Avvio del server API
+In sviluppo, il modo più semplice è usare lo script helper:
+```bash
+./scripts/lele-api-refresh.sh
+```
+
+#### Cosa fa, in sequenza:
+    importa le LeLe dal vault Markdown ($LELE_VAULT_DIR, es. /home/baltimora/Uploads/LeLe-Vault) → data/lessons.jsonl;
+    allena/riallena il topic model → models/topic_model.joblib;
+    avvia il server FastAPI con Uvicorn su http://127.0.0.1:8000 (con --reload).
+
+Se hai definito un alias nel tuo ~/.bashrc:
+```bash
+  alias lele-refresh='cd ~/Progetti/lele-manager && ./scripts/lele-api-refresh.sh'
+```
+
+allora ti basta:
+```bash
+  lele-refresh
+```
+
+#### Endpoints principali
+```bash
+    GET /health → stato rapido del servizio (dati/modello presenti).
+    GET /lessons → lista/ricerca delle LeLe (con filtri).
+    GET /lessons/{id} → dettaglio di una LeLe.
+    GET /lessons/{id}/similar → LeLe simili a quella indicata.
+    POST /train/topic → (ri)allena il topic model a partire da data/lessons.jsonl.
+```
+
+#### Documentazione interattiva (Swagger UI):
+```bash
+    http://127.0.0.1:8000/docs
+```
+
+#### Esempi di utilizzo via curl
+
+1️⃣ Health check
+```bash
+curl -s http://127.0.0.1:8000/health | jq
+```
+
+Esempio di risposta:
+```bash
+{
+  "status": "ok",
+  "has_data": true,
+  "has_model": true
+}
+```
+
+2️⃣ Lista delle LeLe
+
+# primi 5 elementi
+curl -s "http://127.0.0.1:8000/lessons?limit=5" | jq
+
+# filtro testuale (case-insensitive) sul testo
+curl -s "http://127.0.0.1:8000/lessons?q=python&limit=5" | jq
+
+# filtro per topic
+curl -s "http://127.0.0.1:8000/lessons?topic=C%2B%2B&limit=5" | jq
+
+3️⃣ Dettaglio di una LeLe
+
+Dato un id presente nel dataset, ad esempio: "Cpp20 - std cin tronca sugli spazi", puoi recuperare il dettaglio con:
+  curl -s "http://127.0.0.1:8000/lessons/Cpp20%20-%20std%20cin%20tronca%20sugli%20spazi" | jq
+
+(le space vanno URL-encoded come %20).
+
+4️⃣ LeLe simili via API
+
+Usando lo stesso id come query per la similarità:
+
+curl -s \
+  "http://127.0.0.1:8000/lessons/Cpp20%20-%20std%20cin%20tronca%20sugli%20spazi/similar?top_k=5&min_score=0.1" \
+  | jq
+
+Esempio di risposta:
+```json
+{
+  "query": "### LL-5 – `std::cin >>` tronca sugli spazi, `std::getline` no\n...",
+  "results": [
+    {
+      "id": "Cpp20 - Boost vs Standard",
+      "score": 0.36,
+      "text_preview": "### LL-4 – Boost vs Standard Library (C++20)..."
+    },
+    {
+      "id": "Cpp20 - Hello s e std string",
+      "score": 0.35,
+      "text_preview": "### LL-2 – \"Hello\"s e std::string_literals..."
+    }
+  ]
+}
+```
+
+5️⃣ Retrain del topic model via API
+
+Se hai aggiornato il vault e rifatto l’import, puoi rilanciare il training direttamente da HTTP:
+  curl -s -X POST http://127.0.0.1:8000/train/topic | jq
+
+Esempio:
+```json
+{
+  "message": "Topic model allenato con successo e salvato in models/topic_model.joblib",
+  "n_lessons": 42,
+  "topics": ["C++", "python", "linux", "writing"]
+}
+```
+
+Questo endpoint usa la stessa logica di train_topic_model da CLI e fallisce con errore esplicito se nel dataset è presente un solo topic (caso da evitare).
+
+---
+
 ## 🗺️ Roadmap (8 settimane “Scimmia Turbo”)
 
 * **Step 1 – Setup Python & tooling (Week 1–2)**
@@ -401,6 +522,4 @@ Risultato: l’archivio personale e i modelli restano **fuori** dal repo pubblic
 * ✅ **Step 2** – Data & formato lesson learned *(EDA in notebook rinviata a fase successiva)*
 * ✅ **Step 3** – ML classico (classificazione / similarità)
 * ✅ **Step 4** – Pipeline & feature engineering (topic + indice di similarità)
-* ⭕ **Step 5** – API & capstone end-to-end
-
-```
+* ✅ **Step 5** – API & capstone end-to-end
