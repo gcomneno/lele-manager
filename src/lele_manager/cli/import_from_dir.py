@@ -338,7 +338,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(f"[info] Scrivo {len(records_by_id)} LeLe in formato JSONL -> {output_path}")
     with output_path.open("w", encoding="utf-8") as f:
         for rec in records_by_id.values():
-            line = json.dumps(asdict(rec), ensure_ascii=False)
+            line = json.dumps(asdict(rec), ensure_ascii=False, default=str)
             f.write(line + "\n")
 
     print("[ok] Import completato.")
