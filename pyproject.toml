@@ -14,16 +14,17 @@ authors = [
 
 [project.optional-dependencies]
 dev = [
-  "numpy",
-  "pandas",
-  "matplotlib",
-  "scikit-learn",
-  "fastapi",
-  "uvicorn[standard]",
-  "pyyaml",
-  "pytest",
-  "fastapi",
-  "uvicorn[standard]",
+    "pytest",
+    "pytest-cov",
+    "fastapi",
+    "uvicorn",
+    "pandas",
+    "scikit-learn",
+    "httpx",
+    "ruff",
+    "pre-commit",
+    "bandit",
+    "pip-audit",
 ]
 
 [tool.setuptools.packages.find]

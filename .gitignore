@@ -67,3 +67,6 @@ models/
 
 # Log
 *.log
+
+# Lele-Vault
+vault/
