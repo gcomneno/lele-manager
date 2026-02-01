@@ -8,8 +8,10 @@ import yaml
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple, Union
+import datetime as _dt
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
+
 
 @dataclass
 class LeLeRecord:
@@ -24,6 +26,7 @@ class LeLeRecord:
     path: str
     frontmatter: Dict[str, object]
     frontmatter_hash: str
+
 
 # ---------------------------------------------------------------------------
 # Frontmatter parsing / writing
@@ -67,6 +70,7 @@ def parse_markdown_with_frontmatter(content: str) -> Tuple[Dict[str, object], st
     body = "\n".join(body_lines).lstrip("\n")
     return frontmatter, body
 
+
 def render_markdown_with_frontmatter(frontmatter: Dict[str, object], body: str) -> str:
     """
     Ricostruisce il contenuto markdown con frontmatter YAML.
@@ -74,6 +78,7 @@ def render_markdown_with_frontmatter(frontmatter: Dict[str, object], body: str) 
     """
     fm_text = yaml.safe_dump(frontmatter, sort_keys=False).rstrip()
     return f"---\n{fm_text}\n---\n\n{body.rstrip()}\n"
+
 
 # ---------------------------------------------------------------------------
 # Helper per ID, topic, hash
@@ -91,14 +96,17 @@ def derive_id_from_path(md_path: Path, root_dir: Path) -> str:
         rel = rel[:-3]
     return rel
 
+
 def derive_topic(frontmatter: Dict[str, object], md_path: Path, default_topic: Optional[str]) -> Optional[str]:
     if "topic" in frontmatter and isinstance(frontmatter["topic"], str):
-        return frontmatter["topic"]
+        t = frontmatter["topic"].strip()
+        return t or None
     if default_topic:
         return default_topic
     # fallback: nome della directory immediata
     parent = md_path.parent.name
     return parent or None
+
 
 def normalize_tags(value: Union[str, List[str], None]) -> List[str]:
     if value is None:
@@ -112,17 +120,42 @@ def normalize_tags(value: Union[str, List[str], None]) -> List[str]:
         return [part.strip() for part in txt.split(",") if part.strip()]
     return [txt.strip()] if txt.strip() else []
 
-def derive_date(frontmatter: Dict[str, object], md_path: Path) -> Optional[str]:
-    if "date" in frontmatter and isinstance(frontmatter["date"], str):
-        return frontmatter["date"]
 
-    # Prova a dedurla dal filename tipo "YYYY-MM-DD.slug.md"
+def _normalize_frontmatter_date(value: object) -> Optional[str]:
+    """
+    Normalizza 'date' dal frontmatter:
+    - 'YYYY-MM-DD' (str) -> stessa stringa (strip)
+    - datetime/date -> 'YYYY-MM-DD'
+    - altri tipi -> None (si usa fallback dal filename)
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        s = value.strip()
+        return s or None
+    # PyYAML può parse-are '2025-01-01' come datetime.date
+    if isinstance(value, _dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, _dt.date):
+        return value.isoformat()
+    return None
+
+
+def derive_date(frontmatter: Dict[str, object], md_path: Path) -> Optional[str]:
+    # 1) dal frontmatter (normalizzato)
+    if "date" in frontmatter:
+        norm = _normalize_frontmatter_date(frontmatter.get("date"))
+        if norm:
+            return norm
+
+    # 2) dal filename tipo "YYYY-MM-DD.slug.md"
     stem = md_path.stem  # es: "2025-11-20.cin-vs-getline"
     parts = stem.split(".")
     if parts and len(parts[0]) == 10 and parts[0].count("-") == 2:
         # controllo minimale
         return parts[0]
     return None
+
 
 def compute_frontmatter_hash(frontmatter: Dict[str, object]) -> str:
     """
@@ -135,6 +168,7 @@ def compute_frontmatter_hash(frontmatter: Dict[str, object]) -> str:
     text = yaml.safe_dump(frontmatter, sort_keys=True)
     h = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return f"sha256:{h}"
+
 
 # ---------------------------------------------------------------------------
 # Importer
@@ -152,7 +186,7 @@ def import_from_dir(
 
     records_by_id: Dict[str, LeLeRecord] = {}
     first_path_by_id: Dict[str, Path] = {}
-    files_to_update: List[Tuple[Path, Dict[str, object], str]] = []
+    files_to_update: List[Tuple[Path, str]] = []
 
     md_files = sorted(input_dir.rglob("*.md"))
 
@@ -172,42 +206,61 @@ def import_from_dir(
             continue
 
         frontmatter, body = parse_markdown_with_frontmatter(content)
+        original_fm = dict(frontmatter)  # snapshot
 
         # ID
-        missing_id = False
         raw_id = frontmatter.get("id")
         if isinstance(raw_id, str) and raw_id.strip():
             lele_id = raw_id.strip()
         else:
             lele_id = derive_id_from_path(md_path, input_dir)
             frontmatter["id"] = lele_id
-            missing_id = True
 
         # topic
         topic = derive_topic(frontmatter, md_path, default_topic)
+        if write_missing_frontmatter and ("topic" not in frontmatter) and topic is not None:
+            frontmatter["topic"] = topic
 
         # source
         source: Optional[str]
         if "source" in frontmatter and isinstance(frontmatter["source"], str):
-            source = frontmatter["source"]
+            source = frontmatter["source"].strip() or None
+            if write_missing_frontmatter and source is None and default_source is not None:
+                source = default_source
+                frontmatter["source"] = source
         else:
             source = default_source
+            if write_missing_frontmatter and default_source is not None and "source" not in frontmatter:
+                frontmatter["source"] = default_source
 
         # importance
         importance: Optional[int]
         if "importance" in frontmatter:
             try:
-                importance = int(frontmatter["importance"])
+                importance = int(frontmatter["importance"])  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 importance = default_importance
+                if write_missing_frontmatter and default_importance is not None:
+                    frontmatter["importance"] = int(default_importance)
         else:
             importance = default_importance
+            if write_missing_frontmatter and default_importance is not None:
+                frontmatter["importance"] = int(default_importance)
 
         # tags
         tags = normalize_tags(frontmatter.get("tags"))
 
-        # date
+        # date (normalizzata)
         date = derive_date(frontmatter, md_path)
+        if write_missing_frontmatter:
+            # normalizza il tipo (date/datetime -> string) se presente
+            if "date" in frontmatter:
+                norm = _normalize_frontmatter_date(frontmatter.get("date"))
+                if norm and frontmatter.get("date") != norm:
+                    frontmatter["date"] = norm
+            # se manca, la deduciamo dal filename (se possibile)
+            if "date" not in frontmatter and date is not None:
+                frontmatter["date"] = date
 
         # title (opzionale)
         title = None
@@ -234,10 +287,13 @@ def import_from_dir(
             frontmatter_hash=frontmatter_hash,
         )
 
-        # Gestione duplicati per ID
+        # Duplicati
         if lele_id in records_by_id:
             existing_path = first_path_by_id[lele_id]
-            msg = f"ID duplicato '{lele_id}' in {rel_path} (già visto in {existing_path.relative_to(input_dir)})"
+            msg = (
+                f"ID duplicato '{lele_id}' in {rel_path} "
+                f"(già visto in {existing_path.relative_to(input_dir)})"
+            )
 
             if on_duplicate == "error":
                 raise SystemExit(f"[errore] {msg}")
@@ -252,18 +308,21 @@ def import_from_dir(
             records_by_id[lele_id] = record
             first_path_by_id[lele_id] = md_path
 
-        # Se mancava l'ID e vogliamo scrivere il frontmatter aggiornato nel file
-        if missing_id and write_missing_frontmatter:
-            new_content = render_markdown_with_frontmatter(frontmatter, body)
-            files_to_update.append((md_path, frontmatter, new_content))
+        # Riscrivi solo se cambia davvero qualcosa
+        if write_missing_frontmatter:
+            before = yaml.safe_dump(original_fm, sort_keys=True)
+            after = yaml.safe_dump(frontmatter, sort_keys=True)
+            if before != after:
+                new_content = render_markdown_with_frontmatter(frontmatter, body)
+                files_to_update.append((md_path, new_content))
 
-    # Scrivi i file aggiornati (aggiunta id in frontmatter)
     if files_to_update:
         print(f"[info] Aggiorno {len(files_to_update)} file per aggiungere/sincronizzare il frontmatter.")
-        for md_path, _fm, new_content in files_to_update:
+        for md_path, new_content in files_to_update:
             md_path.write_text(new_content, encoding="utf-8")
 
     return records_by_id
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -276,14 +335,8 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         )
     )
 
-    parser.add_argument(
-        "input_dir",
-        help="Directory radice che contiene le LeLe in formato Markdown.",
-    )
-    parser.add_argument(
-        "output",
-        help="Percorso del file JSONL di output (sarà sovrascritto).",
-    )
+    parser.add_argument("input_dir", help="Directory radice che contiene le LeLe in formato Markdown.")
+    parser.add_argument("output", help="Percorso del file JSONL di output (sarà sovrascritto).")
     parser.add_argument(
         "--on-duplicate",
         choices=["overwrite", "skip", "error"],
@@ -314,6 +367,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     return parser.parse_args(argv)
 
+
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
 
@@ -342,6 +396,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             f.write(line + "\n")
 
     print("[ok] Import completato.")
+
 
 if __name__ == "__main__":
     main()
