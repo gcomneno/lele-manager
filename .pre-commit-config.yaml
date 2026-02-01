@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0  # versione indicativa, puoi aggiornarla con `pre-commit autoupdate`
+    rev: v6.0.0  # versione indicativa, puoi aggiornarla con `pre-commit autoupdate`
     hooks:
       - id: trailing-whitespace      # toglie spazi a fine riga
       - id: end-of-file-fixer        # garantisce newline finale
