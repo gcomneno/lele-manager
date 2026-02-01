@@ -166,7 +166,7 @@ def append_lesson_to_jsonl(lesson: Lesson) -> None:
     Appende una singola LeLe al file JSONL.
     """
     _ensure_data_dir()
-    record = lesson.dict()
+    record = lesson.model_dump()
     with DATA_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -426,7 +426,7 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
     L'ID viene generato se non fornito.
     """
     lele_id = lesson_in.id or uuid.uuid4().hex
-    lesson = Lesson(id=lele_id, **lesson_in.dict(exclude={"id"}))
+    lesson = Lesson(id=lele_id, **lesson_in.model_dump(exclude={"id"}))
     append_lesson_to_jsonl(lesson)
     return lesson
 
@@ -494,20 +494,49 @@ def train_topic() -> TrainResponse:
     """
     Allena (o riallena) il topic model a partire da data/lessons.jsonl
     e salva la pipeline in models/topic_model.joblib.
+
+    Hardening:
+    - non deve mai tornare 500 per errori "utente" (es. 1 solo topic)
+    - filtra righe senza text/topic validi
     """
     df = load_lessons_df()
     if df.empty:
         raise HTTPException(status_code=400, detail="Dataset vuoto: nessuna LeLe da usare per il training.")
 
-    # train_topic_model fa già i controlli su 'topic' e n. di classi
-    pipeline = train_topic_model(df)
+    # Usa solo righe addestrabili (evita topic 'nan' generato da astype(str) su NaN)
+    df_train = df.dropna(subset=["text", "topic"]).copy()
+    df_train = df_train[df_train["text"].astype(str).str.strip() != ""]
+
+    if df_train.empty:
+        raise HTTPException(
+            status_code=400,
+            detail="Nessuna riga valida per il training: servono 'text' e 'topic' non vuoti.",
+        )
+
+    try:
+        pipeline = train_topic_model(df_train)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        msg = str(exc)
+        low = msg.lower()
+        if "empty vocabulary" in low or "no terms remain" in low:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Training fallito: il vettorizzatore TF-IDF non trova termini utili.\n"
+                    "Tipicamente succede con dataset troppo piccolo o senza termini ripetuti.\n"
+                    "Soluzioni: aggiungi più LeLe, oppure abbassa min_df nella configurazione TF-IDF."
+                ),
+            )
+        raise HTTPException(status_code=400, detail=msg)
 
     _ensure_model_dir()
     save_topic_model(pipeline, str(MODEL_PATH))
 
-    topics = sorted(df["topic"].dropna().astype(str).unique())
+    topics = sorted(df_train["topic"].astype(str).unique())
     return TrainResponse(
         message=f"Topic model allenato con successo e salvato in {MODEL_PATH}",
-        n_lessons=int(len(df)),
+        n_lessons=int(len(df_train)),
         topics=topics,
     )
