@@ -33,8 +33,6 @@ def build_topic_pipeline(config: Optional[TopicModelConfig] = None) -> Pipeline:
     clf = LogisticRegression(
         C=cfg.C,
         max_iter=cfg.max_iter,
-        n_jobs=-1,
-        # multi_class deprecato in sklearn 1.5 -> usiamo il default
     )
 
     pipe = Pipeline(
