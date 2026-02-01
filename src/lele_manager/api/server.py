@@ -375,6 +375,7 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
 def get_lesson(lesson_id: str) -> Lesson:
     """
     Recupera una singola LeLe per ID.
+    Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
     """
     df = load_lessons_df()
     if df.empty:
@@ -385,15 +386,36 @@ def get_lesson(lesson_id: str) -> Lesson:
         raise HTTPException(status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata.")
 
     row = matches.iloc[0]
+
+    # Normalizza stringhe (gestisce NaN/NaT/Timestamp -> str o None)
+    topic_val = _to_optional_str(row.get("topic"))
+    source_val = _to_optional_str(row.get("source"))
+    date_val = _to_optional_str(row.get("date"))
+    title_val = _to_optional_str(row.get("title"))
+
+    # importance robusta
+    raw_importance = row.get("importance")
+    if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
+        importance_val = None
+    else:
+        try:
+            importance_val = int(raw_importance)
+        except (TypeError, ValueError):
+            importance_val = None
+
+    # tags: solo se lista
+    raw_tags = row.get("tags")
+    tags_val = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else None
+
     return Lesson(
         id=str(row["id"]),
         text=str(row["text"]),
-        topic=row.get("topic"),
-        source=row.get("source"),
-        importance=int(row["importance"]) if pd.notna(row.get("importance")) else None,
-        tags=list(row["tags"]) if isinstance(row.get("tags"), list) else None,
-        date=row.get("date"),
-        title=row.get("title"),
+        topic=topic_val,
+        source=source_val,
+        importance=importance_val,
+        tags=tags_val,
+        date=date_val,
+        title=title_val,
     )
 
 
