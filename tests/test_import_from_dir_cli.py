@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import textwrap
+import yaml
 
 
 def run_cmd(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -17,15 +18,29 @@ def run_cmd(args: list[str], cwd: Path | None = None) -> subprocess.CompletedPro
     )
 
 
+def _parse_frontmatter(md_text: str) -> dict:
+    lines = md_text.splitlines()
+    assert lines and lines[0].strip() == "---"
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    assert end is not None, "frontmatter non chiuso"
+    fm = "\n".join(lines[1:end])
+    data = yaml.safe_load(fm) or {}
+    assert isinstance(data, dict)
+    return data
+
+
 def test_import_from_dir_basic(tmp_path: Path) -> None:
     """Import semplice da una mini-vault con 1 file .md con frontmatter completo.
 
     Verifica:
     - il JSONL viene scritto;
     - c'è una sola riga;
-    - il campo 'topic' viene preservato;
-    - il record contiene i campi chiave (topic/source/importance),
-      e il campo 'date' non causa problemi di serializzazione.
+    - topic/source/importance vengono preservati;
+    - la data YAML viene normalizzata a stringa (YYYY-MM-DD) nel record.
     """
     vault_dir = tmp_path / "vault"
     vault_dir.mkdir()
@@ -68,7 +83,6 @@ def test_import_from_dir_basic(tmp_path: Path) -> None:
     ]
     result = run_cmd(cmd)
 
-    # Se il comando fallisce, voglio vedere subito stderr nel test
     assert (
         result.returncode == 0
     ), f"import_from_dir failed: {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
@@ -80,22 +94,69 @@ def test_import_from_dir_basic(tmp_path: Path) -> None:
 
     record = json.loads(lines[0])
 
-    # Non assumo troppo su 'id', ma mi aspetto almeno topic/source/importance giusti
     assert record.get("topic") == "test-topic"
     assert record.get("source") == "note"
     assert record.get("importance") == 3
 
-    # La data: l'import attuale può anche NON salvarla esplicitamente.
-    # Verifichiamo solo che:
-    # - il campo esista se lo schema lo prevede,
-    # - e che non sia un tipo "strano" non JSON-serializzabile.
-    date_value = record.get("date", None)
-    assert date_value is None or isinstance(
-        date_value, str
-    ), f"date deve essere None o string, non {type(date_value)!r}"
+    # YAML può parse-are date come datetime.date: nel record vogliamo stringa.
+    assert record.get("date") == "2025-01-01"
 
-    # Il testo deve contenere il body
     assert "Contenuto della lesson di test." in record.get("text", "")
+
+
+def test_import_from_dir_missing_frontmatter_writes_required_fields(tmp_path: Path) -> None:
+    """Se manca il frontmatter e usiamo --write-missing-frontmatter,
+    deve essere creato con almeno: id/topic/source/importance (+ date se deducibile).
+    """
+    vault_dir = tmp_path / "vault"
+    (vault_dir / "python").mkdir(parents=True)
+
+    md_path = vault_dir / "python" / "2025-11-20.cin-vs-getline.md"
+    md_path.write_text(
+        "Contenuto senza frontmatter.\n",
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "lessons.jsonl"
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "lele_manager.cli.import_from_dir",
+        str(vault_dir),
+        str(output_path),
+        "--on-duplicate",
+        "overwrite",
+        "--default-source",
+        "note",
+        "--default-importance",
+        "3",
+        "--write-missing-frontmatter",
+    ]
+    result = run_cmd(cmd)
+
+    assert (
+        result.returncode == 0
+    ), f"import_from_dir failed: {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+
+    lines = output_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+
+    assert record["id"] == "python/2025-11-20.cin-vs-getline"
+    assert record["topic"] == "python"
+    assert record["source"] == "note"
+    assert record["importance"] == 3
+    assert record["date"] == "2025-11-20"
+
+    # Verifica che il file sia stato riscritto con frontmatter completo
+    md_text = md_path.read_text(encoding="utf-8")
+    fm = _parse_frontmatter(md_text)
+    assert fm.get("id") == "python/2025-11-20.cin-vs-getline"
+    assert fm.get("topic") == "python"
+    assert fm.get("source") == "note"
+    assert fm.get("importance") == 3
+    assert fm.get("date") == "2025-11-20"
 
 
 def test_import_from_dir_on_duplicate_error(tmp_path: Path) -> None:
@@ -138,6 +199,66 @@ def test_import_from_dir_on_duplicate_error(tmp_path: Path) -> None:
     ]
     result = run_cmd(cmd)
 
-    # Qui vogliamo esplicitamente che fallisca
     assert result.returncode != 0, "on-duplicate=error con id duplicati doveva fallire"
-    # (In futuro possiamo raffinare l'assert sul messaggio di errore.)
+
+
+def test_import_from_dir_on_duplicate_skip_keeps_first(tmp_path: Path) -> None:
+    """Due file con stesso id + on-duplicate=skip: deve vincere il primo file."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+
+    (vault_dir / "a.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            id: dup/1
+            topic: t
+            source: note
+            importance: 3
+            ---
+            PRIMO
+            """
+        ),
+        encoding="utf-8",
+    )
+    (vault_dir / "b.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            id: dup/1
+            topic: t
+            source: note
+            importance: 3
+            ---
+            SECONDO
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "lessons.jsonl"
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "lele_manager.cli.import_from_dir",
+        str(vault_dir),
+        str(output_path),
+        "--on-duplicate",
+        "skip",
+        "--default-source",
+        "note",
+        "--default-importance",
+        "3",
+    ]
+    result = run_cmd(cmd)
+
+    assert (
+        result.returncode == 0
+    ), f"import_from_dir failed: {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+
+    lines = output_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert "PRIMO" in record.get("text", "")
+    assert "SECONDO" not in record.get("text", "")
