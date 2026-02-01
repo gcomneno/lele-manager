@@ -6,11 +6,8 @@ from typing import List, Optional
 
 import pandas as pd
 
-from lele_manager.ml.topic_model import (
-    load_topic_model,
-    save_topic_model,
-    train_topic_model,
-)
+from lele_manager.ml.topic_model import load_topic_model, save_topic_model, train_topic_model
+
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -50,6 +47,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     return parser.parse_args(argv)
 
+
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
 
@@ -68,7 +66,10 @@ def main(argv: Optional[List[str]] = None) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"[info] Carico dataset da: {input_path}")
-    df = pd.read_json(input_path, lines=True)
+    try:
+        df = pd.read_json(input_path, lines=True)
+    except ValueError as exc:
+        raise SystemExit(f"[errore] JSONL non valido o non leggibile: {exc}")
 
     # Normalizza nomi colonne per il modello
     if args.text_column != "text" and args.text_column in df.columns:
@@ -95,7 +96,15 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # Allena modello
     print("[info] Alleno topic model...")
-    pipeline = train_topic_model(df)
+    try:
+        pipeline = train_topic_model(df)
+    except KeyError as exc:
+        # In teoria ci arriviamo solo se qualcosa è incoerente internamente,
+        # ma evitiamo stacktrace: messaggio umano.
+        raise SystemExit(f"[errore] Dataset non compatibile col training: {exc}")
+    except ValueError as exc:
+        # Es: 1 solo topic -> messaggio guidato da topic_model.py
+        raise SystemExit(f"[errore] {exc}")
 
     # Salva modello
     save_topic_model(pipeline, str(output_path))
@@ -104,6 +113,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     # Check rapido di load
     _ = load_topic_model(str(output_path))
     print("[ok] Verifica caricamento modello riuscita.")
+
 
 if __name__ == "__main__":
     main()
