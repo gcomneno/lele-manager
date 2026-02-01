@@ -51,7 +51,6 @@ def train_topic_classifier(lessons: Sequence[Lesson]) -> Pipeline:
             (
                 "logreg",
                 LogisticRegression(
-                    max_iter=1000,
                 ),
             ),
         ],
