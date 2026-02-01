@@ -54,36 +54,75 @@ class LessonBase(BaseModel):
         description="Titolo opzionale della LeLe.",
     )
 
+
 class LessonCreate(LessonBase):
     id: Optional[str] = Field(
         default=None,
         description="ID opzionale. Se non fornito, viene generato un UUID.",
     )
 
+
 class Lesson(LessonBase):
     id: str
 
+
 class LessonSearchResult(Lesson):
     pass
+
+
+class LessonSearchRequest(BaseModel):
+    """Payload per la ricerca avanzata POST /lessons/search."""
+
+    q: Optional[str] = Field(
+        default=None,
+        description="Substring case-insensitive cercata nel campo 'text'.",
+    )
+    topic_in: Optional[List[str]] = Field(
+        default=None,
+        description="Lista di topic ammessi (OR logico).",
+    )
+    source_in: Optional[List[str]] = Field(
+        default=None,
+        description="Lista di source ammessi (OR logico).",
+    )
+    importance_gte: Optional[int] = Field(
+        default=None,
+        description="Filtro: importance >= questo valore.",
+    )
+    importance_lte: Optional[int] = Field(
+        default=None,
+        description="Filtro: importance <= questo valore.",
+    )
+    limit: int = Field(
+        default=50,
+        ge=1,
+        le=500,
+        description="Numero massimo di risultati da restituire.",
+    )
+
 
 class SimilarItem(BaseModel):
     id: str
     score: float
     text_preview: str
 
+
 class SimilarResponse(BaseModel):
     query: str
     results: List[SimilarItem]
+
 
 class TrainResponse(BaseModel):
     message: str
     n_lessons: int
     topics: List[str]
 
+
 class HealthResponse(BaseModel):
     status: str
     has_data: bool
     has_model: bool
+
 
 # -----------------------------------------------------------------------------
 # Helper di I/O
@@ -91,8 +130,10 @@ class HealthResponse(BaseModel):
 def _ensure_data_dir() -> None:
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+
 def _ensure_model_dir() -> None:
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 
 def load_lessons_df() -> pd.DataFrame:
     """
@@ -119,6 +160,7 @@ def load_lessons_df() -> pd.DataFrame:
 
     return df
 
+
 def append_lesson_to_jsonl(lesson: Lesson) -> None:
     """
     Appende una singola LeLe al file JSONL.
@@ -127,6 +169,7 @@ def append_lesson_to_jsonl(lesson: Lesson) -> None:
     record = lesson.dict()
     with DATA_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
 
 def build_similarity_index(df: pd.DataFrame):
     """
@@ -145,6 +188,7 @@ def build_similarity_index(df: pd.DataFrame):
     index = LessonSimilarityIndex.from_topic_pipeline(df=df, pipeline=pipeline, id_column="id")
     return index
 
+
 def _to_optional_str(value) -> Optional[str]:
     """
     Converte un valore generico in Optional[str]:
@@ -162,6 +206,51 @@ def _to_optional_str(value) -> Optional[str]:
         pass
     return str(value)
 
+
+def _row_to_search_result(row: dict) -> LessonSearchResult:
+    """Converte una riga (dict) del DataFrame in LessonSearchResult, con la stessa
+    normalizzazione usata in GET /lessons.
+    """
+    # id & text
+    lele_id = _to_optional_str(row.get("id")) or ""
+    text = _to_optional_str(row.get("text")) or ""
+
+    # topic / source / date / title
+    topic_val = _to_optional_str(row.get("topic"))
+    source_val = _to_optional_str(row.get("source"))
+    date_val = _to_optional_str(row.get("date"))
+    title_val = _to_optional_str(row.get("title"))
+
+    # importance: prova a convertirla, altrimenti None
+    raw_importance = row.get("importance")
+    if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
+        importance_val: Optional[int] = None
+    else:
+        try:
+            importance_val = int(raw_importance)
+        except (TypeError, ValueError):
+            importance_val = None
+
+    # tags: solo se è una lista; converti tutto a str
+    raw_tags = row.get("tags")
+    tags_val: Optional[List[str]]
+    if isinstance(raw_tags, list):
+        tags_val = [str(t) for t in raw_tags]
+    else:
+        tags_val = None
+
+    return LessonSearchResult(
+        id=lele_id,
+        text=text,
+        topic=topic_val,
+        source=source_val,
+        importance=importance_val,
+        tags=tags_val,
+        date=date_val,
+        title=title_val,
+    )
+
+
 # -----------------------------------------------------------------------------
 # Endpoint
 # -----------------------------------------------------------------------------
@@ -177,6 +266,7 @@ def health() -> HealthResponse:
         has_data=has_data,
         has_model=has_model,
     )
+
 
 @app.get("/lessons", response_model=List[LessonSearchResult])
 def list_lessons(
@@ -229,51 +319,57 @@ def list_lessons(
         return []
 
     records = df.to_dict(orient="records")
-
-    results: List[LessonSearchResult] = []
-    for row in records:
-        # id & text
-        lele_id = _to_optional_str(row.get("id")) or ""
-        text = _to_optional_str(row.get("text")) or ""
-
-        # topic / source / date / title
-        topic_val = _to_optional_str(row.get("topic"))
-        source_val = _to_optional_str(row.get("source"))
-        date_val = _to_optional_str(row.get("date"))
-        title_val = _to_optional_str(row.get("title"))
-
-        # importance: prova a convertirla, altrimenti None
-        raw_importance = row.get("importance")
-        if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
-            importance_val: Optional[int] = None
-        else:
-            try:
-                importance_val = int(raw_importance)
-            except (TypeError, ValueError):
-                importance_val = None
-
-        # tags: solo se è una lista; converti tutto a str
-        raw_tags = row.get("tags")
-        tags_val: Optional[List[str]]
-        if isinstance(raw_tags, list):
-            tags_val = [str(t) for t in raw_tags]
-        else:
-            tags_val = None
-
-        results.append(
-            LessonSearchResult(
-                id=lele_id,
-                text=text,
-                topic=topic_val,
-                source=source_val,
-                importance=importance_val,
-                tags=tags_val,
-                date=date_val,
-                title=title_val,
-            )
-        )
+    results: List[LessonSearchResult] = [_row_to_search_result(row) for row in records]
 
     return results
+
+
+@app.post("/lessons/search", response_model=List[LessonSearchResult])
+def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
+    """Ricerca avanzata sulle lessons via POST.
+
+    Applica filtri su testo, topic, source e importance, riutilizzando la
+    stessa normalizzazione di GET /lessons.
+    """
+    df = load_lessons_df()
+    if df.empty:
+        return []
+
+    df = df.copy()
+
+    # Filtro testo (q)
+    if body.q:
+        q_lower = body.q.lower()
+        df = df[df["text"].astype(str).str.lower().str.contains(q_lower, na=False)]
+
+    # Filtro topic_in
+    if body.topic_in:
+        df = df[df["topic"].astype(str).isin(body.topic_in)]
+
+    # Filtro source_in
+    if body.source_in:
+        df = df[df["source"].astype(str).isin(body.source_in)]
+
+    # Filtro importance range
+    if body.importance_gte is not None or body.importance_lte is not None:
+        df["importance"] = pd.to_numeric(df.get("importance"), errors="coerce")
+
+        if body.importance_gte is not None:
+            df = df[df["importance"] >= body.importance_gte]
+
+        if body.importance_lte is not None:
+            df = df[df["importance"] <= body.importance_lte]
+
+    # Limit
+    df = df.head(body.limit)
+
+    if df.empty:
+        return []
+
+    records = df.to_dict(orient="records")
+    results: List[LessonSearchResult] = [_row_to_search_result(row) for row in records]
+    return results
+
 
 @app.get("/lessons/{lesson_id}", response_model=Lesson)
 def get_lesson(lesson_id: str) -> Lesson:
@@ -300,6 +396,7 @@ def get_lesson(lesson_id: str) -> Lesson:
         title=row.get("title"),
     )
 
+
 @app.post("/lessons", response_model=Lesson, status_code=201)
 def add_lesson(lesson_in: LessonCreate) -> Lesson:
     """
@@ -310,6 +407,7 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
     lesson = Lesson(id=lele_id, **lesson_in.dict(exclude={"id"}))
     append_lesson_to_jsonl(lesson)
     return lesson
+
 
 @app.get("/lessons/{lesson_id}/similar", response_model=SimilarResponse)
 def similar_lessons(
@@ -367,6 +465,7 @@ def similar_lessons(
         query=query_text,
         results=items,
     )
+
 
 @app.post("/train/topic", response_model=TrainResponse)
 def train_topic() -> TrainResponse:
