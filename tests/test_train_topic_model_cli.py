@@ -52,12 +52,11 @@ def test_train_topic_model_two_topics_succeeds(tmp_path: Path) -> None:
     assert model_path.exists(), "Il file del modello non è stato creato"
 
     pipeline = joblib.load(model_path)
-    # Controllo minimale: che abbia un metodo predict
     assert hasattr(pipeline, "predict")
 
 
-def test_train_topic_model_single_topic_fails(tmp_path: Path) -> None:
-    """Dataset con un solo topic: il training deve fallire in modo esplicito."""
+def test_train_topic_model_single_topic_fails_human_no_traceback(tmp_path: Path) -> None:
+    """Dataset con un solo topic: deve fallire senza stacktrace e con messaggio umano."""
     data_path = tmp_path / "lessons_single_topic.jsonl"
     model_path = tmp_path / "topic_model_single.joblib"
 
@@ -79,8 +78,39 @@ def test_train_topic_model_single_topic_fails(tmp_path: Path) -> None:
     ]
     result = run_cmd(cmd)
 
-    # Qui CI ASPETTIAMO un errore (per via del controllo "almeno 2 classi")
     assert result.returncode != 0, "train_topic_model doveva fallire con un solo topic"
-
-    # Il modello non dovrebbe esistere (o comunque non lo usiamo)
     assert not model_path.exists()
+    assert "Traceback" not in (result.stderr or ""), f"Non vogliamo stacktrace.\nSTDERR:\n{result.stderr}"
+    assert "[errore]" in (result.stderr or result.stdout)
+    assert "almeno 2 topic" in (result.stderr + result.stdout)
+
+
+def test_train_topic_model_missing_topic_column_fails_human_no_traceback(tmp_path: Path) -> None:
+    """Dataset senza colonna topic: deve fallire senza stacktrace e con messaggio chiaro."""
+    data_path = tmp_path / "lessons_missing_topic.jsonl"
+    model_path = tmp_path / "topic_model_missing_topic.joblib"
+
+    records = [
+        {"id": "1", "text": "Manca topic 1"},
+        {"id": "2", "text": "Manca topic 2"},
+    ]
+    write_jsonl(data_path, records)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "lele_manager.cli.train_topic_model",
+        "--input",
+        str(data_path),
+        "--output",
+        str(model_path),
+        "--overwrite",
+    ]
+    result = run_cmd(cmd)
+
+    assert result.returncode != 0
+    assert not model_path.exists()
+    assert "Traceback" not in (result.stderr or ""), f"Non vogliamo stacktrace.\nSTDERR:\n{result.stderr}"
+    combined = (result.stderr or "") + (result.stdout or "")
+    assert "[errore]" in combined
+    assert "topic" in combined.lower()
