@@ -5,6 +5,11 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Defaults: in dev usiamo percorsi repo-local (override con LELE_DATA_PATH/LELE_MODEL_PATH)
+export LELE_DATA_PATH="${LELE_DATA_PATH:-data/lessons.jsonl}"
+export LELE_MODEL_PATH="${LELE_MODEL_PATH:-models/topic_model.joblib}"
+
+
 # Directory del vault LeLe (puoi sovrascriverla con la variabile LELE_VAULT_DIR)
 VAULT_DIR="${LELE_VAULT_DIR:-$HOME/LeLeVault}"
 
