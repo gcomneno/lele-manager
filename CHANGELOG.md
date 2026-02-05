@@ -1,4 +1,5 @@
 # Changelog
+
 All notable changes to **LeLe Manager** will be documented in this file.
 
 This project follows **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
@@ -18,6 +19,11 @@ The format is based on **Keep a Changelog**.
 
 ### Fixed
 - (placeholder)
+
+## [1.1.1] - 2026-02-05
+
+### Added
+- Added `CHANGELOG.md` in Keep a Changelog format with version links.
 
 ## [1.1.0] - 2026-02-01
 
@@ -41,6 +47,7 @@ The format is based on **Keep a Changelog**.
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/gcomneno/lele-manager/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/gcomneno/lele-manager/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/gcomneno/lele-manager/releases/tag/v1.0.0

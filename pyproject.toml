@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lele-manager"
-version = "1.1.0"
+version = "1.1.1"
 description = "Lesson Learned Manager: archivio intelligente di lesson learned testuali."
 readme = "README.md"
 requires-python = ">=3.10"
