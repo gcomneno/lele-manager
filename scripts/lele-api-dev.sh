@@ -6,6 +6,10 @@ ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 
 cd "$ROOT_DIR"
 
+# Defaults: in dev usiamo percorsi repo-local (override con LELE_DATA_PATH/LELE_MODEL_PATH)
+export LELE_DATA_PATH="${LELE_DATA_PATH:-data/lessons.jsonl}"
+export LELE_MODEL_PATH="${LELE_MODEL_PATH:-models/topic_model.joblib}"
+
 echo "[info] Root progetto: $ROOT_DIR"
 
 if [ ! -d ".venv" ]; then
