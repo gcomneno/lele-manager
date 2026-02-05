@@ -1,29 +1,46 @@
 # Changelog
-All notable changes to this project will be documented in this file.
+All notable changes to **LeLe Manager** will be documented in this file.
 
-The format is based on **Keep a Changelog**, and this project adheres to **Semantic Versioning**.
+This project follows **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
+- **MAJOR**: breaking changes (API / formats)
+- **MINOR**: backward-compatible features
+- **PATCH**: bugfix / internal improvements
+
+The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
 ### Added
-- More API tests coverage (health “present”, `/lessons/{id}` 200/404, `/similar` edge cases).
-- Training API hardening: `/train/topic` returns 400 (human message) for user errors (e.g. single-topic dataset, TF-IDF empty vocabulary).
-- Extra tests guarding `/train/topic` failure modes and `/similar` edge cases.
+- (placeholder)
 
 ### Changed
-- API normalization for `GET /lessons/{id}` (avoid Pydantic validation errors on `date` when pandas parses timestamps).
+- (placeholder)
 
 ### Fixed
-- Avoid 500s on predictable training failures by mapping them to 400 with readable `detail`.
+- (placeholder)
 
 ## [1.1.0] - 2026-02-01
 
 ### Added
-- CLI entrypoint (`lele`) for common operations.
-- Dev helper script for running the API locally.
-- Initial tests for CLI + search API.
+- CLI entrypoint `lele` (developer-friendly command surface).
+- Dev helper scripts for running the API quickly during local development.
+- Basic tests for CLI and API (stabilization step toward CI-ready quality gates).
+
+### Changed
+- Project wiring to support the new CLI + tests lifecycle.
 
 ## [1.0.0] - 2025-12-05
 
 ### Added
-- Initial public release.
+- LeLe Vault (Markdown + YAML frontmatter) → import into JSONL.
+- ML pipeline: topic model + similarity search.
+- FastAPI endpoints: `/health`, `/lessons`, `/lessons/{id}/similar`, `/train/topic`.
+- Dev script `lele-api-refresh.sh` + alias `lele-refresh`.
+
+### Fixed
+- Date parsing (YAML → JSON).
+- NaN/NaT handling in the API layer.
+
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/gcomneno/lele-manager/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/gcomneno/lele-manager/releases/tag/v1.0.0

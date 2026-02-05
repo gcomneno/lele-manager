@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 
 from pathlib import Path
@@ -11,6 +12,8 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from lele_manager.config import default_data_path, default_model_path
+
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import (
     load_topic_model,
@@ -18,9 +21,22 @@ from lele_manager.ml.topic_model import (
     train_topic_model,
 )
 
-# Percorsi “canonici” (come da CLI)
-DATA_PATH = Path("data/lessons.jsonl")
-MODEL_PATH = Path("models/topic_model.joblib")
+# Percorsi (default XDG; override via env var o monkeypatch in test)
+# - LELE_DATA_PATH  : path completo a lessons.jsonl
+# - LELE_MODEL_PATH : path completo a topic_model.joblib
+DATA_PATH = default_data_path()
+MODEL_PATH = default_model_path()
+
+
+def get_data_path() -> Path:
+    env = os.environ.get("LELE_DATA_PATH")
+    return Path(env).expanduser() if env else DATA_PATH
+
+
+def get_model_path() -> Path:
+    env = os.environ.get("LELE_MODEL_PATH")
+    return Path(env).expanduser() if env else MODEL_PATH
+
 
 app = FastAPI(
     title="LeLe Manager API",
@@ -128,11 +144,11 @@ class HealthResponse(BaseModel):
 # Helper di I/O
 # -----------------------------------------------------------------------------
 def _ensure_data_dir() -> None:
-    DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    get_data_path().parent.mkdir(parents=True, exist_ok=True)
 
 
 def _ensure_model_dir() -> None:
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    get_model_path().parent.mkdir(parents=True, exist_ok=True)
 
 
 def load_lessons_df() -> pd.DataFrame:
@@ -141,16 +157,17 @@ def load_lessons_df() -> pd.DataFrame:
     Se il file non esiste, restituisce un DataFrame vuoto con colonne standard.
     Gestisce errori di parsing in modo esplicito.
     """
-    if not DATA_PATH.exists():
+    data_path = get_data_path()
+    if not data_path.exists():
         return pd.DataFrame(columns=["id", "text", "topic", "source", "importance", "tags", "date", "title"])
 
     try:
-        df = pd.read_json(DATA_PATH, lines=True)
+        df = pd.read_json(data_path, lines=True)
     except ValueError as e:
         # Errore di parsing: JSONL corrotto o riga invalida
         raise HTTPException(
             status_code=500,
-            detail=f"Errore nel parsing di {DATA_PATH}: {e}",
+            detail=f"Errore nel parsing di {data_path}: {e}",
         )
 
     # Assicuriamoci che almeno queste colonne esistano
@@ -166,8 +183,9 @@ def append_lesson_to_jsonl(lesson: Lesson) -> None:
     Appende una singola LeLe al file JSONL.
     """
     _ensure_data_dir()
-    record = lesson.model_dump()
-    with DATA_PATH.open("a", encoding="utf-8") as f:
+    record = lesson.dict()
+    data_path = get_data_path()
+    with data_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -178,13 +196,15 @@ def build_similarity_index(df: pd.DataFrame):
     if df.empty:
         raise HTTPException(status_code=400, detail="Nessuna LeLe presente nel dataset.")
 
-    if not MODEL_PATH.exists():
+    model_path = get_model_path()
+
+    if not model_path.exists():
         raise HTTPException(
             status_code=503,
             detail="Modello di topic non disponibile. Allena prima il modello con /train/topic.",
         )
 
-    pipeline = load_topic_model(str(MODEL_PATH))
+    pipeline = load_topic_model(str(model_path))
     index = LessonSimilarityIndex.from_topic_pipeline(df=df, pipeline=pipeline, id_column="id")
     return index
 
@@ -259,8 +279,8 @@ def health() -> HealthResponse:
     """
     Stato rapido del servizio: dati e modello presenti/sì-no.
     """
-    has_data = DATA_PATH.exists()
-    has_model = MODEL_PATH.exists()
+    has_data = get_data_path().exists()
+    has_model = get_model_path().exists()
     return HealthResponse(
         status="ok",
         has_data=has_data,
@@ -426,7 +446,7 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
     L'ID viene generato se non fornito.
     """
     lele_id = lesson_in.id or uuid.uuid4().hex
-    lesson = Lesson(id=lele_id, **lesson_in.model_dump(exclude={"id"}))
+    lesson = Lesson(id=lele_id, **lesson_in.dict(exclude={"id"}))
     append_lesson_to_jsonl(lesson)
     return lesson
 
@@ -515,28 +535,17 @@ def train_topic() -> TrainResponse:
 
     try:
         pipeline = train_topic_model(df_train)
-    except KeyError as exc:
+    except (ValueError, KeyError) as exc:
+        # errori "utente": 400 con messaggio umano (no 500)
         raise HTTPException(status_code=400, detail=str(exc))
-    except ValueError as exc:
-        msg = str(exc)
-        low = msg.lower()
-        if "empty vocabulary" in low or "no terms remain" in low:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Training fallito: il vettorizzatore TF-IDF non trova termini utili.\n"
-                    "Tipicamente succede con dataset troppo piccolo o senza termini ripetuti.\n"
-                    "Soluzioni: aggiungi più LeLe, oppure abbassa min_df nella configurazione TF-IDF."
-                ),
-            )
-        raise HTTPException(status_code=400, detail=msg)
 
     _ensure_model_dir()
-    save_topic_model(pipeline, str(MODEL_PATH))
+    model_path = get_model_path()
+    save_topic_model(pipeline, str(model_path))
 
     topics = sorted(df_train["topic"].astype(str).unique())
     return TrainResponse(
-        message=f"Topic model allenato con successo e salvato in {MODEL_PATH}",
+        message=f"Topic model allenato con successo e salvato in {model_path}",
         n_lessons=int(len(df_train)),
         topics=topics,
     )
