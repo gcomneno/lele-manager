@@ -537,7 +537,16 @@ def train_topic() -> TrainResponse:
         pipeline = train_topic_model(df_train)
     except (ValueError, KeyError) as exc:
         # errori "utente": 400 con messaggio umano (no 500)
-        raise HTTPException(status_code=400, detail=str(exc))
+        msg = str(exc)
+        low = msg.lower()
+
+        # Caso classico: TF-IDF/CountVectorizer rimane senza termini dopo pruning (min_df/max_df)
+        # -> vogliamo un messaggio "umano" che contenga segnali tipo "TF-IDF" / "vocabulary"
+        if ("no terms remain" in low) or ("after pruning" in low) or ("empty vocabulary" in low):
+            detail = f"TF-IDF vocabulary empty: {msg}"
+            raise HTTPException(status_code=400, detail=detail)
+
+        raise HTTPException(status_code=400, detail=msg)
 
     _ensure_model_dir()
     model_path = get_model_path()

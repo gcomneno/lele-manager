@@ -1,4 +1,5 @@
 # LeLe Manager 🐒 — Lesson-Learned Manager
+[![CI](https://github.com/gcomneno/lele-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/gcomneno/lele-manager/actions/workflows/ci.yml)
 
 Sistema ML end-to-end per gestire e cercare le mie *lesson learned* testuali: raccolta, tagging, ricerca e suggerimenti intelligenti.
 
