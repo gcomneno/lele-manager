@@ -564,3 +564,6 @@ git push origin v1.0.0
 
 3. Oppure, sempre dall’altro repo, uso direttamente il client CLI `lele`
    (se è nel PATH, o via `python -m lele_manager.cli.lele`).
+
+## Contributing
+See [`CONTRIBUTING.md`](CONTRIBUTING.md).
