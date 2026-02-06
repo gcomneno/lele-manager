@@ -1,4 +1,5 @@
 # LeLe Manager 🐒 — Lesson-Learned Manager
+[![Security](https://github.com/gcomneno/lele-manager/actions/workflows/security.yml/badge.svg)](https://github.com/gcomneno/lele-manager/actions/workflows/security.yml)
 [![CI](https://github.com/gcomneno/lele-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/gcomneno/lele-manager/actions/workflows/ci.yml)
 
 Sistema ML end-to-end per gestire e cercare le mie *lesson learned* testuali: raccolta, tagging, ricerca e suggerimenti intelligenti.
@@ -8,6 +9,21 @@ Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Mana
 - posso **cercare** per testo libero, tag, periodo;
 - posso vedere **lesson simili o correlate**;
 - nel tempo il sistema impara a **classificare e suggerire** in autonomia.
+
+---
+
+## ✅ Quality gates (quick scan)
+
+- **CI**: `ruff check .` + `pytest` (GitHub Actions, Python 3.12)
+- **Security**: `pip-audit` + `bandit` (GitHub Actions)
+- **pre-commit**: whitespace/end-of-file, `check-yaml`, `ruff`
+
+## 🗺️ Roadmap (quick links)
+
+- Milestone **v1.2 (stabilizzazione)**: [milestone/1](https://github.com/gcomneno/lele-manager/milestone/1)
+- Milestone **v2 (future/esperimenti)**: [milestone/2](https://github.com/gcomneno/lele-manager/milestone/2)
+- Documento completo: `ROADMAP.md`
+- Changelog: `CHANGELOG.md`
 
 ---
 
@@ -23,7 +39,7 @@ Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Mana
 
 ## 🧱 Stack tecnico
 
-- Python **3.13** (testato anche con 3.12)
+- Python **3.12** (CI) — testato anche con 3.13
 - `pandas` / `numpy` per analisi dati
 - `scikit-learn` per ML classico (classificatori, KNN/similarity, ecc.)
 - (opzionale) piccolo **MLP** per migliorare embedding/scoring
@@ -548,7 +564,3 @@ git push origin v1.0.0
 
 3. Oppure, sempre dall’altro repo, uso direttamente il client CLI `lele`
    (se è nel PATH, o via `python -m lele_manager.cli.lele`).
-
----
-
-Per la roadmap completa (idee future, nice-to-have, priorità operative) vedi `ROADMAP.md` nel repo.
