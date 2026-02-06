@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible bug
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Grazie! Per velocizzare la diagnosi, compila i campi sotto con dettagli riproducibili.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Cosa è successo?
+      description: Cosa ti aspettavi e cosa hai ottenuto.
+      placeholder: "Mi aspettavo X, invece ho visto Y..."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Come riprodurre
+      description: Passi minimi + comandi + input.
+      placeholder: |
+        1) ...
+        2) ...
+        3) ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log / output
+      description: Incolla output rilevante (senza dati sensibili).
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: python
+    attributes:
+      label: Versione Python
+      placeholder: "es. 3.12.2"
+    validations:
+      required: false
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "es. Ubuntu 24.04 / macOS / Windows"
+    validations:
+      required: false
