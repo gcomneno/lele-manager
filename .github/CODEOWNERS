@@ -1,0 +1,15 @@
+# Default owners: review requested on changes
+* @gcomneno
+
+# Repo hygiene / automation
+.github/* @gcomneno
+.github/workflows/* @gcomneno
+
+# Docs
+README.md @gcomneno
+CHANGELOG.md @gcomneno
+CONTRIBUTING.md @gcomneno
+
+# Python package (adatta se il tuo path è diverso)
+src/* @gcomneno
+tests/* @gcomneno
