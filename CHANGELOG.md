@@ -20,6 +20,14 @@ The format is based on **Keep a Changelog**.
 ### Fixed
 - (placeholder)
 
+## [1.1.2] - 2026-02-06
+
+### Added
+- Added `CONTRIBUTING.md` with minimal contributor workflow (setup + quality gates).
+
+### Docs
+- README: link to contributing guidelines.
+
 ## [1.1.1] - 2026-02-05
 
 ### Added
