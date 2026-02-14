@@ -18,6 +18,9 @@ def test_default_paths_use_xdg_env(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_health_uses_env_override_paths(tmp_path: Path, monkeypatch) -> None:
+    server.DATA_PATH = None
+    server.MODEL_PATH = None
+
     data_path = tmp_path / "my_lessons.jsonl"
     model_path = tmp_path / "my_model.joblib"
 

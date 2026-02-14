@@ -11,6 +11,14 @@ requires-python = ">=3.10"
 authors = [
   { name = "Giancarlo Cicellyn Comneno" }
 ]
+dependencies = [
+  "platformdirs>=4.0.0",
+  "fastapi",
+  "uvicorn",
+  "pandas",
+  "scikit-learn",
+  "httpx",
+]
 
 [project.scripts]
 lele = "lele_manager.cli.lele:main"

@@ -8,6 +8,8 @@ import pandas as pd
 
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import load_topic_model
+from lele_manager.config import default_data_path
+
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -19,7 +21,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "-i",
         "--input",
-        default="data/lessons.jsonl",
+        default=str(default_data_path()),
         help="Percorso del dataset di lesson (JSONL).",
     )
     parser.add_argument(
@@ -123,7 +125,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         df = df.reset_index().rename(columns={"index": args.id_column})
 
     print(f"[info] Carico modello da: {model_path}")
-    pipeline = load_topic_model(str(model_path))
+    pipeline = load_topic_model(str(model_path) if model_path else None)
 
     print("[info] Costruisco indice di similarità...")
     index = LessonSimilarityIndex.from_topic_pipeline(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
 
 from pathlib import Path
@@ -12,7 +11,7 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from lele_manager.config import default_data_path, default_model_path
+from lele_manager.config import resolve_data_path, resolve_model_path
 
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import (
@@ -21,21 +20,17 @@ from lele_manager.ml.topic_model import (
     train_topic_model,
 )
 
-# Percorsi (default XDG; override via env var o monkeypatch in test)
-# - LELE_DATA_PATH  : path completo a lessons.jsonl
-# - LELE_MODEL_PATH : path completo a topic_model.joblib
-DATA_PATH = default_data_path()
-MODEL_PATH = default_model_path()
+
+# Override espliciti (usati nei test via monkeypatch) — se None si usa default_*_path()
+DATA_PATH: Path | None = None
+MODEL_PATH: Path | None = None
 
 
 def get_data_path() -> Path:
-    env = os.environ.get("LELE_DATA_PATH")
-    return Path(env).expanduser() if env else DATA_PATH
-
+    return DATA_PATH if DATA_PATH is not None else resolve_data_path()
 
 def get_model_path() -> Path:
-    env = os.environ.get("LELE_MODEL_PATH")
-    return Path(env).expanduser() if env else MODEL_PATH
+    return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
 
 
 app = FastAPI(
@@ -204,7 +199,8 @@ def build_similarity_index(df: pd.DataFrame):
             detail="Modello di topic non disponibile. Allena prima il modello con /train/topic.",
         )
 
-    pipeline = load_topic_model(str(model_path))
+    pipeline = load_topic_model(str(model_path) if model_path else None)
+
     index = LessonSimilarityIndex.from_topic_pipeline(df=df, pipeline=pipeline, id_column="id")
     return index
 
@@ -372,7 +368,11 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
 
     # Filtro importance range
     if body.importance_gte is not None or body.importance_lte is not None:
-        df["importance"] = pd.to_numeric(df.get("importance"), errors="coerce")
+        importance = df.get("importance")
+        if importance is None:
+            df["importance"] = pd.NA
+        else:
+            df["importance"] = pd.to_numeric(importance, errors="coerce")
 
         if body.importance_gte is not None:
             df = df[df["importance"] >= body.importance_gte]
@@ -442,7 +442,7 @@ def get_lesson(lesson_id: str) -> Lesson:
 @app.post("/lessons", response_model=Lesson, status_code=201)
 def add_lesson(lesson_in: LessonCreate) -> Lesson:
     """
-    Aggiunge una nuova LeLe al dataset (append su data/lessons.jsonl).
+    Aggiunge una nuova LeLe al dataset (append su lessons.jsonl (data path)).
     L'ID viene generato se non fornito.
     """
     lele_id = lesson_in.id or uuid.uuid4().hex
@@ -512,7 +512,7 @@ def similar_lessons(
 @app.post("/train/topic", response_model=TrainResponse)
 def train_topic() -> TrainResponse:
     """
-    Allena (o riallena) il topic model a partire da data/lessons.jsonl
+    Allena (o riallena) il topic model a partire da lessons.jsonl (data path)
     e salva la pipeline in models/topic_model.joblib.
 
     Hardening:
@@ -550,7 +550,7 @@ def train_topic() -> TrainResponse:
 
     _ensure_model_dir()
     model_path = get_model_path()
-    save_topic_model(pipeline, str(model_path))
+    save_topic_model(pipeline, str(model_path) if model_path else None)
 
     topics = sorted(df_train["topic"].astype(str).unique())
     return TrainResponse(
