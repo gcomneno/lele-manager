@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from .features import LessonFeatureExtractor, TextFeatureConfig
-from ..paths import topic_model_path
+from lele_manager.core.paths import topic_model_path
 
 
 @dataclass

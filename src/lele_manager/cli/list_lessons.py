@@ -5,7 +5,7 @@ from typing import Sequence
 
 import argparse
 
-from lele_manager.storage import load_lessons, default_db_path
+from lele_manager.core.storage import load_lessons, default_db_path
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
