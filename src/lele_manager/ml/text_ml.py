@@ -8,7 +8,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.pipeline import Pipeline
 
-from lele_manager.model import Lesson
+from lele_manager.core.model import Lesson
 
 
 def _collect_text_and_labels(lessons: Sequence[Lesson]) -> Tuple[List[str], List[str]]:

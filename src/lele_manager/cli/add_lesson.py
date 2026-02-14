@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from lele_manager.model import Lesson
-from lele_manager.storage import append_lesson, default_db_path
+from lele_manager.core.model import Lesson
+from lele_manager.core.storage import append_lesson, default_db_path
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(

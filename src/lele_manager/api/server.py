@@ -11,7 +11,7 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from lele_manager.config import resolve_data_path, resolve_model_path
+from lele_manager.core.config import resolve_data_path, resolve_model_path
 
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import (

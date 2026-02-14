@@ -8,7 +8,7 @@ import pandas as pd
 
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import load_topic_model
-from lele_manager.config import default_data_path
+from lele_manager.core.config import default_data_path
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
