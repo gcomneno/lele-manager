@@ -1,56 +1,48 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-APP_DIR_NAME = "lele-manager"
-
-
-def xdg_data_home() -> Path:
-    """XDG data home:
-    - usa $XDG_DATA_HOME se presente
-    - altrimenti fallback ~/.local/share
-    """
-    env = os.environ.get("XDG_DATA_HOME")
-    if env:
-        return Path(env).expanduser()
-    return Path.home() / ".local" / "share"
-
-
-def xdg_cache_home() -> Path:
-    """XDG cache home:
-    - usa $XDG_CACHE_HOME se presente
-    - altrimenti fallback ~/.cache
-    """
-    env = os.environ.get("XDG_CACHE_HOME")
-    if env:
-        return Path(env).expanduser()
-    return Path.home() / ".cache"
+from .paths import (
+    DEFAULT_DB_FILENAME,
+    DEFAULT_TOPIC_MODEL_FILENAME,
+    data_dir,
+    cache_dir,
+    lessons_path,
+    topic_model_path,
+)
 
 
 def default_data_path() -> Path:
-    """Default dataset path (JSONL) usando XDG."""
-    return xdg_data_home() / APP_DIR_NAME / "lessons.jsonl"
+    """
+    Default dataset path (JSONL) usando XDG/platformdirs (app-specific).
+    Nota: NON considera LELE_DATA_PATH (deprecated).
+    """
+    return data_dir() / DEFAULT_DB_FILENAME
 
 
 def default_model_path() -> Path:
-    """Default model path usando XDG."""
-    return xdg_cache_home() / APP_DIR_NAME / "topic_model.joblib"
+    """
+    Default model path usando XDG/platformdirs (app-specific).
+    Nota: NON considera LELE_MODEL_PATH (deprecated).
+    """
+    return cache_dir() / DEFAULT_TOPIC_MODEL_FILENAME
 
 
 def resolve_data_path() -> Path:
-    """Dataset path con override via env var:
-    - $LELE_DATA_PATH se presente
+    """
+    Dataset path con override via env:
+    - supporta LELE_DATA_PATH (deprecated, con warning in paths.py)
+    - supporta LELE_DATA_DIR (nuovo)
     - altrimenti default XDG
     """
-    env = os.environ.get("LELE_DATA_PATH")
-    return Path(env).expanduser() if env else default_data_path()
+    return lessons_path()
 
 
 def resolve_model_path() -> Path:
-    """Model path con override via env var:
-    - $LELE_MODEL_PATH se presente
+    """
+    Model path con override via env:
+    - supporta LELE_MODEL_PATH (deprecated, con warning in paths.py)
+    - supporta LELE_CACHE_DIR (nuovo)
     - altrimenti default XDG
     """
-    env = os.environ.get("LELE_MODEL_PATH")
-    return Path(env).expanduser() if env else default_model_path()
+    return topic_model_path()
