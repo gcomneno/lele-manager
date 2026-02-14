@@ -7,6 +7,7 @@ from typing import List, Optional
 import pandas as pd
 
 from lele_manager.ml.topic_model import load_topic_model, save_topic_model, train_topic_model
+from lele_manager.config import default_data_path
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -20,7 +21,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "-i",
         "--input",
-        default="data/lessons.jsonl",
+        default=str(default_data_path()),
         help="Percorso del dataset di lesson (JSONL con almeno 'text' e 'topic').",
     )
     parser.add_argument(
@@ -107,7 +108,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         raise SystemExit(f"[errore] {exc}")
 
     # Salva modello
-    save_topic_model(pipeline, str(output_path))
+    save_topic_model(pipeline, str(output_path) if output_path else None)
+    _ = load_topic_model(str(output_path) if output_path else None)
     print(f"[ok] Modello salvato in: {output_path}")
 
     # Check rapido di load

@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable, List
-
 import json
 
 from .model import Lesson
+from .paths import lessons_path
 
-DEFAULT_DB_PATH = Path("data/lessons.jsonl")
 
 def default_db_path() -> Path:
-    """Percorso di default del file JSONL."""
-    return DEFAULT_DB_PATH
+    """Percorso di default del file JSONL (XDG via platformdirs)."""
+    return lessons_path()
+
 
 def append_lesson(lesson: Lesson, db_path: Path | None = None) -> None:
     """Aggiunge una lesson al file JSONL (una riga = un record JSON)."""
@@ -23,6 +23,7 @@ def append_lesson(lesson: Lesson, db_path: Path | None = None) -> None:
     line = json.dumps(lesson.to_dict(), ensure_ascii=False)
     with db_path.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+
 
 def load_lessons(db_path: Path | None = None) -> List[Lesson]:
     """Carica tutte le lesson dal file JSONL; se non esiste, ritorna lista vuota."""
@@ -41,6 +42,7 @@ def load_lessons(db_path: Path | None = None) -> List[Lesson]:
             data = json.loads(line)
             lessons.append(Lesson.from_dict(data))
     return lessons
+
 
 def iter_lessons(db_path: Path | None = None) -> Iterable[Lesson]:
     """Iteratore lazy sulle lesson (per futuri usi su file grandi)."""

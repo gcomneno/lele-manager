@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import joblib
@@ -9,6 +10,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from .features import LessonFeatureExtractor, TextFeatureConfig
+from ..paths import topic_model_path
+
 
 @dataclass
 class TopicModelConfig:
@@ -18,11 +21,8 @@ class TopicModelConfig:
     max_iter: int = 1_000
     use_meta_features: bool = True
 
+
 def build_topic_pipeline(config: Optional[TopicModelConfig] = None) -> Pipeline:
-    """
-    Restituisce una Pipeline sklearn:
-    [LessonFeatureExtractor] -> [LogisticRegression]
-    """
     cfg = config or TopicModelConfig()
 
     feature_extractor = LessonFeatureExtractor(
@@ -35,25 +35,13 @@ def build_topic_pipeline(config: Optional[TopicModelConfig] = None) -> Pipeline:
         max_iter=cfg.max_iter,
     )
 
-    pipe = Pipeline(
-        steps=[
-            ("features", feature_extractor),
-            ("clf", clf),
-        ]
-    )
-    return pipe
+    return Pipeline(steps=[("features", feature_extractor), ("clf", clf)])
+
 
 def train_topic_model(
     df: pd.DataFrame,
     config: Optional[TopicModelConfig] = None,
 ) -> Pipeline:
-    """
-    Allena la pipeline sul DataFrame `df`.
-
-    Richiede:
-      - df["text"]
-      - df["topic"] come label di addestramento
-    """
     if "topic" not in df.columns:
         raise KeyError("Expected 'topic' column in training DataFrame.")
 
@@ -70,14 +58,28 @@ def train_topic_model(
         )
 
     pipe = build_topic_pipeline(config)
-    X = df
-    pipe.fit(X, y)
+    pipe.fit(df, y)
     return pipe
 
-def save_topic_model(pipeline: Pipeline, path: str) -> None:
-    """Salva la pipeline (feature + modello) su disco."""
-    joblib.dump(pipeline, path)
 
-def load_topic_model(path: str) -> Pipeline:
-    """Carica una pipeline precedentemente salvata."""
-    return joblib.load(path)
+def save_topic_model(pipeline: Pipeline, path: str | Path | None = None) -> Path:
+    """
+    Salva la pipeline (feature + modello) su disco.
+
+    Se path è None, salva nel path XDG di default.
+    Ritorna il Path effettivo usato.
+    """
+    p = Path(path).expanduser().resolve() if path is not None else topic_model_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipeline, p)
+    return p
+
+
+def load_topic_model(path: str | Path | None = None) -> Pipeline:
+    """
+    Carica una pipeline precedentemente salvata.
+
+    Se path è None, carica dal path XDG di default.
+    """
+    p = Path(path).expanduser().resolve() if path is not None else topic_model_path()
+    return joblib.load(p)

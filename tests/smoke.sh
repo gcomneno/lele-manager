@@ -1,3 +1,7 @@
+# NOTE (dev smoke): questo script usa un dataset fixture *repo-local*
+# (data/lessons.jsonl) per verifiche rapide durante lo sviluppo.
+# I default "utente finale" invece sono XDG (vedi paths.py / config.py).
+
 source .venv/bin/activate
 
 # 1) Import dal vault (se non l’hai già fatto oggi)
