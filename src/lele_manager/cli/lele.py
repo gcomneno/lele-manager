@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import sys
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -118,6 +120,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stampa la risposta come JSON invece che in formato umano.",
     )
 
+
+    # ------------------------------------------------------------------
+    # lele suggest
+    # ------------------------------------------------------------------
+    p_suggest = subparsers.add_parser(
+        "suggest",
+        help="Suggerisce lesson simili a testo libero (POST /similar).",
+    )
+    src = p_suggest.add_mutually_exclusive_group(required=False)
+    src.add_argument(
+        "--text",
+        help="Testo query esplicito.",
+    )
+    src.add_argument(
+        "--file",
+        type=str,
+        help="Legge testo da file.",
+    )
+    src.add_argument(
+        "--watch",
+        type=str,
+        help="Monitora un file e ristampa suggerimenti quando cambia.",
+    )
+    p_suggest.add_argument(
+        "--every",
+        type=int,
+        default=2,
+        help="Intervallo (s) per --watch (default: 2).",
+    )
+    p_suggest.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Numero di risultati simili (default: 5).",
+    )
+    p_suggest.add_argument(
+        "--min-score",
+        type=float,
+        default=0.1,
+        help="Soglia minima di similarità (default: 0.1).",
+    )
+    p_suggest.add_argument(
+        "--json",
+        action="store_true",
+        help="Stampa la risposta come JSON invece che in formato umano.",
+    )
     # ------------------------------------------------------------------
     # lele train-topic
     # ------------------------------------------------------------------
@@ -299,7 +347,76 @@ def cmd_similar(base_url: str, args: argparse.Namespace) -> int:
         _print_human_similar(results, query_text)
     return 0
 
+def _read_text_or_stdin(args: argparse.Namespace) -> str:
+    if getattr(args, "text", None):
+        return str(args.text)
+    f = getattr(args, "file", None)
+    if f:
+        return Path(f).read_text(encoding="utf-8")
+    if not sys.stdin.isatty():
+        return sys.stdin.read()
+    return ""
 
+
+def cmd_suggest(base_url: str, args: argparse.Namespace) -> int:
+    def do_once(text: str) -> int:
+        text = (text or "").strip()
+        if not text:
+            print("[errore] Testo query vuoto.", file=sys.stderr)
+            return 1
+
+        payload: Dict[str, Any] = {
+            "text": text,
+            "top_k": args.top_k,
+            "min_score": args.min_score,
+        }
+
+        with httpx.Client(base_url=base_url, timeout=10.0) as client:
+            try:
+                resp = client.post("/similar", json=payload)
+            except httpx.RequestError as exc:
+                print(f"[errore] Errore di rete verso {exc.request.url}: {exc}", file=sys.stderr)
+                return 1
+
+        if resp.status_code == 503:
+            print("[errore] Modello mancante. Allena prima con: lele train-topic", file=sys.stderr)
+            return 1
+
+        if resp.status_code >= 400:
+            print(f"[errore] {resp.status_code} {resp.text}", file=sys.stderr)
+            return 1
+
+        data = resp.json()
+        if args.json:
+            _print_json(data)
+        else:
+            query_text = data.get("query", "")
+            results = data.get("results", [])
+            _print_human_similar(results, query_text)
+        return 0
+
+    watch = getattr(args, "watch", None)
+    if watch:
+        p = Path(watch)
+        last: Optional[str] = None
+        while True:
+            try:
+                cur = p.read_text(encoding="utf-8")
+            except OSError as exc:
+                print(f"[errore] Impossibile leggere {p}: {exc}", file=sys.stderr)
+                return 1
+
+            if cur != last:
+                print("=== suggest ===")
+                rc = do_once(cur)
+                if rc != 0:
+                    return rc
+                last = cur
+            time.sleep(int(args.every))
+        return 0
+    else:
+        text = _read_text_or_stdin(args)
+        return do_once(text)
 def cmd_train_topic(base_url: str, args: argparse.Namespace) -> int:  # noqa: ARG001
     with httpx.Client(base_url=base_url, timeout=60.0) as client:
         try:
@@ -342,6 +459,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             code = cmd_show(base_url, args)
         elif args.command == "similar":
             code = cmd_similar(base_url, args)
+        elif args.command == "suggest":
+            code = cmd_suggest(base_url, args)
         elif args.command == "train-topic":
             code = cmd_train_topic(base_url, args)
         else:

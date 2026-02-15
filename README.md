@@ -330,6 +330,8 @@ L’output è una pipeline sklearn completa (feature + modello) salvata in:
 
 ## 🔍 Suggerire lesson simili (CLI)
 
+Nota: via API è disponibile anche `POST /similar` per confrontare testo libero senza ID.
+
 ### Query da testo libero
 
 ```bash
@@ -467,6 +469,7 @@ Modalità “solo API” (dataset e modello già pronti):
 - `GET /lessons/{id}/similar` → LeLe simili a quella indicata.
 - `POST /train/topic` → (ri)allena il topic model a partire da `data/lessons.jsonl`.
 - `POST /lessons/search` → ricerca avanzata con payload JSON (testo + filtri).
+- `POST /similar` → suggerisce LeLe simili a partire da testo libero (senza `lesson_id`).
 
 ---
 
@@ -567,3 +570,49 @@ git push origin v1.0.0
 
 ## Contributing
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+
+---
+
+## 🧩 Nuovo CLI: `lele` (API client)
+
+Oltre agli script tecnici (`python -m lele_manager.cli.*`), è disponibile un client CLI più ergonomico:
+
+```bash
+lele --help
+```
+
+### 🔍 Suggerire LeLe simili mentre scrivi
+
+Query da testo libero (via API `POST /similar`):
+
+```bash
+lele suggest --text "Quando uso std::cin >> su una string, l'input viene troncato agli spazi"
+```
+
+Da file:
+
+```bash
+lele suggest --file note.md
+```
+
+Da stdin:
+
+```bash
+cat note.md | lele suggest
+```
+
+Modalità watch (ogni 2 secondi):
+
+```bash
+lele suggest --watch note.md --every 2
+```
+
+Opzioni principali:
+
+- `--top-k` → numero massimo risultati (default 5)
+- `--min-score` → soglia minima di similarità (default 0.1)
+- `--json` → output JSON grezzo
+
+Questo comando usa l’API locale (default `http://127.0.0.1:8000`).
+Assicurati che il server sia attivo (`./scripts/lele-api-dev.sh`).

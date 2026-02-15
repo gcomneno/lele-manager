@@ -12,7 +12,9 @@ The format is based on **Keep a Changelog**.
 ## [Unreleased]
 
 ### Added
-- (placeholder)
+- API: `POST /similar` endpoint for text-based similarity (no lesson_id required).
+- CLI: `lele suggest` command (supports --text, --file, stdin, --watch).
+
 
 ### Changed
 - (placeholder)
