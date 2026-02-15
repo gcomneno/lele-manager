@@ -40,3 +40,8 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+  "perf: performance guardrails (non-benchmark, should be stable in CI)",
+]
