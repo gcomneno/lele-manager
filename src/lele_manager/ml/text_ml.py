@@ -1,3 +1,12 @@
+"""
+LEGACY (soft-deprecated)
+
+Questo modulo contiene una pipeline similarity TF-IDF precedente.
+L'API server usa lele_manager.ml.similarity.LessonSimilarityIndex.
+
+Non rimuovere/refactor qui in #34: bonifica in issue dedicata.
+"""
+
 from dataclasses import dataclass
 from typing import List, Sequence, Tuple
 
