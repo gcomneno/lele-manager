@@ -31,3 +31,49 @@ jobs:
 
       - name: Pytest
         run: pytest -q
+
+  packaging-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Install wheel in clean venv
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install --upgrade pip
+          /tmp/venv/bin/pip install dist/*.whl
+
+      - name: Smoke CLI
+        run: |
+          /tmp/venv/bin/lele --help
+
+      - name: Smoke UI asset present + content check
+        run: |
+          /tmp/venv/bin/python - <<'PY'
+          from pathlib import Path
+          import lele_manager.api.server as s
+
+          ui_path = Path(s.__file__).with_name("ui.html")
+          assert ui_path.exists(), f"ui.html missing at {ui_path}"
+
+          data = ui_path.read_text(encoding="utf-8")
+          must = ["textarea", "btnFreeSimilar"]
+          missing = [x for x in must if x not in data]
+          assert not missing, f"ui.html content check failed; missing: {missing}"
+          print("OK: ui.html present + markers found")
+          PY

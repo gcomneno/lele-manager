@@ -84,7 +84,15 @@
   <aside class="card">
     <h3>Similar</h3>
     <div class="meta">Click su un risultato → /lessons/{id}/similar</div>
-    <div id="similarStatus" class="meta" style="margin-top:8px;"></div>
+    <div class="meta">Free-text → POST /similar • Click risultato → /lessons/{id}/similar</div>
+
+<label>Testo libero</label>
+<textarea id="freeText" rows="6" placeholder="Incolla qui un testo e cerca LeLe simili..."></textarea>
+<div style="margin-top: 10px; display:flex; gap:8px;">
+  <button id="btnFreeSimilar" type="button">Similar (free-text)</button>
+</div>
+
+<div id="similarStatus" class="meta" style="margin-top:8px;"></div>
     <div id="similarErr" class="error" style="margin-top:8px;"></div>
     <div id="similarBox" style="margin-top:10px;"></div>
   </aside>
@@ -216,7 +224,44 @@ async function loadSimilar(id) {
   }
 }
 
+
+async function doFreeSimilar() {
+  el("similarErr").textContent = "";
+  el("similarStatus").textContent = "searching free-text...";
+  el("similarBox").innerHTML = "";
+
+  const text = (el("freeText").value || "").trim();
+  if (!text) {
+    el("similarStatus").textContent = "";
+    el("similarErr").textContent = "Inserisci un testo.";
+    return;
+  }
+
+  const topK = Number(el("top_k").value || 10);
+  const minScore = Number(el("min_score").value || 0.0);
+
+  try {
+    const resp = await fetch("/similar", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ text, top_k: topK, min_score: minScore }),
+    });
+    const data = await jsonOrThrow(resp);
+
+    el("similarStatus").textContent = `ok: ${data.results.length} risultati`;
+    const pre = document.createElement("pre");
+    pre.className = "mono";
+    pre.textContent = JSON.stringify(data, null, 2);
+    el("similarBox").appendChild(pre);
+  } catch (e) {
+    el("similarStatus").textContent = "";
+    el("similarErr").textContent = String(e.message || e);
+  }
+}
+
+
 el("btnSearch").addEventListener("click", doSearch);
+el("btnFreeSimilar").addEventListener("click", doFreeSimilar);
 el("btnList").addEventListener("click", doList);
 el("q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
 </script>

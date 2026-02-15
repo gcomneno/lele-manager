@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lele-manager"
-version = "1.1.2"
+version = "1.4.0"
 description = "Lesson Learned Manager: archivio intelligente di lesson learned testuali."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -45,3 +45,6 @@ where = ["src"]
 markers = [
   "perf: performance guardrails (non-benchmark, should be stable in CI)",
 ]
+
+[tool.setuptools.package-data]
+"lele_manager.api" = ["ui.html"]
