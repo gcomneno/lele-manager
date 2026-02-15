@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LeLe Manager — UI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    header { padding: 12px 16px; border-bottom: 1px solid #ddd; }
+    main { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; padding: 12px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+    label { display:block; font-size: 12px; opacity: 0.8; margin-top: 8px; }
+    input, select, button, textarea { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; }
+    button { cursor: pointer; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .results { display: grid; gap: 8px; margin-top: 8px; }
+    .item { border: 1px solid #eee; border-radius: 8px; padding: 10px; cursor: pointer; }
+    .item:hover { background: #fafafa; }
+    .meta { font-size: 12px; opacity: 0.75; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .error { color: #b00020; font-size: 13px; }
+    .ok { color: #0a7a2f; font-size: 13px; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+<header>
+  <strong>LeLe Manager — UI</strong>
+  <span class="meta">(/lessons/search + /lessons/{id}/similar)</span>
+</header>
+
+<main>
+  <section class="card">
+    <h3>Search</h3>
+
+    <label>Query (q)</label>
+    <input id="q" placeholder="es. pandas timestamp, pydantic, xdg..." />
+
+    <div class="row">
+      <div>
+        <label>Topic (opzionale)</label>
+        <input id="topic" placeholder="es. python" />
+      </div>
+      <div>
+        <label>Source (opzionale)</label>
+        <input id="source" placeholder="es. note" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Importance ≥</label>
+        <input id="importance_gte" type="number" min="1" max="5" placeholder="1..5" />
+      </div>
+      <div>
+        <label>Importance ≤</label>
+        <input id="importance_lte" type="number" min="1" max="5" placeholder="1..5" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>top_k</label>
+        <input id="top_k" type="number" min="1" placeholder="10" value="10" />
+      </div>
+      <div>
+        <label>min_score</label>
+        <input id="min_score" type="number" step="0.01" placeholder="0.00" value="0.00" />
+      </div>
+    </div>
+
+    <div style="margin-top: 10px; display:flex; gap:8px;">
+      <button id="btnSearch">Search</button>
+      <button id="btnList" type="button">List (GET /lessons)</button>
+    </div>
+
+    <div id="status" class="meta" style="margin-top:8px;"></div>
+    <div id="err" class="error" style="margin-top:8px;"></div>
+
+    <h3 style="margin-top:16px;">Risultati</h3>
+    <div id="results" class="results"></div>
+  </section>
+
+  <aside class="card">
+    <h3>Similar</h3>
+    <div class="meta">Click su un risultato → /lessons/{id}/similar</div>
+    <div id="similarStatus" class="meta" style="margin-top:8px;"></div>
+    <div id="similarErr" class="error" style="margin-top:8px;"></div>
+    <div id="similarBox" style="margin-top:10px;"></div>
+  </aside>
+</main>
+
+<script>
+const el = (id) => document.getElementById(id);
+
+function jsonOrThrow(resp) {
+  return resp.json().then((data) => {
+    if (!resp.ok) {
+      const detail = (data && data.detail) ? data.detail : ("HTTP " + resp.status);
+      throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    }
+    return data;
+  });
+}
+
+function mkItem(row) {
+  const div = document.createElement("div");
+  div.className = "item";
+  div.dataset.id = row.id;
+
+  const title = document.createElement("div");
+  title.innerHTML = `<strong>#${row.id}</strong> <span class="meta">${row.topic ?? ""}</span>`;
+  div.appendChild(title);
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = `importance=${row.importance ?? "?"}  score=${row.score ?? "?"}  source=${row.source ?? "?"}`;
+  div.appendChild(meta);
+
+  const snippet = document.createElement("div");
+  snippet.style.marginTop = "6px";
+  snippet.textContent = (row.text ?? "").slice(0, 240);
+  div.appendChild(snippet);
+
+  div.addEventListener("click", () => loadSimilar(row.id));
+  return div;
+}
+
+function renderResults(rows) {
+  const box = el("results");
+  box.innerHTML = "";
+  rows.forEach((r) => box.appendChild(mkItem(r)));
+}
+
+function buildSearchBody() {
+  const body = {
+    q: el("q").value || null,
+    topic: el("topic").value || null,
+    source: el("source").value || null,
+    top_k: Number(el("top_k").value || 10),
+    min_score: Number(el("min_score").value || 0.0),
+  };
+
+  const ig = el("importance_gte").value;
+  const il = el("importance_lte").value;
+  body.importance_gte = ig ? Number(ig) : null;
+  body.importance_lte = il ? Number(il) : null;
+
+  return body;
+}
+
+async function doSearch() {
+  el("err").textContent = "";
+  el("status").textContent = "searching...";
+  el("similarErr").textContent = "";
+  el("similarStatus").textContent = "";
+  el("similarBox").innerHTML = "";
+
+  try {
+    const resp = await fetch("/lessons/search", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(buildSearchBody()),
+    });
+    const data = await jsonOrThrow(resp);
+    renderResults(data);
+    el("status").textContent = `ok: ${data.length} risultati`;
+  } catch (e) {
+    el("status").textContent = "";
+    el("err").textContent = String(e.message || e);
+    renderResults([]);
+  }
+}
+
+async function doList() {
+  el("err").textContent = "";
+  el("status").textContent = "loading...";
+  el("similarErr").textContent = "";
+  el("similarStatus").textContent = "";
+  el("similarBox").innerHTML = "";
+
+  try {
+    const resp = await fetch("/lessons");
+    const data = await jsonOrThrow(resp);
+    renderResults(data);
+    el("status").textContent = `ok: ${data.length} lezioni`;
+  } catch (e) {
+    el("status").textContent = "";
+    el("err").textContent = String(e.message || e);
+    renderResults([]);
+  }
+}
+
+async function loadSimilar(id) {
+  el("similarErr").textContent = "";
+  el("similarStatus").textContent = `loading similar for #${id}...`;
+  el("similarBox").innerHTML = "";
+
+  const topK = Number(el("top_k").value || 10);
+  const minScore = Number(el("min_score").value || 0.0);
+
+  try {
+    const url = `/lessons/${encodeURIComponent(id)}/similar?top_k=${encodeURIComponent(topK)}&min_score=${encodeURIComponent(minScore)}`;
+    const resp = await fetch(url);
+    const data = await jsonOrThrow(resp);
+
+    el("similarStatus").textContent = `ok: ${data.results.length} risultati`;
+
+    const pre = document.createElement("pre");
+    pre.className = "mono";
+    pre.textContent = JSON.stringify(data, null, 2);
+    el("similarBox").appendChild(pre);
+  } catch (e) {
+    el("similarStatus").textContent = "";
+    el("similarErr").textContent = String(e.message || e);
+  }
+}
+
+el("btnSearch").addEventListener("click", doSearch);
+el("btnList").addEventListener("click", doList);
+el("q").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+</script>
+</body>
+</html>

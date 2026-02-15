@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import json
 import uuid
-
-from pathlib import Path
-from typing import List, Optional
-
 import pandas as pd
 
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
+from pathlib import Path
+from fastapi.responses import HTMLResponse
 
 from lele_manager.core.config import resolve_data_path, resolve_model_path
-
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import (
     load_topic_model,
@@ -558,3 +556,9 @@ def train_topic() -> TrainResponse:
         n_lessons=int(len(df_train)),
         topics=topics,
     )
+
+
+@app.get("/ui", response_class=HTMLResponse)
+def ui() -> HTMLResponse:
+    ui_path = Path(__file__).with_name("ui.html")
+    return HTMLResponse(ui_path.read_text(encoding="utf-8"))
