@@ -9,7 +9,20 @@ This project follows **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
 
 The format is based on **Keep a Changelog**.
 
-## [Unreleased]
+## [1.3.0] - 2026-02-15
+
+### Added
+- Tests: add a basic performance guardrail for `POST /similar` (warm cache must be faster than cold).
+- Tests: register custom pytest marker `perf`.
+
+### Changed
+- API: cache `LessonSimilarityIndex` in API layer (reuse across requests).
+- CLI: improve `lele suggest --watch` UX (debounce, no-spam, clean Ctrl+C stop).
+
+### Fixed
+- API: harden `/lessons/search` against NaN/NaT edge cases (avoid false matches caused by `"nan"`).
+- API: add deterministic ordering to `/lessons/search` (importance desc, date desc, id asc).
+- API: invalidate similarity cache after `/train/topic`.
 
 ### Added
 - API: `POST /similar` endpoint for text-based similarity (no lesson_id required).
@@ -57,7 +70,9 @@ The format is based on **Keep a Changelog**.
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/gcomneno/lele-manager/compare/v1.2.0...v1.3.0
+[1.1.2]: https://github.com/gcomneno/lele-manager/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/gcomneno/lele-manager/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/gcomneno/lele-manager/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/gcomneno/lele-manager/releases/tag/v1.0.0
