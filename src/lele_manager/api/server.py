@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from pathlib import Path
 from fastapi.responses import HTMLResponse
+from threading import Lock
 
 from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.ml.similarity import LessonSimilarityIndex
@@ -202,14 +203,42 @@ def append_lesson_to_jsonl(lesson: Lesson) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _file_mtime_ns(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except FileNotFoundError:
+        return 0
+
+
+def _similarity_cache_key(data_path: Path, model_path: Path) -> tuple[int, int]:
+    return (_file_mtime_ns(data_path), _file_mtime_ns(model_path))
+
+
+def invalidate_similarity_cache() -> None:
+    """
+    Invalidate cached LessonSimilarityIndex in API layer.
+    Safe to call even if cache wasn't initialized yet.
+    """
+    lock = getattr(app.state, "sim_index_lock", None)
+    if lock is None:
+        app.state.sim_index_lock = Lock()
+        lock = app.state.sim_index_lock
+
+    with lock:
+        app.state.sim_index = None
+        app.state.sim_index_key = None
+
+
 def build_similarity_index(df: pd.DataFrame):
     """
-    Costruisce un LessonSimilarityIndex usando il topic model già allenato.
+    Costruisce (o riusa) un LessonSimilarityIndex usando il topic model già allenato.
+    Cached in API layer (#26).
     """
     if df.empty:
         raise HTTPException(status_code=400, detail="Nessuna LeLe presente nel dataset.")
 
     model_path = get_model_path()
+    data_path = get_data_path()
 
     if not model_path.exists():
         raise HTTPException(
@@ -217,10 +246,24 @@ def build_similarity_index(df: pd.DataFrame):
             detail="Modello di topic non disponibile. Allena prima il modello con /train/topic.",
         )
 
-    pipeline = load_topic_model(str(model_path) if model_path else None)
+    # Lazy init cache state
+    if not hasattr(app.state, "sim_index_lock"):
+        app.state.sim_index_lock = Lock()
+        app.state.sim_index = None
+        app.state.sim_index_key = None
 
-    index = LessonSimilarityIndex.from_topic_pipeline(df=df, pipeline=pipeline, id_column="id")
-    return index
+    key = _similarity_cache_key(data_path=data_path, model_path=model_path)
+
+    with app.state.sim_index_lock:
+        if app.state.sim_index is not None and app.state.sim_index_key == key:
+            return app.state.sim_index
+
+        pipeline = load_topic_model(str(model_path) if model_path else None)
+        index = LessonSimilarityIndex.from_topic_pipeline(df=df, pipeline=pipeline, id_column="id")
+
+        app.state.sim_index = index
+        app.state.sim_index_key = key
+        return index
 
 
 def _to_optional_str(value) -> Optional[str]:
@@ -525,7 +568,7 @@ def similar_lessons(
     filtered = [r for r in results_raw if r.lesson_id != lesson_id]
 
     # Mappa id -> text per anteprima
-    df_map = df.set_index("id")["text"].astype(str).to_dict()
+    df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
 
     items: List[SimilarItem] = []
     for r in filtered:
@@ -565,7 +608,7 @@ def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
     index = build_similarity_index(df)
     results_raw = index.most_similar(query_text=text, top_k=body.top_k, min_score=body.min_score)
 
-    df_map = df.set_index("id")["text"].astype(str).to_dict()
+    df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
 
     items: List[SimilarItem] = []
     for r in results_raw:
@@ -624,6 +667,7 @@ def train_topic() -> TrainResponse:
     _ensure_model_dir()
     model_path = get_model_path()
     save_topic_model(pipeline, str(model_path) if model_path else None)
+    invalidate_similarity_cache()
 
     topics = sorted(df_train["topic"].astype(str).unique())
     return TrainResponse(
