@@ -121,6 +121,12 @@ class SimilarResponse(BaseModel):
     results: List[SimilarItem]
 
 
+class SimilarTextRequest(BaseModel):
+    text: str = Field(..., description="Testo libero da confrontare.")
+    top_k: int = Field(default=5, ge=1, le=20)
+    min_score: float = Field(default=0.1, ge=0.0, le=1.0)
+
+
 class TrainResponse(BaseModel):
     message: str
     n_lessons: int
@@ -506,6 +512,41 @@ def similar_lessons(
         results=items,
     )
 
+
+
+@app.post("/similar", response_model=SimilarResponse)
+def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
+    """
+    Similarità a partire da testo libero (non richiede lesson_id).
+    """
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text must be non-empty")
+
+    df = load_lessons_df()
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile.")
+
+    # build_similarity_index() gestisce 503 se manca il modello.
+    index = build_similarity_index(df)
+    results_raw = index.most_similar(query_text=text, top_k=body.top_k, min_score=body.min_score)
+
+    df_map = df.set_index("id")["text"].astype(str).to_dict()
+
+    items: List[SimilarItem] = []
+    for r in results_raw:
+        preview = df_map.get(r.lesson_id, "").replace("\n", " ")
+        if len(preview) > 120:
+            preview = preview[:117] + "..."
+        items.append(
+            SimilarItem(
+                id=str(r.lesson_id),
+                score=float(r.score),
+                text_preview=preview,
+            )
+        )
+
+    return SimilarResponse(query=text, results=items)
 
 @app.post("/train/topic", response_model=TrainResponse)
 def train_topic() -> TrainResponse:

@@ -150,6 +150,9 @@ Queste sono le cose da fare **prima** di complicare il progetto con nuove featur
     - modello mancante → errore 503 leggibile.
 
 ### 4.2. Endpoint di ricerca avanzata
+
+_Nota: `POST /similar` (text-based similarity) è stato implementato in v1.2.0._
+
 **Motivazione:** i query param (`q`, `topic`, `source`, `limit`) sono limitati; serve qualcosa di più espressivo.
 
 - [ ] Aggiungere endpoint `POST /lessons/search` con payload JSON, es.:
@@ -169,6 +172,9 @@ Queste sono le cose da fare **prima** di complicare il progetto con nuove featur
 * [ ] Aggiungere esempi nel README.
 
 ### 4.3. Client CLI sopra le API
+
+_Stato: prima versione implementata in v1.2.0 (`lele suggest`)._
+
 **Motivazione:** non voglio ricordarmi `curl` a memoria ogni volta.
 
 Nuovo modulo CLI, ad es. `lele_manager.cli.api_client` + entrypoint `lele` (o simile):
