@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -11,6 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.pipeline import Pipeline
 
 from .features import LessonFeatureExtractor
+from lele_manager.core.ranking import SimilarityRankingConfig
 
 @dataclass
 class LessonSimilarityResult:
@@ -77,16 +78,45 @@ class LessonSimilarityIndex:
 
         return cls.from_dataframe(df=df, transformer=transformer, id_column=id_column)
 
+    def most_similar_with_ranking(
+        self,
+        query_text: str,
+        *,
+        ranking: SimilarityRankingConfig,
+        top_k: Optional[int] = None,
+        min_score: Optional[float] = None,
+    ) -> List[LessonSimilarityResult]:
+        """
+        Entry-point interna per usare RankingConfig senza cambiare semantica
+        o default della API pubblica `most_similar`.
+
+        #34: non è usata dal server/CLI (nessun behavior change).
+        """
+        if top_k is None:
+            top_k = ranking.top_k_default
+        if min_score is None:
+            min_score = ranking.min_score_default
+        return self.most_similar(
+            query_text=query_text,
+            top_k=top_k,
+            min_score=min_score,
+            ranking=ranking,
+        )
+
     # --- Query ---
     def most_similar(
         self,
         query_text: str,
         top_k: int = 5,
         min_score: float = 0.0,
+        ranking: Optional[SimilarityRankingConfig] = None,
     ) -> List[LessonSimilarityResult]:
         """
         Restituisce fino a `top_k` lesson simili al testo dato.
         """
+        if ranking is None:
+            ranking = SimilarityRankingConfig()
+
         query_df = pd.DataFrame({"text": [query_text]})
         query_vec = self.transformer.transform(query_df)
 
@@ -97,7 +127,10 @@ class LessonSimilarityIndex:
             mask = np.ones_like(scores, dtype=bool)
 
         # Ordina per score desc
-        idx_sorted = np.argsort(scores[mask])[::-1]
+        if ranking.argsort_kind is None:
+            idx_sorted = np.argsort(scores[mask])[::-1]
+        else:
+            idx_sorted = np.argsort(scores[mask], kind=ranking.argsort_kind)[::-1]
         scores_filtered = scores[mask][idx_sorted]
 
         lesson_ids_filtered = self.lesson_ids[mask][idx_sorted]
