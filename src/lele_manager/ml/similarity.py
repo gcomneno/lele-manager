@@ -126,14 +126,14 @@ class LessonSimilarityIndex:
         else:
             mask = np.ones_like(scores, dtype=bool)
 
-        # Ordina per score desc
-        if ranking.argsort_kind is None:
-            idx_sorted = np.argsort(scores[mask])[::-1]
-        else:
-            idx_sorted = np.argsort(scores[mask], kind=ranking.argsort_kind)[::-1]
-        scores_filtered = scores[mask][idx_sorted]
-
-        lesson_ids_filtered = self.lesson_ids[mask][idx_sorted]
+        # Deterministic ranking:
+        # 1) score DESC
+        # 2) lesson_id ASC (tie-breaker)
+        scores_m = scores[mask]
+        lesson_ids_m = self.lesson_ids[mask].astype(str)
+        order = np.lexsort((lesson_ids_m, -scores_m))
+        scores_filtered = scores_m[order]
+        lesson_ids_filtered = lesson_ids_m[order]
 
         results: List[LessonSimilarityResult] = []
         for lesson_id, score in zip(lesson_ids_filtered[:top_k], scores_filtered[:top_k]):
