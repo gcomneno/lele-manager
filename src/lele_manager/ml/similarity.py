@@ -51,7 +51,7 @@ class LessonSimilarityIndex:
         else:
             ids = df.index.astype(str).to_numpy()
 
-        feature_matrix = transformer.transform(df)
+        feature_matrix = sparse.csr_matrix(transformer.transform(df))
         return cls(
             transformer=transformer,
             lesson_ids=ids,
@@ -118,7 +118,8 @@ class LessonSimilarityIndex:
             ranking = SimilarityRankingConfig()
 
         query_df = pd.DataFrame({"text": [query_text]})
-        query_vec = self.transformer.transform(query_df)
+        # Ensure stable typing + expected format for sklearn
+        query_vec = sparse.csr_matrix(self.transformer.transform(query_df))
 
         scores = cosine_similarity(query_vec, self.feature_matrix).ravel()
         if min_score > 0.0:
