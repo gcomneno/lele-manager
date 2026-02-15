@@ -177,6 +177,20 @@ def load_lessons_df() -> pd.DataFrame:
     return df
 
 
+def _safe_str_series(s: pd.Series) -> pd.Series:
+    """
+    Convert a Series to safe strings without turning NaN/NaT into 'nan'/'NaT'.
+    """
+    return s.fillna("").astype(str)
+
+
+def _safe_dt_series(s: pd.Series) -> pd.Series:
+    """
+    Parse free-form date strings to datetime; invalid/missing becomes NaT.
+    """
+    return pd.to_datetime(s, errors="coerce", utc=True)
+
+
 def append_lesson_to_jsonl(lesson: Lesson) -> None:
     """
     Appende una singola LeLe al file JSONL.
@@ -383,6 +397,26 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
 
         if body.importance_lte is not None:
             df = df[df["importance"] <= body.importance_lte]
+
+    # Deterministic ordering (#29): importance DESC (NaN last), date DESC (NaT last), id ASC
+    if "importance" not in df.columns:
+        df["importance"] = pd.NA
+    if "date" not in df.columns:
+        df["date"] = pd.NA
+    if "id" not in df.columns:
+        df["id"] = ""
+
+    df["_importance_num"] = pd.to_numeric(df["importance"], errors="coerce")
+    df["_date_dt"] = _safe_dt_series(df["date"])
+    df["_id_sort"] = _safe_str_series(df["id"])
+
+    df = df.sort_values(
+        by=["_importance_num", "_date_dt", "_id_sort"],
+        ascending=[False, False, True],
+        na_position="last",
+        kind="mergesort",  # stable sort for determinism
+    )
+    df = df.drop(columns=["_importance_num", "_date_dt", "_id_sort"], errors="ignore")
 
     # Limit
     df = df.head(body.limit)
