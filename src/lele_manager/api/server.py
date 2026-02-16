@@ -129,6 +129,20 @@ class SimilarTextRequest(BaseModel):
     min_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
+class SimilarBatchItemRequest(BaseModel):
+    text: str = Field(..., description="Testo libero da confrontare.")
+    top_k: int = Field(default=5, ge=1, le=20)
+    min_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class SimilarBatchRequest(BaseModel):
+    items: List[SimilarBatchItemRequest] = Field(..., min_length=1, max_length=50, description="Batch di richieste di similarità.")
+
+
+class SimilarBatchResponse(BaseModel):
+    items: List[SimilarResponse]
+
+
 class TrainResponse(BaseModel):
     message: str
     n_lessons: int
@@ -687,3 +701,55 @@ def train_topic() -> TrainResponse:
 def ui() -> HTMLResponse:
     ui_path = Path(__file__).with_name("ui.html")
     return HTMLResponse(ui_path.read_text(encoding="utf-8"))
+
+# -----------------------------------------------------------------------------
+# Similarity batch
+# -----------------------------------------------------------------------------
+@app.post("/similar/batch", response_model=SimilarBatchResponse)
+def similar_from_text_batch(body: SimilarBatchRequest) -> SimilarBatchResponse:
+    """
+    Similarità batch a partire da testi liberi.
+
+    Non modifica il contratto di POST /similar.
+    Preserva l'ordine delle richieste.
+    """
+    df = load_lessons_df()
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile.")
+
+    index = build_similarity_index(df)  # cached
+
+    # Precalcola mappa id -> text per anteprime (una volta sola)
+    df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
+
+    out_items: List[SimilarResponse] = []
+    for req in body.items:
+        text = req.text.strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="text must be non-empty")
+
+        results_raw = similar_by_text(
+            df,
+            text,
+            transformer=index.transformer,
+            top_k=req.top_k,
+            min_score=req.min_score,
+        )
+
+        items: List[SimilarItem] = []
+        for r in results_raw:
+            t = df_map.get(r.lesson_id, "")
+            preview = t.replace("\n", " ")
+            if len(preview) > 120:
+                preview = preview[:117] + "..."
+            items.append(
+                SimilarItem(
+                    id=str(r.lesson_id),
+                    score=float(r.score),
+                    text_preview=preview,
+                )
+            )
+
+        out_items.append(SimilarResponse(query=text, results=items))
+
+    return SimilarBatchResponse(items=out_items)
