@@ -61,7 +61,7 @@
     <div class="row">
       <div>
         <label>top_k</label>
-        <input id="top_k" type="number" min="1" placeholder="10" value="10" />
+        <input id="top_k" type="number" min="1" placeholder="5" value="5" />
       </div>
       <div>
         <label>min_score</label>
@@ -145,7 +145,7 @@ function buildSearchBody() {
     q: el("q").value || null,
     topic: el("topic").value || null,
     source: el("source").value || null,
-    top_k: Number(el("top_k").value || 10),
+    top_k: Number(el("top_k").value || 5),
     min_score: Number(el("min_score").value || 0.0),
   };
 

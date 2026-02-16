@@ -18,7 +18,7 @@ from lele_manager.ml.topic_model import (
     save_topic_model,
     train_topic_model,
 )
-from lele_manager.ml.similarity_service import similar_by_text
+from lele_manager.ml.similarity_service import similar_by_text, similar_by_lesson_id
 
 
 # Override espliciti (usati nei test via monkeypatch) — se None si usa default_*_path()
@@ -126,7 +126,7 @@ class SimilarResponse(BaseModel):
 class SimilarTextRequest(BaseModel):
     text: str = Field(..., description="Testo libero da confrontare.")
     top_k: int = Field(default=5, ge=1, le=20)
-    min_score: float = Field(default=0.1, ge=0.0, le=1.0)
+    min_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class TrainResponse(BaseModel):
@@ -563,8 +563,7 @@ def similar_lessons(
     query_text = str(matches.iloc[0]["text"])
 
     index = build_similarity_index(df)
-    results_raw = index.most_similar(query_text=query_text, top_k=top_k, min_score=min_score)
-
+    results_raw = similar_by_lesson_id(df=df, lesson_id=lesson_id, transformer=index.transformer, top_k=top_k, min_score=min_score)
     # Togli eventuale self-match se costruito usando il testo della stessa LeLe
     filtered = [r for r in results_raw if r.lesson_id != lesson_id]
 
