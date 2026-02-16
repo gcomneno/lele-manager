@@ -12,6 +12,91 @@ from lele_manager.ml.features import LessonFeatureExtractor
 from lele_manager.ml.similarity import LessonSimilarityIndex, LessonSimilarityResult
 
 
+# --------------------------
+# Internals: renamed classes for VSCode/Pylance sanity
+# --------------------------
+@dataclass(frozen=True)
+class _LsaCacheKey_Internal:
+    """
+    In-process cache key (determinism guardrails).
+
+    - id(df) + id(transformer) + shape
+    - future: optional minimal fingerprint/hash
+    """
+    df_id: int
+    transformer_id: int
+    n_rows: int
+    n_cols: int
+
+
+@dataclass
+class _LsaIndexCache_Internal:
+    lesson_ids: np.ndarray
+    x_dense: np.ndarray
+    svd: object
+
+
+class _TfidfLsaBackend_Internal:
+    """
+    Backend LSA con guardrails interni:
+    - determinismo
+    - n_components validation
+    - cache-key robusta (PoC)
+    """
+
+    def __init__(self, *, n_components: int = 128, random_state: int = 0) -> None:
+        self._n_components = int(n_components)
+        self._random_state = int(random_state)
+        self._cache: dict[_LsaCacheKey_Internal, _LsaIndexCache_Internal] = {}
+
+    @property
+    def name(self) -> str:
+        return "lsa-guardrails"
+
+    def _build_or_get_index(self, *, df: pd.DataFrame, transformer: LessonFeatureExtractor) -> _LsaIndexCache_Internal:
+        key = _LsaCacheKey_Internal(
+            df_id=id(df),
+            transformer_id=id(transformer),
+            n_rows=int(df.shape[0]),
+            n_cols=int(df.shape[1]),
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        from scipy import sparse
+        from sklearn.decomposition import TruncatedSVD
+
+        # ids
+        if "id" in df.columns:
+            lesson_ids = df["id"].astype(str).to_numpy()
+        else:
+            lesson_ids = df.index.astype(str).to_numpy()
+
+        x = sparse.csr_matrix(transformer.transform(df))
+
+        # Guardrail n_components
+        n_samples, n_features = x.shape
+        max_allowed = max(0, min(n_samples - 1, n_features - 1))
+        n_components = min(self._n_components, max_allowed)
+        if n_components < 2:
+            raise ValueError(
+                f"LSA backend requires n_components >=2; got {n_components} "
+                f"(requested={self._n_components}, n_samples={n_samples}, n_features={n_features})"
+            )
+
+        svd = TruncatedSVD(n_components=n_components, random_state=self._random_state)
+        x_dense = svd.fit_transform(x)
+        cache = _LsaIndexCache_Internal(lesson_ids=lesson_ids, x_dense=np.asarray(x_dense), svd=svd)
+        self._cache[key] = cache
+        return cache
+
+# --------------------------
+# Alias pubblico pulito, senza V2
+# --------------------------
+TfidfLsaBackendGuardrails = _TfidfLsaBackend_Internal
+
+
 class SimilarityBackend(Protocol):
     """Backend interface for similarity computation (v2 abstraction)."""
 
