@@ -6,9 +6,10 @@ from typing import List, Optional
 
 import pandas as pd
 
-from lele_manager.ml.similarity import LessonSimilarityIndex
-from lele_manager.ml.topic_model import load_topic_model
 from lele_manager.core.config import default_data_path
+from lele_manager.ml.similarity import LessonSimilarityIndex
+from lele_manager.ml.similarity_service import similar_by_lesson_id, similar_by_text
+from lele_manager.ml.topic_model import load_topic_model
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -56,56 +57,44 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--text",
-        help="Testo della query per trovare lesson simili.",
+        default=None,
+        help="Testo libero da usare come query di similarità.",
     )
     group.add_argument(
         "--from-id",
-        help="ID di una lesson esistente da usare come query.",
+        default=None,
+        help="ID di una lesson esistente da usare come query di similarità.",
     )
 
     return parser.parse_args(argv)
 
-def _load_dataset(path: Path, text_column: str) -> pd.DataFrame:
-    if not path.exists():
-        raise SystemExit(f"[errore] File dataset non trovato: {path}")
 
-    df = pd.read_json(path, lines=True)
+def _load_dataset(dataset_path: Path, text_column: str) -> pd.DataFrame:
+    if not dataset_path.exists():
+        raise SystemExit(f"[err] Dataset non trovato: {dataset_path}")
 
-    if text_column != "text" and text_column in df.columns:
+    df = pd.read_json(dataset_path, lines=True)
+    if df.empty:
+        raise SystemExit("[err] Dataset vuoto: nessuna lesson disponibile.")
+
+    if text_column not in df.columns:
+        raise SystemExit(f"[err] Colonna testo '{text_column}' non trovata nel dataset.")
+
+    # normalizza: il resto del codice assume che il testo sia in colonna "text"
+    if text_column != "text":
         df = df.rename(columns={text_column: "text"})
 
-    if "text" not in df.columns:
-        raise SystemExit(
-            "[errore] Il dataset deve contenere una colonna testo "
-            f"(attesa: '{text_column}')."
-        )
-
+    # evitiamo NaN -> "nan"
+    df["text"] = df["text"].fillna("").astype(str)
     return df
 
-def _get_query_text_from_id(
-    df: pd.DataFrame,
-    id_column: str,
-    lesson_id: str,
-) -> str:
-    if id_column not in df.columns:
-        raise SystemExit(
-            f"[errore] Colonna ID '{id_column}' non trovata nel dataset."
-        )
 
+def _get_query_text_from_id(df: pd.DataFrame, id_column: str, lesson_id: str) -> str:
     matches = df[df[id_column].astype(str) == str(lesson_id)]
     if matches.empty:
-        raise SystemExit(
-            f"[errore] Nessuna lesson trovata con {id_column}={lesson_id!r}."
-        )
+        raise SystemExit(f"[err] Lesson con {id_column}={lesson_id!r} non trovata nel dataset.")
+    return str(matches.iloc[0]["text"])
 
-    row = matches.iloc[0]
-    text = str(row["text"])
-    if not text.strip():
-        raise SystemExit(
-            f"[errore] La lesson con {id_column}={lesson_id!r} ha testo vuoto."
-        )
-
-    return text
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_args(argv)
@@ -134,31 +123,44 @@ def main(argv: Optional[List[str]] = None) -> None:
         id_column=args.id_column,
     )
 
-    # Determina il testo di query
+    # Determina la query
     query_text: str
     query_id: Optional[str] = None
 
     if args.text is not None:
         query_text = args.text
         print("[info] Query basata su testo esplicito (--text).")
+        print("\n[info] Testo query:")
+        print("------------------------------------------------------------")
+        print(query_text)
+        print("------------------------------------------------------------\n")
+
+        results = similar_by_text(
+            df=df,
+            query_text=query_text,
+            transformer=index.transformer,
+            top_k=args.top_k,
+            min_score=args.min_score,
+        )
     else:
         query_id = str(args.from_id)
         query_text = _get_query_text_from_id(df, args.id_column, query_id)
         print(f"[info] Query basata su lesson esistente (--from-id={query_id}).")
 
-    print("\n[info] Testo query:")
-    print("------------------------------------------------------------")
-    print(query_text)
-    print("------------------------------------------------------------\n")
+        print("\n[info] Testo query:")
+        print("------------------------------------------------------------")
+        print(query_text)
+        print("------------------------------------------------------------\n")
 
-    results = index.most_similar(
-        query_text=query_text,
-        top_k=args.top_k,
-        min_score=args.min_score,
-    )
+        results = similar_by_lesson_id(
+            df=df,
+            lesson_id=query_id,
+            transformer=index.transformer,
+            top_k=args.top_k,
+            min_score=args.min_score,
+        )
 
-    # Se la query è basata su un ID, togliamo l'eventuale self-match
-    if query_id is not None:
+        # per coerenza con comportamento precedente: niente self-match
         results = [r for r in results if r.lesson_id != query_id]
 
     if not results:
@@ -168,7 +170,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     print("[ok] Lesson simili trovate:\n")
 
     # Mappa ID → testo (già con colonna text normalizzata)
-    # così evitiamo lookup complicati ad ogni iterazione
     df_id_map = df.set_index(args.id_column)["text"].astype(str).to_dict()
 
     for r in results:
@@ -178,6 +179,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         print(f"- {args.id_column}={r.lesson_id} | score={r.score:.3f}")
         print(f"  {preview}\n")
+
 
 if __name__ == "__main__":
     main()
