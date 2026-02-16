@@ -802,3 +802,18 @@ def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(def
         out_items.append(SimilarResponse(query=text, results=items, meta=meta))
 
     return SimilarBatchResponse(items=out_items)
+
+# -----------------------------------------------------------------------------
+# Editor integration (live suggest)
+# -----------------------------------------------------------------------------
+@app.post("/editor/suggest", response_model=SimilarResponse, response_model_exclude_none=True)
+def editor_suggest(
+    body: SimilarTextRequest,
+    explain: bool = Query(default=False, description="Se true, include meta e rank per debug."),
+) -> SimilarResponse:
+    """
+    Suggest LeLe simili mentre scrivo (editor integration).
+
+    Thin wrapper: same behavior/contract as POST /similar.
+    """
+    return similar_from_text(body=body, explain=explain)
