@@ -1,39 +1,42 @@
 from __future__ import annotations
 
-from typing import Optional, List
+from typing import List, Optional
 
 import pandas as pd
 
-from lele_manager.ml.features import LessonFeatureExtractor
-from lele_manager.ml.similarity import LessonSimilarityIndex, LessonSimilarityResult
 from lele_manager.core.ranking import SimilarityRankingConfig
+from lele_manager.ml.features import LessonFeatureExtractor
+from lele_manager.ml.similarity import LessonSimilarityResult
+from lele_manager.ml.similarity_backend import SimilarityBackend, TfidfSimilarityBackend
 
 
-# Similarity Service Boundary (wiring-only)
-# DO NOT import legacy text_ml.py here.
+# Similarity Service Boundary (SSOT for orchestration semantics).
+# IMPORTANT: keep backward-compatible positional signature.
 
 
 def similar_by_text(
     df: pd.DataFrame,
     query_text: str,
-    *,
     transformer: LessonFeatureExtractor,
-    ranking: Optional[SimilarityRankingConfig] = None,
     top_k: Optional[int] = None,
     min_score: Optional[float] = None,
+    ranking: Optional[SimilarityRankingConfig] = None,
+    backend: SimilarityBackend | None = None,
 ) -> List[LessonSimilarityResult]:
     """
     Free-text similarity orchestration.
 
-    Must remain identical to calling LessonSimilarityIndex.most_similar directly.
+    Must remain identical to the underlying engine semantics (defaults, determinism, ordering).
     """
     if ranking is None:
         ranking = SimilarityRankingConfig()
+    if backend is None:
+        backend = TfidfSimilarityBackend()
 
-    index = LessonSimilarityIndex.from_dataframe(df=df, transformer=transformer)
-
-    return index.most_similar(
+    return backend.most_similar(
+        df=df,
         query_text=query_text,
+        transformer=transformer,
         top_k=top_k if top_k is not None else ranking.top_k_default,
         min_score=min_score if min_score is not None else ranking.min_score_default,
         ranking=ranking,
@@ -43,22 +46,22 @@ def similar_by_text(
 def similar_by_lesson_id(
     df: pd.DataFrame,
     lesson_id: str,
-    *,
     transformer: LessonFeatureExtractor,
-    ranking: Optional[SimilarityRankingConfig] = None,
     top_k: Optional[int] = None,
     min_score: Optional[float] = None,
+    ranking: Optional[SimilarityRankingConfig] = None,
+    backend: SimilarityBackend | None = None,
 ) -> List[LessonSimilarityResult]:
-    """
-    Lesson-id similarity orchestration: extracts query text and delegates.
+    """Lesson-id similarity orchestration: extracts query text and delegates.
+
+    IMPORTANT: must remain equivalent to the baseline engine (self-match included).
     """
     if ranking is None:
         ranking = SimilarityRankingConfig()
-
     if "id" not in df.columns:
         raise KeyError("Expected 'id' column in DataFrame.")
     if "text" not in df.columns:
-        raise KeyError("Expected 'text' column in DataFrame.")
+        raise KeyError("Expected \text column in DataFrame.")
 
     row = df[df["id"].astype(str) == str(lesson_id)]
     if row.empty:
@@ -66,14 +69,12 @@ def similar_by_lesson_id(
 
     query_text = str(row.iloc[0]["text"])
 
-    index = LessonSimilarityIndex.from_dataframe(df=df, transformer=transformer)
-
-    results = index.most_similar(
-        query_text=query_text,
-        top_k=top_k if top_k is not None else ranking.top_k_default,
-        min_score=min_score if min_score is not None else ranking.min_score_default,
+    return similar_by_text(
+        df,
+        query_text,
+        transformer,
+        top_k=top_k,
+        min_score=min_score,
         ranking=ranking,
+        backend=backend,
     )
-
-    # IMPORTANT: no self-filtering here unless current API already filters it.
-    return results
