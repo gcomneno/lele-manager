@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,7 +14,15 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+class _DummyTransformer:
+    def transform(self, df):
+        # minimal feature matrix: (n_rows, 1)
+        return np.zeros((len(df), 1), dtype=float)
+
+
 class _DummyIndex:
+    transformer = _DummyTransformer()
+
     def most_similar(self, query_text: str, top_k: int, min_score: float):
         return []
 
@@ -27,8 +36,26 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _write_jsonl(
         data_path,
         [
-            {"id": "1", "text": "hello", "topic": "t1", "source": None, "importance": 1, "tags": None, "date": "2025-01-01", "title": None},
-            {"id": "2", "text": "world", "topic": "t1", "source": None, "importance": 2, "tags": None, "date": "2026-01-01", "title": None},
+            {
+                "id": "1",
+                "text": "hello",
+                "topic": "t1",
+                "source": None,
+                "importance": 1,
+                "tags": None,
+                "date": "2025-01-01",
+                "title": None,
+            },
+            {
+                "id": "2",
+                "text": "world",
+                "topic": "t1",
+                "source": None,
+                "importance": 2,
+                "tags": None,
+                "date": "2026-01-01",
+                "title": None,
+            },
         ],
     )
 

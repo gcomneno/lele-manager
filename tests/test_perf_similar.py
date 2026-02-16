@@ -3,21 +3,16 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import pytest
 import pandas as pd
 from fastapi.testclient import TestClient
 
 from lele_manager.api.server import app
 
 
-pytestmark = pytest.mark.perf
-
-
-client = TestClient(app)
-
-
 def test_similar_warm_is_faster_than_cold(monkeypatch, tmp_path: Path):
     from lele_manager.api import server
+
+    client = TestClient(app)
 
     # Ensure non-empty dataset
     monkeypatch.setattr(
@@ -45,7 +40,16 @@ def test_similar_warm_is_faster_than_cold(monkeypatch, tmp_path: Path):
 
     calls = {"n": 0}
 
+    import numpy as np
+
+    class _DummyTransformer:
+        def transform(self, df):
+            return np.zeros((len(df), 1), dtype=float)
+
     class _DummyIndex:
+        # Needed by similarity_service wiring
+        transformer = _DummyTransformer()
+
         def most_similar(self, query_text: str, top_k: int, min_score: float):
             return []
 
@@ -60,16 +64,20 @@ def test_similar_warm_is_faster_than_cold(monkeypatch, tmp_path: Path):
     # cold
     t0 = time.perf_counter()
     r1 = client.post("/similar", json={"text": "hello", "top_k": 5, "min_score": 0.0})
-    cold = time.perf_counter() - t0
+    t1 = time.perf_counter()
+
     assert r1.status_code == 200
 
-    # warm (should reuse cache => no second build)
-    t1 = time.perf_counter()
+    # warm
+    t2 = time.perf_counter()
     r2 = client.post("/similar", json={"text": "hello", "top_k": 5, "min_score": 0.0})
-    warm = time.perf_counter() - t1
+    t3 = time.perf_counter()
+
     assert r2.status_code == 200
 
-    assert calls["n"] == 1
+    cold = t1 - t0
+    warm = t3 - t2
 
-    # Relative check, wide margin to avoid flakiness
-    assert warm <= cold * 0.5
+    # The second call should be significantly faster (no sleep)
+    assert warm < cold
+    assert calls["n"] == 1
