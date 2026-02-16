@@ -562,14 +562,8 @@ def similar_lessons(
 
     query_text = str(matches.iloc[0]["text"])
 
-    index = build_similarity_index(df)  # cached
-    results_raw = similar_by_text(
-        df,
-        query_text,
-        transformer=index.transformer,
-        top_k=top_k,
-        min_score=min_score,
-    )
+    index = build_similarity_index(df)
+    results_raw = index.most_similar(query_text=query_text, top_k=top_k, min_score=min_score)
 
     # Togli eventuale self-match se costruito usando il testo della stessa LeLe
     filtered = [r for r in results_raw if r.lesson_id != lesson_id]
@@ -597,7 +591,6 @@ def similar_lessons(
     )
 
 
-
 @app.post("/similar", response_model=SimilarResponse)
 def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
     """
@@ -612,8 +605,14 @@ def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
         raise HTTPException(status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile.")
 
     # build_similarity_index() gestisce 503 se manca il modello.
-    index = build_similarity_index(df)
-    results_raw = index.most_similar(query_text=text, top_k=body.top_k, min_score=body.min_score)
+    index = build_similarity_index(df)  # cached
+    results_raw = similar_by_text(
+        df,
+        text,
+        transformer=index.transformer,
+        top_k=body.top_k,
+        min_score=body.min_score,
+    )
 
     df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
 
@@ -631,6 +630,7 @@ def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
         )
 
     return SimilarResponse(query=text, results=items)
+
 
 @app.post("/train/topic", response_model=TrainResponse)
 def train_topic() -> TrainResponse:
