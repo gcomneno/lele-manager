@@ -112,15 +112,24 @@ class LessonSearchRequest(BaseModel):
     )
 
 
+class SimilarMeta(BaseModel):
+    data_mtime_ns: int
+    model_mtime_ns: int
+    top_k: int
+    min_score: float
+
+
 class SimilarItem(BaseModel):
     id: str
     score: float
     text_preview: str
+    rank: Optional[int] = None
 
 
 class SimilarResponse(BaseModel):
     query: str
     results: List[SimilarItem]
+    meta: Optional[SimilarMeta] = None
 
 
 class SimilarTextRequest(BaseModel):
@@ -547,9 +556,10 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
     return lesson
 
 
-@app.get("/lessons/{lesson_id}/similar", response_model=SimilarResponse)
+@app.get("/lessons/{lesson_id}/similar", response_model=SimilarResponse, response_model_exclude_none=True)
 def similar_lessons(
     lesson_id: str,
+    explain: bool = Query(default=False, description="Se true, include meta e rank per debug."),
     top_k: int = Query(
         default=5,
         ge=1,
@@ -585,27 +595,36 @@ def similar_lessons(
     df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
 
     items: List[SimilarItem] = []
-    for r in filtered:
+    for i, r in enumerate(filtered, start=1):
         text = df_map.get(r.lesson_id, "")
         preview = text.replace("\n", " ")
         if len(preview) > 120:
             preview = preview[:117] + "..."
         items.append(
-            SimilarItem(
-                id=str(r.lesson_id),
-                score=float(r.score),
-                text_preview=preview,
+                SimilarItem(
+                    id=str(r.lesson_id),
+                    score=float(r.score),
+                    text_preview=preview,
+                    rank=i if explain else None,
+                )
             )
-        )
+
+    meta = None
+    if explain:
+        data_path = get_data_path()
+        model_path = get_model_path()
+        data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
+        meta = SimilarMeta(data_mtime_ns=int(data_mtime_ns), model_mtime_ns=int(model_mtime_ns), top_k=top_k, min_score=min_score)
 
     return SimilarResponse(
         query=query_text,
         results=items,
+        meta=meta,
     )
 
 
-@app.post("/similar", response_model=SimilarResponse)
-def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
+@app.post("/similar", response_model=SimilarResponse, response_model_exclude_none=True)
+def similar_from_text(body: SimilarTextRequest, explain: bool = Query(default=False, description="Se true, include meta e rank per debug.")) -> SimilarResponse:
     """
     Similarità a partire da testo libero (non richiede lesson_id).
     """
@@ -630,19 +649,27 @@ def similar_from_text(body: SimilarTextRequest) -> SimilarResponse:
     df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
 
     items: List[SimilarItem] = []
-    for r in results_raw:
+    for i, r in enumerate(results_raw, start=1):
         preview = df_map.get(r.lesson_id, "").replace("\n", " ")
         if len(preview) > 120:
             preview = preview[:117] + "..."
         items.append(
-            SimilarItem(
-                id=str(r.lesson_id),
-                score=float(r.score),
-                text_preview=preview,
+                SimilarItem(
+                    id=str(r.lesson_id),
+                    score=float(r.score),
+                    text_preview=preview,
+                    rank=i if explain else None,
+                )
             )
-        )
 
-    return SimilarResponse(query=text, results=items)
+    meta = None
+    if explain:
+        data_path = get_data_path()
+        model_path = get_model_path()
+        data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
+        meta = SimilarMeta(data_mtime_ns=int(data_mtime_ns), model_mtime_ns=int(model_mtime_ns), top_k=body.top_k, min_score=body.min_score)
+
+    return SimilarResponse(query=text, results=items, meta=meta)
 
 
 @app.post("/train/topic", response_model=TrainResponse)
@@ -705,8 +732,8 @@ def ui() -> HTMLResponse:
 # -----------------------------------------------------------------------------
 # Similarity batch
 # -----------------------------------------------------------------------------
-@app.post("/similar/batch", response_model=SimilarBatchResponse)
-def similar_from_text_batch(body: SimilarBatchRequest) -> SimilarBatchResponse:
+@app.post("/similar/batch", response_model=SimilarBatchResponse, response_model_exclude_none=True)
+def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(default=False, description="Se true, include meta e rank per debug.")) -> SimilarBatchResponse:
     """
     Similarità batch a partire da testi liberi.
 
@@ -737,7 +764,7 @@ def similar_from_text_batch(body: SimilarBatchRequest) -> SimilarBatchResponse:
         )
 
         items: List[SimilarItem] = []
-        for r in results_raw:
+        for i, r in enumerate(results_raw, start=1):
             t = df_map.get(r.lesson_id, "")
             preview = t.replace("\n", " ")
             if len(preview) > 120:
@@ -747,9 +774,17 @@ def similar_from_text_batch(body: SimilarBatchRequest) -> SimilarBatchResponse:
                     id=str(r.lesson_id),
                     score=float(r.score),
                     text_preview=preview,
+                    rank=i if explain else None,
                 )
             )
 
-        out_items.append(SimilarResponse(query=text, results=items))
+        meta = None
+        if explain:
+            data_path = get_data_path()
+            model_path = get_model_path()
+            data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
+            meta = SimilarMeta(data_mtime_ns=int(data_mtime_ns), model_mtime_ns=int(model_mtime_ns), top_k=req.top_k, min_score=req.min_score)
+
+        out_items.append(SimilarResponse(query=text, results=items, meta=meta))
 
     return SimilarBatchResponse(items=out_items)
