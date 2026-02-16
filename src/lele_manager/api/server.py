@@ -8,6 +8,7 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from pathlib import Path
+from datetime import datetime, timezone
 from fastapi.responses import HTMLResponse
 from threading import Lock
 
@@ -63,6 +64,14 @@ class LessonBase(BaseModel):
     title: Optional[str] = Field(
         default=None,
         description="Titolo opzionale della LeLe.",
+    )
+    created_at: Optional[str] = Field(
+        default=None,
+        description="Timestamp tecnico (ISO 8601 UTC). Se omesso viene generato dal server.",
+    )
+    created_at: Optional[str] = Field(
+        default=None,
+        description="Timestamp tecnico (ISO 8601 UTC). Se omesso viene generato dal server.",
     )
 
 
@@ -183,7 +192,7 @@ def load_lessons_df() -> pd.DataFrame:
     """
     data_path = get_data_path()
     if not data_path.exists():
-        return pd.DataFrame(columns=["id", "text", "topic", "source", "importance", "tags", "date", "title"])
+        return pd.DataFrame(columns=["id", "text", "topic", "source", "importance", "tags", "date", "title", "created_at"])
 
     try:
         df = pd.read_json(data_path, lines=True)
@@ -195,7 +204,7 @@ def load_lessons_df() -> pd.DataFrame:
         )
 
     # Assicuriamoci che almeno queste colonne esistano
-    for col in ["id", "text", "topic", "source", "importance", "tags", "date", "title"]:
+    for col in ["id", "text", "topic", "source", "importance", "tags", "date", "title", "created_at"]:
         if col not in df.columns:
             df[col] = None
 
@@ -465,7 +474,7 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
         if body.importance_lte is not None:
             df = df[df["importance"] <= body.importance_lte]
 
-    # Deterministic ordering (#29): importance DESC (NaN last), date DESC (NaT last), id ASC
+    # Deterministic ordering (#29): importance DESC (NaN last), created_at DESC (NaT last), id ASC
     if "importance" not in df.columns:
         df["importance"] = pd.NA
     if "date" not in df.columns:
@@ -474,16 +483,18 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
         df["id"] = ""
 
     df["_importance_num"] = pd.to_numeric(df["importance"], errors="coerce")
-    df["_date_dt"] = _safe_dt_series(df["date"])
+    if "created_at" not in df.columns:
+        df["created_at"] = pd.NA
+    df["_created_at_dt"] = _safe_dt_series(df["created_at"])
     df["_id_sort"] = _safe_str_series(df["id"])
 
     df = df.sort_values(
-        by=["_importance_num", "_date_dt", "_id_sort"],
+        by=["_importance_num", "_created_at_dt", "_id_sort"],
         ascending=[False, False, True],
         na_position="last",
         kind="mergesort",  # stable sort for determinism
     )
-    df = df.drop(columns=["_importance_num", "_date_dt", "_id_sort"], errors="ignore")
+    df = df.drop(columns=["_importance_num", "_created_at_dt", "_id_sort"], errors="ignore")
 
     # Limit
     df = df.head(body.limit)
@@ -551,7 +562,10 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
     L'ID viene generato se non fornito.
     """
     lele_id = lesson_in.id or uuid.uuid4().hex
-    lesson = Lesson(id=lele_id, **lesson_in.dict(exclude={"id"}))
+    payload = lesson_in.dict(exclude={"id"})
+    if not payload.get("created_at"):
+        payload["created_at"] = datetime.now(timezone.utc).isoformat()
+    lesson = Lesson(id=lele_id, **payload)
     append_lesson_to_jsonl(lesson)
     return lesson
 
