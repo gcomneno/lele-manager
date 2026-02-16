@@ -18,6 +18,7 @@ from lele_manager.ml.topic_model import (
     save_topic_model,
     train_topic_model,
 )
+from lele_manager.ml.similarity_service import similar_by_text
 
 
 # Override espliciti (usati nei test via monkeypatch) — se None si usa default_*_path()
@@ -561,8 +562,14 @@ def similar_lessons(
 
     query_text = str(matches.iloc[0]["text"])
 
-    index = build_similarity_index(df)
-    results_raw = index.most_similar(query_text=query_text, top_k=top_k, min_score=min_score)
+    index = build_similarity_index(df)  # cached
+    results_raw = similar_by_text(
+        df,
+        query_text,
+        transformer=index.transformer,
+        top_k=top_k,
+        min_score=min_score,
+    )
 
     # Togli eventuale self-match se costruito usando il testo della stessa LeLe
     filtered = [r for r in results_raw if r.lesson_id != lesson_id]
