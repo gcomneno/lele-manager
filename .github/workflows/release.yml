@@ -34,7 +34,7 @@ jobs:
           path: dist/*
 
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.PYPI_ENABLED == 'true' }}
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
