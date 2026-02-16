@@ -27,8 +27,8 @@ def test_get_lessons_text_filter_does_not_match_nan_string(client):
     _write_jsonl(
         data_path,
         [
-            {"id": "1", "text": None, "topic": None, "source": None, "importance": None, "tags": None, "date": None, "title": None},
-            {"id": "2", "text": "banana", "topic": None, "source": None, "importance": 3, "tags": None, "date": "2025-01-01", "title": None},
+            {"id": "1", "text": None, "topic": None, "source": None, "importance": None, "tags": None, "date": None, "created_at": None, "title": None},
+            {"id": "2", "text": "banana", "topic": None, "source": None, "importance": 3, "tags": None, "date": "2025-01-01", "created_at": "2025-01-01T00:00:00+00:00", "title": None},
         ],
     )
 
@@ -43,8 +43,8 @@ def test_post_lessons_search_text_filter_does_not_match_nan_string(client):
     _write_jsonl(
         data_path,
         [
-            {"id": "1", "text": None, "topic": None, "source": None, "importance": None, "tags": None, "date": None, "title": None},
-            {"id": "2", "text": "banana", "topic": None, "source": None, "importance": 3, "tags": None, "date": "2025-01-01", "title": None},
+            {"id": "1", "text": None, "topic": None, "source": None, "importance": None, "tags": None, "date": None, "created_at": None, "title": None},
+            {"id": "2", "text": "banana", "topic": None, "source": None, "importance": 3, "tags": None, "date": "2025-01-01", "created_at": "2025-01-01T00:00:00+00:00", "title": None},
         ],
     )
 
@@ -54,20 +54,20 @@ def test_post_lessons_search_text_filter_does_not_match_nan_string(client):
     assert ids == ["2"]
 
 
-def test_post_lessons_search_deterministic_ordering_importance_date_id(client):
+def test_post_lessons_search_deterministic_ordering_importance_created_at_id(client):
     c, data_path = client
     _write_jsonl(
         data_path,
         [
-            {"id": "a", "text": "A", "topic": None, "source": None, "importance": 5, "tags": None, "date": "2025-01-01", "title": None},
-            {"id": "b", "text": "B", "topic": None, "source": None, "importance": 5, "tags": None, "date": "2026-01-01", "title": None},
-            {"id": "c", "text": "C", "topic": None, "source": None, "importance": 4, "tags": None, "date": "2027-01-01", "title": None},
-            {"id": "d", "text": "D", "topic": None, "source": None, "importance": 5, "tags": None, "date": None, "title": None},
+            {"id": "a", "text": "A", "topic": None, "source": None, "importance": 5, "tags": None, "date": "2025-01-01", "created_at": "2025-01-01T00:00:00+00:00", "title": None},
+            {"id": "b", "text": "B", "topic": None, "source": None, "importance": 5, "tags": None, "date": "2026-01-01", "created_at": "2026-01-01T00:00:00+00:00", "title": None},
+            {"id": "c", "text": "C", "topic": None, "source": None, "importance": 4, "tags": None, "date": "2027-01-01", "created_at": "2027-01-01T00:00:00+00:00", "title": None},
+            {"id": "d", "text": "D", "topic": None, "source": None, "importance": 5, "tags": None, "date": None, "created_at": None, "title": None},
         ],
     )
 
     r = c.post("/lessons/search", json={"limit": 10})
     assert r.status_code == 200
     ids = [x["id"] for x in r.json()]
-    # importance DESC, date DESC, id ASC (date missing last among same importance)
+    # importance DESC, created_at DESC, id ASC (created_at missing last among same importance) (date missing last among same importance)
     assert ids == ["b", "a", "d", "c"]
