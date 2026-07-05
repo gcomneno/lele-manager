@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, type Lesson } from '../lib/api'
+  import { api, type ExportSearchRequest, type Lesson } from '../lib/api'
   import { navigate } from '../lib/router'
   import LessonCard from '../components/LessonCard.svelte'
 
@@ -13,23 +13,53 @@
 
   let lessons = $state<Lesson[]>([])
   let loading = $state(false)
+  let exporting = $state(false)
   let error = $state('')
   let status = $state('')
+
+  function buildSearchBody(): ExportSearchRequest {
+    return {
+      q: q.trim() || null,
+      topic_in: topic.trim() ? [topic.trim()] : null,
+      source_in: source.trim() ? [source.trim()] : null,
+      importance_gte: importanceGte ? Number(importanceGte) : null,
+      importance_lte: importanceLte ? Number(importanceLte) : null,
+      limit: Number(limit) || 20,
+      include_frontmatter: true,
+    }
+  }
+
+  function downloadMarkdown(content: string, filename: string) {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function exportResults() {
+    exporting = true
+    error = ''
+    try {
+      const markdown = (await api.exportSearch(buildSearchBody(), 'markdown')) as string
+      const slug = q.trim().replace(/\s+/g, '-').slice(0, 40) || 'browse'
+      downloadMarkdown(markdown, `lele-export-${slug}.md`)
+      status = `Esportate ${lessons.length} LeLe → Markdown`
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+    } finally {
+      exporting = false
+    }
+  }
 
   async function runSearch() {
     loading = true
     error = ''
     status = 'Ricerca…'
     try {
-      const body = {
-        q: q.trim() || null,
-        topic_in: topic.trim() ? [topic.trim()] : null,
-        source_in: source.trim() ? [source.trim()] : null,
-        importance_gte: importanceGte ? Number(importanceGte) : null,
-        importance_lte: importanceLte ? Number(importanceLte) : null,
-        limit: Number(limit) || 20,
-      }
-      lessons = await api.searchLessons(body)
+      lessons = await api.searchLessons(buildSearchBody())
       status = `${lessons.length} risultati`
     } catch (e) {
       lessons = []
@@ -101,6 +131,9 @@
     <div class="actions">
       <button class="btn btn-primary" onclick={runSearch} disabled={loading}>Cerca</button>
       <button class="btn" onclick={listAll} disabled={loading}>Lista tutte</button>
+      <button class="btn" onclick={exportResults} disabled={loading || exporting || lessons.length === 0}>
+        {exporting ? 'Esporto…' : 'Esporta .md'}
+      </button>
       <button class="btn" onclick={reset}>Reset</button>
     </div>
     {#if status}<p class="ok">{status}</p>{/if}
