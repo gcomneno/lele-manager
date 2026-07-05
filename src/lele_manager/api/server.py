@@ -10,11 +10,12 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from pathlib import Path
 from datetime import datetime, timezone
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
 from lele_manager.core.analytics import compute_stats_summary, compute_timeline
+from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
     build_vault_tree,
@@ -149,6 +150,24 @@ class LessonSearchRequest(BaseModel):
         le=500,
         description="Numero massimo di risultati da restituire.",
     )
+
+
+class ExportSearchRequest(LessonSearchRequest):
+    """Payload per POST /export/search — stessi filtri di /lessons/search."""
+
+    include_frontmatter: bool = Field(
+        default=True,
+        description="Se true, ogni LeLe include frontmatter YAML (Obsidian-ready).",
+    )
+    ids_in: Optional[List[str]] = Field(
+        default=None,
+        description="Opzionale: limita l'export a questi ID (dopo gli altri filtri).",
+    )
+
+
+class ExportSearchResponse(BaseModel):
+    markdown: str
+    n_lessons: int
 
 
 class SimilarMeta(BaseModel):
@@ -707,6 +726,61 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
     records = df.to_dict(orient="records")
     results: List[LessonSearchResult] = [_row_to_search_result(row) for row in records]
     return results
+
+
+def _export_filters_summary(body: ExportSearchRequest) -> str:
+    parts: List[str] = []
+    if body.q:
+        parts.append(f"q={body.q!r}")
+    if body.topic_in:
+        parts.append(f"topic_in={body.topic_in}")
+    if body.source_in:
+        parts.append(f"source_in={body.source_in}")
+    if body.importance_gte is not None:
+        parts.append(f"importance_gte={body.importance_gte}")
+    if body.importance_lte is not None:
+        parts.append(f"importance_lte={body.importance_lte}")
+    if body.ids_in:
+        parts.append(f"ids_in={len(body.ids_in)} ids")
+    parts.append(f"limit={body.limit}")
+    return ", ".join(parts) if parts else "(nessun filtro)"
+
+
+@app.post("/export/search")
+def export_search(
+    body: ExportSearchRequest,
+    format: Literal["markdown", "json"] = Query(
+        default="markdown",
+        description="markdown → text/markdown; json → {markdown, n_lessons}.",
+    ),
+):
+    """Esporta i risultati di una ricerca come documento Markdown."""
+    search_body = LessonSearchRequest(
+        q=body.q,
+        topic_in=body.topic_in,
+        source_in=body.source_in,
+        importance_gte=body.importance_gte,
+        importance_lte=body.importance_lte,
+        limit=body.limit,
+    )
+    results = search_lessons(search_body)
+    if body.ids_in:
+        allowed = {str(i) for i in body.ids_in}
+        results = [r for r in results if r.id in allowed]
+
+    markdown = search_results_to_markdown(
+        [r.model_dump() for r in results],
+        include_frontmatter=body.include_frontmatter,
+        filters_summary=_export_filters_summary(body),
+    )
+
+    if format == "json":
+        return ExportSearchResponse(markdown=markdown, n_lessons=len(results))
+
+    return Response(
+        content=markdown.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+    )
 
 
 @app.get("/lessons/{lesson_id:path}/similar", response_model=SimilarResponse, response_model_exclude_none=True)

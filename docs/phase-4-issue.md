@@ -48,12 +48,12 @@ Questa fase porta la GUI da “funziona” a “mi fido mentre scrivo”: capire
 
 ### 4.2 Export search → Markdown (#87)
 
-- [ ] API: `POST /export/search` → contenuto Markdown
+- [x] API: `POST /export/search` → contenuto Markdown
   - input: stesso payload di `POST /lessons/search` (+ opzioni formato)
   - output: `text/markdown` o JSON `{ "markdown": "..." }`
-- [ ] GUI: bottone **Esporta** in Browse (e opz. Timeline)
-- [ ] CLI: `lele export --search "pytest" --topic python -o results.md`
-- [ ] Test: export con filtri, encoding UTF-8, frontmatter opzionale
+- [x] GUI: bottone **Esporta** in Browse (e opz. Timeline)
+- [x] CLI: `lele export --search "pytest" --topic python -o results.md`
+- [x] Test: export con filtri, encoding UTF-8, frontmatter opzionale
 
 ### 4.3 Playwright E2E smoke
 

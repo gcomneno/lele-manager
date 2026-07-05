@@ -19,6 +19,16 @@ export interface LessonSearchRequest {
   limit?: number
 }
 
+export interface ExportSearchRequest extends LessonSearchRequest {
+  include_frontmatter?: boolean
+  ids_in?: string[] | null
+}
+
+export interface ExportSearchResponse {
+  markdown: string
+  n_lessons: number
+}
+
 export interface SimilarItem {
   id: string
   score: number
@@ -158,6 +168,32 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+
+  exportSearch: async (
+    body: ExportSearchRequest,
+    format: 'markdown' | 'json' = 'markdown',
+  ): Promise<string | ExportSearchResponse> => {
+    const resp = await fetch(`/export/search?format=${encodeURIComponent(format)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}))
+      const detail = (data as { detail?: unknown }).detail
+      const msg =
+        typeof detail === 'string'
+          ? detail
+          : detail != null
+            ? JSON.stringify(detail)
+            : `HTTP ${resp.status}`
+      throw new Error(msg)
+    }
+    if (format === 'json') {
+      return (await resp.json()) as ExportSearchResponse
+    }
+    return resp.text()
+  },
 
   getLesson: (id: string) =>
     request<Lesson>(`/lessons/${encodeURIComponent(id)}`),

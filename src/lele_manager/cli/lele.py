@@ -75,6 +75,65 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ------------------------------------------------------------------
+    # lele export
+    # ------------------------------------------------------------------
+    p_export = subparsers.add_parser(
+        "export",
+        help="Esporta risultati ricerca in Markdown (POST /export/search).",
+    )
+    p_export.add_argument(
+        "--search",
+        dest="q",
+        help="Testo da cercare (substring sul campo text).",
+    )
+    p_export.add_argument(
+        "--topic",
+        dest="topic_in",
+        action="append",
+        help="Filtra per uno o più topic (ripetibile).",
+    )
+    p_export.add_argument(
+        "--source",
+        dest="source_in",
+        action="append",
+        help="Filtra per una o più source (ripetibile).",
+    )
+    p_export.add_argument(
+        "--min-importance",
+        dest="importance_gte",
+        type=int,
+        help="Filtra per importance >= valore dato.",
+    )
+    p_export.add_argument(
+        "--max-importance",
+        dest="importance_lte",
+        type=int,
+        help="Filtra per importance <= valore dato.",
+    )
+    p_export.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Numero massimo di risultati (default: 50).",
+    )
+    p_export.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="File Markdown di destinazione.",
+    )
+    p_export.add_argument(
+        "--no-frontmatter",
+        action="store_true",
+        help="Esclude il frontmatter YAML (solo heading + body).",
+    )
+    p_export.add_argument(
+        "--json",
+        action="store_true",
+        help="Risposta API come JSON invece di salvare il file.",
+    )
+
+    # ------------------------------------------------------------------
     # lele show <id>
     # ------------------------------------------------------------------
     p_show = subparsers.add_parser(
@@ -345,6 +404,42 @@ def cmd_search(base_url: str, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(base_url: str, args: argparse.Namespace) -> int:
+    payload: Dict[str, Any] = {
+        "q": args.q,
+        "topic_in": args.topic_in,
+        "source_in": args.source_in,
+        "importance_gte": args.importance_gte,
+        "importance_lte": args.importance_lte,
+        "limit": args.limit,
+        "include_frontmatter": not args.no_frontmatter,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}
+
+    params = {"format": "json" if args.json else "markdown"}
+
+    with httpx.Client(base_url=base_url, timeout=30.0) as client:
+        try:
+            resp = client.post("/export/search", json=payload, params=params)
+        except httpx.RequestError as exc:
+            print(f"[errore] Errore di rete verso {exc.request.url}: {exc}", file=sys.stderr)
+            return 1
+
+    if resp.status_code >= 400:
+        print(f"[errore] {resp.status_code} {resp.text}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        _print_json(resp.json())
+        return 0
+
+    markdown = resp.content.decode("utf-8")
+    out_path = Path(args.output)
+    out_path.write_text(markdown, encoding="utf-8")
+    print(f"[ok] Export salvato in {out_path} ({len(markdown)} caratteri UTF-8)")
+    return 0
+
+
 def cmd_show(base_url: str, args: argparse.Namespace) -> int:
     lesson_id = args.lesson_id
 
@@ -568,6 +663,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     try:
         if args.command == "search":
             code = cmd_search(base_url, args)
+        elif args.command == "export":
+            code = cmd_export(base_url, args)
         elif args.command == "show":
             code = cmd_show(base_url, args)
         elif args.command == "similar":
