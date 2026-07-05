@@ -11,6 +11,22 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-05
+
+### Added
+- GUI web v2.0 alpha: Vite + Svelte SPA su `GET /app/` (Browse, Detail, Editor, Vault, Ops).
+- `scripts/build-gui.sh` — build frontend e copia in `src/lele_manager/gui/static`.
+- `frontend/` — sorgenti Svelte (API client, hash router, suggest live).
+- Test `tests/test_gui_app.py` + CI build Node prima di pytest/packaging.
+
+### Changed
+- `GET /` reindirizza a `/app/`.
+- README: sezione GUI Web.
+- CI: Node.js 22 + `./scripts/build-gui.sh` nei job test e packaging-smoke.
+
+### Deprecated
+- `GET /ui` — PoC legacy; usare `/app/`.
+
 ## [1.5.0] - 2026-07-05
 
 ### Added
@@ -121,7 +137,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/gcomneno/lele-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/gcomneno/lele-manager/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/gcomneno/lele-manager/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/gcomneno/lele-manager/compare/v1.3.2...v1.4.0

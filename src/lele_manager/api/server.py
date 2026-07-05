@@ -10,7 +10,8 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from pathlib import Path
 from datetime import datetime, timezone
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
 from lele_manager.core.config import resolve_data_path, resolve_model_path
@@ -33,6 +34,22 @@ def get_data_path() -> Path:
 
 def get_model_path() -> Path:
     return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
+
+
+def resolve_gui_dir() -> Path | None:
+    """Return GUI static directory if a production build is present."""
+    api_dir = Path(__file__).resolve().parent
+    candidates = [
+        api_dir.parent / "gui" / "static",
+        api_dir.parents[2] / "frontend" / "dist",
+    ]
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+GUI_DIR: Path | None = resolve_gui_dir()
 
 
 try:
@@ -745,6 +762,34 @@ def train_topic() -> TrainResponse:
 def ui() -> HTMLResponse:
     ui_path = Path(__file__).with_name("ui.html")
     return HTMLResponse(ui_path.read_text(encoding="utf-8"))
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/app/")
+
+
+if GUI_DIR is not None:
+    _assets_dir = GUI_DIR / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/app/assets", StaticFiles(directory=_assets_dir), name="gui-assets")
+
+    @app.get("/app", include_in_schema=False)
+    @app.get("/app/", include_in_schema=False)
+    @app.get("/app/{full_path:path}", include_in_schema=False)
+    def gui_app(full_path: str = "") -> FileResponse:
+        index = GUI_DIR / "index.html"
+        return FileResponse(index)
+else:
+
+    @app.get("/app", include_in_schema=False)
+    @app.get("/app/", include_in_schema=False)
+    @app.get("/app/{full_path:path}", include_in_schema=False)
+    def gui_not_built(full_path: str = "") -> None:
+        raise HTTPException(
+            status_code=503,
+            detail="GUI non buildata. Esegui: ./scripts/build-gui.sh",
+        )
 
 # -----------------------------------------------------------------------------
 # Similarity batch

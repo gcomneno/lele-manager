@@ -473,6 +473,44 @@ Modalità “solo API” (dataset e modello già pronti):
 
 ---
 
+## 🖥️ GUI Web (v2.0 alpha)
+
+Oltre alla CLI e al PoC legacy (`GET /ui`), LeLe Manager include una **GUI Svelte** servita dall'API:
+
+```bash
+# 1) Build frontend (Vite + Svelte)
+./scripts/build-gui.sh
+
+# 2) Avvia API
+./scripts/lele-api-dev.sh
+
+# 3) Apri browser
+# http://127.0.0.1:8000/app/
+```
+
+### Viste disponibili (Fase 1)
+
+| Vista | Cosa fa |
+|-------|---------|
+| **Browse** | Ricerca avanzata (`POST /lessons/search`) + filtri |
+| **Detail** | Lettura LeLe + pannello simili |
+| **Editor** | Scrittura con suggest live (`POST /editor/suggest`) |
+| **Vault** | Albero per topic (da dataset JSONL) |
+| **Ops** | Health + retrain topic model |
+
+Design completo: [`docs/gui-design.md`](docs/gui-design.md)
+
+**Dev frontend** (hot reload, proxy API):
+
+```bash
+cd frontend
+npm install
+npm run dev
+# apri l'URL indicato da Vite (proxy verso :8000 se configurato)
+```
+
+---
+
 ## 📦 Versioni & release
 
 LeLe Manager segue il versioning semantico (SemVer):
