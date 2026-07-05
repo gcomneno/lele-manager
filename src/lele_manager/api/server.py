@@ -4,6 +4,7 @@ import json
 import uuid
 import pandas as pd
 
+from importlib.metadata import PackageNotFoundError, version
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -34,10 +35,16 @@ def get_model_path() -> Path:
     return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
 
 
+try:
+    __version__ = version("lele-manager")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
+
+
 app = FastAPI(
     title="LeLe Manager API",
     description="API per gestire e cercare le Lesson Learned (LeLe).",
-    version="0.2.0",
+    version=__version__,
 )
 
 # -----------------------------------------------------------------------------
@@ -64,10 +71,6 @@ class LessonBase(BaseModel):
     title: Optional[str] = Field(
         default=None,
         description="Titolo opzionale della LeLe.",
-    )
-    created_at: Optional[str] = Field(
-        default=None,
-        description="Timestamp tecnico (ISO 8601 UTC). Se omesso viene generato dal server.",
     )
     created_at: Optional[str] = Field(
         default=None,
