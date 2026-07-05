@@ -5,7 +5,35 @@
   let groupBy = $state<'year' | 'month' | 'topic'>('month')
   let timeline = $state<TimelineResponse | null>(null)
   let loading = $state(false)
+  let exportingKey = $state('')
   let error = $state('')
+
+  function downloadMarkdown(content: string, filename: string) {
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function exportBucket(key: string, lessonIds: string[]) {
+    exportingKey = key
+    error = ''
+    try {
+      const markdown = (await api.exportSearch(
+        { ids_in: lessonIds, limit: lessonIds.length, include_frontmatter: true },
+        'markdown',
+      )) as string
+      const slug = key.replace(/[^\w.-]+/g, '-')
+      downloadMarkdown(markdown, `lele-timeline-${slug}.md`)
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+    } finally {
+      exportingKey = ''
+    }
+  }
 
   async function load() {
     loading = true
@@ -55,6 +83,14 @@
             <div class="row">
               <strong>{bucket.key}</strong>
               <span class="meta">{bucket.count} LeLe</span>
+              <button
+                type="button"
+                class="export-btn"
+                disabled={!!exportingKey}
+                onclick={() => exportBucket(bucket.key, bucket.lesson_ids)}
+              >
+                {exportingKey === bucket.key ? '…' : 'Esporta'}
+              </button>
             </div>
             <div class="bar-wrap">
               <span
@@ -129,7 +165,19 @@
   .row {
     display: flex;
     justify-content: space-between;
+    align-items: center;
+    gap: 8px;
     margin-bottom: 8px;
+  }
+
+  .export-btn {
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-left: auto;
   }
 
   .bar-wrap {
