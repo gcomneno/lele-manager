@@ -11,6 +11,8 @@
 
   const links = [
     { view: 'browse' as const, label: 'Browse', hash: '#/' },
+    { view: 'timeline' as const, label: 'Timeline', hash: '#/timeline' },
+    { view: 'stats' as const, label: 'Stats', hash: '#/stats' },
     { view: 'editor' as const, label: 'Editor', hash: '#/editor' },
     { view: 'vault' as const, label: 'Vault', hash: '#/vault' },
     { view: 'ops' as const, label: 'Ops', hash: '#/ops' },
@@ -38,9 +40,6 @@
         </a>
       {/each}
     </nav>
-    <p class="legacy">
-      <a href="/ui" target="_blank" rel="noreferrer">PoC legacy /ui</a>
-    </p>
   </aside>
 
   <div class="main">

@@ -6,6 +6,8 @@
   import Editor from './routes/Editor.svelte'
   import Vault from './routes/Vault.svelte'
   import Ops from './routes/Ops.svelte'
+  import Stats from './routes/Stats.svelte'
+  import Timeline from './routes/Timeline.svelte'
   import { parseRoute, type Route } from './lib/router'
 
   let route = $state<Route>({ view: 'browse' })
@@ -31,5 +33,9 @@
     <Vault />
   {:else if route.view === 'ops'}
     <Ops />
+  {:else if route.view === 'stats'}
+    <Stats />
+  {:else if route.view === 'timeline'}
+    <Timeline />
   {/if}
 </Shell>

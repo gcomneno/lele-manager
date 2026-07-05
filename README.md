@@ -495,6 +495,8 @@ Oltre alla CLI e al PoC legacy (`GET /ui`), LeLe Manager include una **GUI Svelt
 | **Browse** | Ricerca avanzata (`POST /lessons/search`) + filtri |
 | **Detail** | Lettura LeLe + pannello simili |
 | **Editor** | Scrittura con suggest live (`POST /editor/suggest`) |
+| **Timeline** | Acquisizione conoscenza per mese/anno/topic |
+| **Stats** | Dashboard: conteggi, tag, topic, medie |
 | **Vault** | Albero filesystem reale (`GET /vault/tree`) + import |
 | **Ops** | Health + retrain + **import vault** + **refresh completo** |
 
@@ -503,6 +505,8 @@ Oltre alla CLI e al PoC legacy (`GET /ui`), LeLe Manager include una **GUI Svelt
 Richiede `LELE_VAULT_DIR` (default `~/LeLeVault`).
 
 Design completo: [`docs/gui-design.md`](docs/gui-design.md)
+
+`GET /ui` (PoC legacy) reindirizza a `/app/`.
 
 **Dev frontend** (hot reload, proxy API):
 
