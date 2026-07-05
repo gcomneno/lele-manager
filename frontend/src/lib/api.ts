@@ -87,6 +87,37 @@ export interface OpsRefreshResponse {
   train_result?: TrainResponse | null
 }
 
+export interface TagCount {
+  tag: string
+  count: number
+}
+
+export interface TopicCount {
+  topic: string
+  count: number
+}
+
+export interface StatsSummaryResponse {
+  n_lessons: number
+  n_topics: number
+  n_unique_tags: number
+  avg_text_length: number
+  avg_importance: number | null
+  top_tags: TagCount[]
+  by_topic: TopicCount[]
+}
+
+export interface TimelineBucket {
+  key: string
+  count: number
+  lesson_ids: string[]
+}
+
+export interface TimelineResponse {
+  group_by: string
+  buckets: TimelineBucket[]
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, init)
   const data = await resp.json().catch(() => ({}))
@@ -166,4 +197,9 @@ export const api = {
     request<OpsRefreshResponse>(`/ops/refresh?train=${train ? 'true' : 'false'}`, {
       method: 'POST',
     }),
+
+  statsSummary: () => request<StatsSummaryResponse>('/stats/summary'),
+
+  statsTimeline: (groupBy: 'year' | 'month' | 'topic' = 'month') =>
+    request<TimelineResponse>(`/stats/timeline?group_by=${encodeURIComponent(groupBy)}`),
 }

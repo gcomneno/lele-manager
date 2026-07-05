@@ -179,6 +179,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stampa la risposta come JSON invece che in formato umano.",
     )
 
+    # ------------------------------------------------------------------
+    # lele stats
+    # ------------------------------------------------------------------
+    p_stats = subparsers.add_parser(
+        "stats",
+        help="Statistiche aggregate sul dataset (GET /stats/summary).",
+    )
+    p_stats.add_argument(
+        "--json",
+        action="store_true",
+        help="Stampa la risposta come JSON invece che in formato umano.",
+    )
+
+    # ------------------------------------------------------------------
+    # lele timeline
+    # ------------------------------------------------------------------
+    p_timeline = subparsers.add_parser(
+        "timeline",
+        help="Timeline acquisizione conoscenza (GET /stats/timeline).",
+    )
+    p_timeline.add_argument(
+        "--group-by",
+        choices=["year", "month", "topic"],
+        default="month",
+        help="Raggruppamento (default: month).",
+    )
+    p_timeline.add_argument(
+        "--json",
+        action="store_true",
+        help="Stampa la risposta come JSON invece che in formato umano.",
+    )
+
     return parser
 
 
@@ -444,6 +476,56 @@ def cmd_train_topic(base_url: str, args: argparse.Namespace) -> int:  # noqa: AR
     return 0
 
 
+def cmd_stats(base_url: str, args: argparse.Namespace) -> int:
+    with httpx.Client(base_url=base_url, timeout=15.0) as client:
+        try:
+            resp = client.get("/stats/summary")
+        except httpx.RequestError as exc:
+            print(f"[errore] Errore di rete verso {exc.request.url}: {exc}", file=sys.stderr)
+            return 1
+
+    if resp.status_code >= 400:
+        print(f"[errore] {resp.status_code} {resp.text}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    if args.json:
+        _print_json(data)
+        return 0
+
+    print(f"[info] LeLe: {data.get('n_lessons', 0)} | Topic: {data.get('n_topics', 0)} | Tag: {data.get('n_unique_tags', 0)}")
+    print(f"[info] Lunghezza media: {data.get('avg_text_length')} caratteri")
+    if data.get("avg_importance") is not None:
+        print(f"[info] Importance media: {data.get('avg_importance')}")
+    top_tags = data.get("top_tags") or []
+    if top_tags:
+        print("[info] Top tag:", ", ".join(f"{t['tag']}({t['count']})" for t in top_tags[:8]))
+    return 0
+
+
+def cmd_timeline(base_url: str, args: argparse.Namespace) -> int:
+    with httpx.Client(base_url=base_url, timeout=15.0) as client:
+        try:
+            resp = client.get("/stats/timeline", params={"group_by": args.group_by})
+        except httpx.RequestError as exc:
+            print(f"[errore] Errore di rete verso {exc.request.url}: {exc}", file=sys.stderr)
+            return 1
+
+    if resp.status_code >= 400:
+        print(f"[errore] {resp.status_code} {resp.text}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    if args.json:
+        _print_json(data)
+        return 0
+
+    print(f"[info] Timeline group_by={data.get('group_by')}")
+    for bucket in data.get("buckets") or []:
+        print(f"  {bucket.get('key')}: {bucket.get('count')} LeLe")
+    return 0
+
+
 # ----------------------------------------------------------------------
 # main
 # ----------------------------------------------------------------------
@@ -463,6 +545,10 @@ def main(argv: Optional[List[str]] = None) -> None:
             code = cmd_suggest(base_url, args)
         elif args.command == "train-topic":
             code = cmd_train_topic(base_url, args)
+        elif args.command == "stats":
+            code = cmd_stats(base_url, args)
+        elif args.command == "timeline":
+            code = cmd_timeline(base_url, args)
         else:
             parser.error(f"Comando non riconosciuto: {args.command!r}")
             return

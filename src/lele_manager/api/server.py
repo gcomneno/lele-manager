@@ -5,15 +5,16 @@ import uuid
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from pathlib import Path
 from datetime import datetime, timezone
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
+from lele_manager.core.analytics import compute_stats_summary, compute_timeline
 from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
     build_vault_tree,
@@ -241,6 +242,37 @@ class LessonVaultCreate(LessonVaultWrite):
 class OpsRefreshResponse(BaseModel):
     import_result: VaultImportResponse
     train_result: Optional[TrainResponse] = None
+
+
+class TagCount(BaseModel):
+    tag: str
+    count: int
+
+
+class TopicCount(BaseModel):
+    topic: str
+    count: int
+
+
+class StatsSummaryResponse(BaseModel):
+    n_lessons: int
+    n_topics: int
+    n_unique_tags: int
+    avg_text_length: float
+    avg_importance: Optional[float] = None
+    top_tags: List[TagCount]
+    by_topic: List[TopicCount]
+
+
+class TimelineBucket(BaseModel):
+    key: str
+    count: int
+    lesson_ids: List[str]
+
+
+class TimelineResponse(BaseModel):
+    group_by: str
+    buckets: List[TimelineBucket]
 
 
 # -----------------------------------------------------------------------------
@@ -929,10 +961,42 @@ def ops_refresh(
     return OpsRefreshResponse(import_result=import_result, train_result=train_result)
 
 
-@app.get("/ui", response_class=HTMLResponse)
-def ui() -> HTMLResponse:
-    ui_path = Path(__file__).with_name("ui.html")
-    return HTMLResponse(ui_path.read_text(encoding="utf-8"))
+@app.get("/stats/summary", response_model=StatsSummaryResponse)
+def stats_summary() -> StatsSummaryResponse:
+    """Statistiche aggregate sul dataset LeLe (dashboard / CLI)."""
+    df = load_lessons_df()
+    raw = compute_stats_summary(df)
+    return StatsSummaryResponse(
+        n_lessons=raw["n_lessons"],
+        n_topics=raw["n_topics"],
+        n_unique_tags=raw["n_unique_tags"],
+        avg_text_length=raw["avg_text_length"],
+        avg_importance=raw["avg_importance"],
+        top_tags=[TagCount(**t) for t in raw["top_tags"]],
+        by_topic=[TopicCount(**t) for t in raw["by_topic"]],
+    )
+
+
+@app.get("/stats/timeline", response_model=TimelineResponse)
+def stats_timeline(
+    group_by: Literal["year", "month", "topic"] = Query(
+        default="month",
+        description="Raggruppamento: year, month, topic.",
+    ),
+) -> TimelineResponse:
+    """Timeline acquisizione conoscenza, raggruppata per periodo o topic."""
+    df = load_lessons_df()
+    raw = compute_timeline(df, group_by=group_by)
+    return TimelineResponse(
+        group_by=raw["group_by"],
+        buckets=[TimelineBucket(**b) for b in raw["buckets"]],
+    )
+
+
+@app.get("/ui", include_in_schema=False)
+def ui_deprecated() -> RedirectResponse:
+    """Deprecated: reindirizza alla GUI su /app/."""
+    return RedirectResponse(url="/app/#/", status_code=307)
 
 
 @app.get("/", include_in_schema=False)

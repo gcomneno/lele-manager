@@ -11,6 +11,19 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-05
+
+### Added
+- `core/analytics.py` — statistiche e timeline da dataset JSONL.
+- API: `GET /stats/summary`, `GET /stats/timeline` (group_by: year/month/topic).
+- GUI: viste **Stats** e **Timeline** (#88, #89).
+- CLI: `lele stats`, `lele timeline --group-by month|year|topic`.
+- Test `test_analytics.py`, `test_api_stats_timeline.py`.
+
+### Changed
+- `GET /ui` deprecato → redirect 307 a `/app/#/`.
+- Sidebar GUI: rimosso link PoC legacy.
+
 ## [1.7.0] - 2026-07-05
 
 ### Added
@@ -151,7 +164,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/gcomneno/lele-manager/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/gcomneno/lele-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/gcomneno/lele-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/gcomneno/lele-manager/compare/v1.4.1...v1.5.0
