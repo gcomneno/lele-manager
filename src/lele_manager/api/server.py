@@ -156,6 +156,8 @@ class SimilarMeta(BaseModel):
     model_mtime_ns: int
     top_k: int
     min_score: float
+    query_topic: Optional[str] = None
+    query_tags: Optional[List[str]] = None
 
 
 class SimilarItem(BaseModel):
@@ -163,6 +165,8 @@ class SimilarItem(BaseModel):
     score: float
     text_preview: str
     rank: Optional[int] = None
+    topic: Optional[str] = None
+    tags_shared: Optional[List[str]] = None
 
 
 class SimilarResponse(BaseModel):
@@ -347,6 +351,102 @@ def _file_mtime_ns(path: Path) -> int:
 
 def _similarity_cache_key(data_path: Path, model_path: Path) -> tuple[int, int]:
     return (_file_mtime_ns(data_path), _file_mtime_ns(model_path))
+
+
+def _normalize_tags(raw: object) -> set[str]:
+    if isinstance(raw, list):
+        return {str(t).strip() for t in raw if str(t).strip()}
+    return set()
+
+
+def _parse_frontmatter_tags(text: str) -> set[str]:
+    """Estrae tag dal frontmatter YAML (editor / testo con ---)."""
+    import re
+
+    stripped = text.lstrip()
+    if not stripped.startswith("---"):
+        return set()
+    m = re.match(r"---\s*\n(.*?)\n---", stripped, re.DOTALL)
+    if not m:
+        return set()
+    fm = m.group(1)
+    tm = re.search(r"^tags:\s*(.+)$", fm, re.MULTILINE)
+    if not tm:
+        return set()
+    raw = tm.group(1).strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1]
+    return {t.strip().strip('"').strip("'") for t in raw.split(",") if t.strip()}
+
+
+def _text_preview(text: str, max_len: int = 120) -> str:
+    preview = text.replace("\n", " ")
+    if len(preview) > max_len:
+        return preview[: max_len - 3] + "..."
+    return preview
+
+
+def _build_similar_items(
+    df: pd.DataFrame,
+    results_raw: list,
+    *,
+    explain: bool,
+    query_tags: set[str] | None = None,
+) -> List[SimilarItem]:
+    df_indexed = df.set_index("id")
+    text_map = df_indexed["text"].fillna("").astype(str).to_dict()
+    topic_map = (
+        df_indexed["topic"].fillna("").astype(str).to_dict() if "topic" in df_indexed.columns else {}
+    )
+    tags_series = df_indexed["tags"] if "tags" in df_indexed.columns else None
+
+    items: List[SimilarItem] = []
+    for i, r in enumerate(results_raw, start=1):
+        lesson_id = str(r.lesson_id)
+        topic_val: Optional[str] = None
+        tags_shared: Optional[List[str]] = None
+        if explain:
+            raw_topic = topic_map.get(lesson_id, "")
+            topic_val = raw_topic if raw_topic else None
+            if query_tags and tags_series is not None:
+                row_tags = _normalize_tags(tags_series.get(lesson_id))
+                shared = sorted(query_tags & row_tags)
+                if shared:
+                    tags_shared = shared
+        items.append(
+            SimilarItem(
+                id=lesson_id,
+                score=float(r.score),
+                text_preview=_text_preview(text_map.get(lesson_id, "")),
+                rank=i if explain else None,
+                topic=topic_val if explain else None,
+                tags_shared=tags_shared if explain else None,
+            )
+        )
+    return items
+
+
+def _build_similar_meta(
+    *,
+    explain: bool,
+    top_k: int,
+    min_score: float,
+    query_topic: Optional[str] = None,
+    query_tags: set[str] | None = None,
+) -> Optional[SimilarMeta]:
+    if not explain:
+        return None
+    data_path = get_data_path()
+    model_path = get_model_path()
+    data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
+    return SimilarMeta(
+        data_mtime_ns=int(data_mtime_ns),
+        model_mtime_ns=int(model_mtime_ns),
+        top_k=top_k,
+        min_score=min_score,
+        query_topic=query_topic or None,
+        query_tags=sorted(query_tags) if query_tags else None,
+    )
 
 
 def invalidate_similarity_cache() -> None:
@@ -644,30 +744,18 @@ def similar_lessons(
     # Togli eventuale self-match se costruito usando il testo della stessa LeLe
     filtered = [r for r in results_raw if r.lesson_id != lesson_id]
 
-    # Mappa id -> text per anteprima
-    df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
+    query_row = matches.iloc[0]
+    query_topic = _to_optional_str(query_row.get("topic"))
+    query_tags = _normalize_tags(query_row.get("tags"))
 
-    items: List[SimilarItem] = []
-    for i, r in enumerate(filtered, start=1):
-        text = df_map.get(r.lesson_id, "")
-        preview = text.replace("\n", " ")
-        if len(preview) > 120:
-            preview = preview[:117] + "..."
-        items.append(
-                SimilarItem(
-                    id=str(r.lesson_id),
-                    score=float(r.score),
-                    text_preview=preview,
-                    rank=i if explain else None,
-                )
-            )
-
-    meta = None
-    if explain:
-        data_path = get_data_path()
-        model_path = get_model_path()
-        data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
-        meta = SimilarMeta(data_mtime_ns=int(data_mtime_ns), model_mtime_ns=int(model_mtime_ns), top_k=top_k, min_score=min_score)
+    items = _build_similar_items(df, filtered, explain=explain, query_tags=query_tags if explain else None)
+    meta = _build_similar_meta(
+        explain=explain,
+        top_k=top_k,
+        min_score=min_score,
+        query_topic=query_topic if explain else None,
+        query_tags=query_tags if explain else None,
+    )
 
     return SimilarResponse(
         query=query_text,
@@ -759,28 +847,19 @@ def similar_from_text(body: SimilarTextRequest, explain: bool = Query(default=Fa
         min_score=body.min_score,
     )
 
-    df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
-
-    items: List[SimilarItem] = []
-    for i, r in enumerate(results_raw, start=1):
-        preview = df_map.get(r.lesson_id, "").replace("\n", " ")
-        if len(preview) > 120:
-            preview = preview[:117] + "..."
-        items.append(
-                SimilarItem(
-                    id=str(r.lesson_id),
-                    score=float(r.score),
-                    text_preview=preview,
-                    rank=i if explain else None,
-                )
-            )
-
-    meta = None
-    if explain:
-        data_path = get_data_path()
-        model_path = get_model_path()
-        data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
-        meta = SimilarMeta(data_mtime_ns=int(data_mtime_ns), model_mtime_ns=int(model_mtime_ns), top_k=body.top_k, min_score=body.min_score)
+    query_tags = _parse_frontmatter_tags(text) if explain else None
+    items = _build_similar_items(
+        df,
+        results_raw,
+        explain=explain,
+        query_tags=query_tags if explain and query_tags else None,
+    )
+    meta = _build_similar_meta(
+        explain=explain,
+        top_k=body.top_k,
+        min_score=body.min_score,
+        query_tags=query_tags if explain and query_tags else None,
+    )
 
     return SimilarResponse(query=text, results=items, meta=meta)
 
@@ -1043,9 +1122,6 @@ def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(def
 
     index = build_similarity_index(df)  # cached
 
-    # Precalcola mappa id -> text per anteprime (una volta sola)
-    df_map = df.set_index("id")["text"].fillna("").astype(str).to_dict()
-
     out_items: List[SimilarResponse] = []
     for req in body.items:
         text = req.text.strip()
@@ -1060,28 +1136,19 @@ def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(def
             min_score=req.min_score,
         )
 
-        items: List[SimilarItem] = []
-        for i, r in enumerate(results_raw, start=1):
-            t = df_map.get(r.lesson_id, "")
-            preview = t.replace("\n", " ")
-            if len(preview) > 120:
-                preview = preview[:117] + "..."
-            items.append(
-                SimilarItem(
-                    id=str(r.lesson_id),
-                    score=float(r.score),
-                    text_preview=preview,
-                    rank=i if explain else None,
-                )
-            )
-
-        meta = None
-        if explain:
-            data_path = get_data_path()
-            model_path = get_model_path()
-            data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
-            meta = SimilarMeta(data_mtime_ns=int(data_mtime_ns), model_mtime_ns=int(model_mtime_ns), top_k=req.top_k, min_score=req.min_score)
-
+        query_tags = _parse_frontmatter_tags(text) if explain else None
+        items = _build_similar_items(
+            df,
+            results_raw,
+            explain=explain,
+            query_tags=query_tags if explain and query_tags else None,
+        )
+        meta = _build_similar_meta(
+            explain=explain,
+            top_k=req.top_k,
+            min_score=req.min_score,
+            query_tags=query_tags if explain and query_tags else None,
+        )
         out_items.append(SimilarResponse(query=text, results=items, meta=meta))
 
     return SimilarBatchResponse(items=out_items)

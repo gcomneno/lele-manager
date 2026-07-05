@@ -24,11 +24,23 @@ export interface SimilarItem {
   score: number
   text_preview: string
   rank?: number | null
+  topic?: string | null
+  tags_shared?: string[] | null
+}
+
+export interface SimilarMeta {
+  data_mtime_ns: number
+  model_mtime_ns: number
+  top_k: number
+  min_score: number
+  query_topic?: string | null
+  query_tags?: string[] | null
 }
 
 export interface SimilarResponse {
   query: string
   results: SimilarItem[]
+  meta?: SimilarMeta | null
 }
 
 export interface HealthResponse {
@@ -150,20 +162,20 @@ export const api = {
   getLesson: (id: string) =>
     request<Lesson>(`/lessons/${encodeURIComponent(id)}`),
 
-  similarById: (id: string, topK = 5, minScore = 0) =>
+  similarById: (id: string, topK = 5, minScore = 0, explain = false) =>
     request<SimilarResponse>(
-      `/lessons/${encodeURIComponent(id)}/similar?top_k=${topK}&min_score=${minScore}`,
+      `/lessons/${encodeURIComponent(id)}/similar?top_k=${topK}&min_score=${minScore}&explain=${explain ? 'true' : 'false'}`,
     ),
 
-  similarByText: (text: string, topK = 5, minScore = 0.1) =>
-    request<SimilarResponse>('/similar', {
+  similarByText: (text: string, topK = 5, minScore = 0.1, explain = false) =>
+    request<SimilarResponse>(`/similar?explain=${explain ? 'true' : 'false'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, top_k: topK, min_score: minScore }),
     }),
 
-  editorSuggest: (text: string, topK = 5, minScore = 0.1) =>
-    request<SimilarResponse>('/editor/suggest', {
+  editorSuggest: (text: string, topK = 5, minScore = 0.1, explain = false) =>
+    request<SimilarResponse>(`/editor/suggest?explain=${explain ? 'true' : 'false'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, top_k: topK, min_score: minScore }),

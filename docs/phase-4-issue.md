@@ -38,11 +38,11 @@ Questa fase porta la GUI da “funziona” a “mi fido mentre scrivo”: capire
 
 ### 4.1 Explain similarity in GUI (#90)
 
-- [ ] Usare `explain=true` su `/similar`, `/editor/suggest`, `/lessons/{id}/similar`
-- [ ] Pannello **“Perché simile?”** in `Detail` e `Editor` (rank, score, preview)
-- [ ] Mostrare metadati utili: topic, tag overlap (se disponibili in explain meta)
-- [ ] CLI: opzionale `lele similar --explain` / `lele suggest --explain`
-- [ ] Test API + snapshot minimi risposta explain
+- [x] Usare `explain=true` su `/similar`, `/editor/suggest`, `/lessons/{id}/similar`
+- [x] Pannello **“Perché simile?”** in `Detail` e `Editor` (rank, score, preview)
+- [x] Mostrare metadati utili: topic, tag overlap (se disponibili in explain meta)
+- [x] CLI: opzionale `lele similar --explain` / `lele suggest --explain`
+- [x] Test API + snapshot minimi risposta explain
 
 **Non in scope:** LLM/RAG per spiegazioni in linguaggio naturale.
 
