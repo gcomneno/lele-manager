@@ -1,104 +1,91 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, type Lesson } from '../lib/api'
+  import { api, type VaultTreeResponse } from '../lib/api'
+  import VaultTree from '../components/VaultTree.svelte'
   import { navigate } from '../lib/router'
 
-  let lessons = $state<Lesson[]>([])
+  let treeData = $state<VaultTreeResponse | null>(null)
   let loading = $state(true)
   let error = $state('')
+  let importMsg = $state('')
 
-  type Group = { topic: string; items: Lesson[] }
-
-  let groups = $derived.by(() => {
-    const map = new Map<string, Lesson[]>()
-    for (const lesson of lessons) {
-      const key = lesson.topic ?? '(senza topic)'
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(lesson)
-    }
-    return [...map.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([topic, items]) => ({ topic, items }))
-  })
-
-  onMount(async () => {
+  async function load() {
+    loading = true
+    error = ''
     try {
-      lessons = await api.listLessons(500)
+      const status = await api.vaultStatus()
+      if (!status.exists) {
+        error = `Vault non trovato: ${status.vault_dir}`
+        treeData = null
+        return
+      }
+      treeData = await api.vaultTree()
     } catch (e) {
+      treeData = null
       error = e instanceof Error ? e.message : String(e)
     } finally {
       loading = false
     }
-  })
+  }
+
+  async function doImport() {
+    importMsg = 'Import…'
+    try {
+      const res = await api.vaultImport()
+      importMsg = res.message
+      await load()
+    } catch (e) {
+      importMsg = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  onMount(load)
 </script>
 
 <section class="card">
-  <h2>Vault</h2>
-  <p class="meta">
-    Vista raggruppata per topic (da dataset JSONL). Filesystem reale → Fase 2 (<code>GET /vault/tree</code>).
-  </p>
+  <div class="head">
+    <h2>Vault</h2>
+    <div class="actions">
+      <button class="btn" onclick={load} disabled={loading}>Refresh</button>
+      <button class="btn btn-primary" onclick={doImport}>Import → JSONL</button>
+      <button class="btn" onclick={() => navigate({ view: 'editor' })}>+ Nuova</button>
+    </div>
+  </div>
+
+  {#if treeData}
+    <p class="meta">{treeData.vault_dir}</p>
+  {/if}
 
   {#if loading}
     <p class="meta">Caricamento…</p>
   {:else if error}
     <p class="error">{error}</p>
-  {:else if groups.length === 0}
-    <p class="meta">Nessuna LeLe nel dataset.</p>
-  {:else}
-  <div class="tree">
-    {#each groups as group}
-      <details open>
-        <summary>{group.topic} <span class="meta">({group.items.length})</span></summary>
-        <ul>
-          {#each group.items as lesson}
-            <li>
-              <button type="button" onclick={() => navigate({ view: 'detail', id: lesson.id })}>
-                {lesson.id}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </details>
-    {/each}
-  </div>
+  {:else if treeData}
+    <VaultTree node={treeData.tree} />
+  {/if}
+
+  {#if importMsg}
+    <p class="ok">{importMsg}</p>
   {/if}
 </section>
 
 <style>
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+
   h2 {
-    margin: 0 0 8px;
+    margin: 0;
   }
 
-  .tree {
-    display: grid;
-    gap: 10px;
-    margin-top: 12px;
-  }
-
-  details {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
-    background: #fffdf9;
-  }
-
-  summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
-
-  ul {
-    margin: 8px 0 0;
-    padding-left: 18px;
-  }
-
-  li button {
-    background: none;
-    border: none;
-    color: var(--accent);
-    padding: 2px 0;
-    text-align: left;
-    font-family: ui-monospace, monospace;
-    font-size: 0.85rem;
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
   }
 </style>

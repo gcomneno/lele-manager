@@ -11,6 +11,20 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-05
+
+### Added
+- `core/vault.py` — vault tree, markdown write-back, import to JSONL.
+- API: `GET /vault/status`, `GET /vault/tree`, `POST /vault/import`.
+- API: `POST /vault/lessons` (create `.md` in vault), `PUT /lessons/{id}` (update + sync).
+- API: `POST /ops/refresh` (import vault + optional train).
+- GUI Fase 2: Salva nel vault (Editor), albero vault reale, import/refresh in Ops.
+- Test `tests/test_api_vault.py`.
+
+### Changed
+- Lesson routes accept slash IDs via `{lesson_id:path}` (es. `python/2026-07-05.slug`).
+- Explicit `PyYAML` dependency.
+
 ## [1.6.0] - 2026-07-05
 
 ### Added
@@ -137,7 +151,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/gcomneno/lele-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/gcomneno/lele-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/gcomneno/lele-manager/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/gcomneno/lele-manager/compare/v1.4.0...v1.4.1

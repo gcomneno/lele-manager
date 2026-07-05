@@ -43,6 +43,50 @@ export interface TrainResponse {
   topics: string[]
 }
 
+export interface VaultStatusResponse {
+  vault_dir: string
+  exists: boolean
+}
+
+export interface VaultTreeNode {
+  type: 'dir' | 'file'
+  name: string
+  path?: string
+  id?: string
+  children?: VaultTreeNode[]
+}
+
+export interface VaultTreeResponse {
+  vault_dir: string
+  tree: VaultTreeNode
+}
+
+export interface VaultImportResponse {
+  message: string
+  n_lessons: number
+  output_path: string
+  topics: string[]
+}
+
+export interface LessonVaultWrite {
+  text: string
+  topic: string
+  source?: string
+  importance?: number
+  tags?: string[] | null
+  date?: string | null
+  title?: string | null
+}
+
+export interface LessonVaultCreate extends LessonVaultWrite {
+  id?: string | null
+}
+
+export interface OpsRefreshResponse {
+  import_result: VaultImportResponse
+  train_result?: TrainResponse | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, init)
   const data = await resp.json().catch(() => ({}))
@@ -96,4 +140,30 @@ export const api = {
 
   trainTopic: () =>
     request<TrainResponse>('/train/topic', { method: 'POST' }),
+
+  vaultStatus: () => request<VaultStatusResponse>('/vault/status'),
+
+  vaultTree: () => request<VaultTreeResponse>('/vault/tree'),
+
+  vaultImport: () =>
+    request<VaultImportResponse>('/vault/import', { method: 'POST' }),
+
+  createVaultLesson: (body: LessonVaultCreate) =>
+    request<Lesson>('/vault/lessons', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  updateLesson: (id: string, body: LessonVaultWrite) =>
+    request<Lesson>(`/lessons/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  opsRefresh: (train = true) =>
+    request<OpsRefreshResponse>(`/ops/refresh?train=${train ? 'true' : 'false'}`, {
+      method: 'POST',
+    }),
 }

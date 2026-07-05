@@ -5,6 +5,8 @@
   let trainResult = $state<TrainResponse | null>(null)
   let loadingHealth = $state(false)
   let training = $state(false)
+  let importing = $state(false)
+  let refreshing = $state(false)
   let error = $state('')
   let log = $state<string[]>([])
 
@@ -27,6 +29,42 @@
       pushLog(`health errore: ${error}`)
     } finally {
       loadingHealth = false
+    }
+  }
+
+  async function vaultImport() {
+    importing = true
+    error = ''
+    pushLog('import vault avviato…')
+    try {
+      const res = await api.vaultImport()
+      pushLog(`import ok — ${res.n_lessons} lessons`)
+      await refreshHealth()
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+      pushLog(`import errore: ${error}`)
+    } finally {
+      importing = false
+    }
+  }
+
+  async function fullRefresh() {
+    refreshing = true
+    error = ''
+    pushLog('refresh completo avviato…')
+    try {
+      const res = await api.opsRefresh(true)
+      pushLog(res.import_result.message)
+      if (res.train_result) {
+        pushLog(`train ok — ${res.train_result.n_lessons} lessons`)
+      }
+      trainResult = res.train_result ?? null
+      await refreshHealth()
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+      pushLog(`refresh errore: ${error}`)
+    } finally {
+      refreshing = false
     }
   }
 
@@ -53,7 +91,7 @@
 <div class="ops">
   <section class="card">
     <h2>Ops / Admin</h2>
-    <p class="meta">Operazioni sul dataset e sul topic model. Import vault completo → Fase 2.</p>
+    <p class="meta">Import vault, train e refresh completo (import + train).</p>
 
     <div class="health-grid">
       <div>
@@ -72,8 +110,12 @@
 
     <div class="actions">
       <button class="btn" onclick={refreshHealth} disabled={loadingHealth}>Refresh health</button>
+      <button class="btn" onclick={vaultImport} disabled={importing}>Import vault</button>
       <button class="btn btn-primary" onclick={train} disabled={training}>
         {training ? 'Training…' : 'Train topic model'}
+      </button>
+      <button class="btn btn-primary" onclick={fullRefresh} disabled={refreshing}>
+        {refreshing ? 'Refresh…' : 'Refresh completo'}
       </button>
     </div>
 

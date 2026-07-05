@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type Lesson, type SimilarItem } from '../lib/api'
   import { stripFrontmatter } from '../lib/markdown'
+  import { navigate } from '../lib/router'
   import SimilarPanel from '../components/SimilarPanel.svelte'
 
   interface Props {
@@ -22,6 +23,8 @@
   let similarLoading = $state(false)
   let similarError = $state('')
   let loadError = $state('')
+  let saving = $state(false)
+  let saveMsg = $state('')
 
   let topK = $state(5)
   let minScore = $state(0.1)
@@ -94,6 +97,55 @@
     }
   }
 
+  function buildPayload() {
+    const tagList = tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+    return {
+      text: body,
+      topic: topic.trim(),
+      source: source.trim() || 'note',
+      importance: Number(importance) || 3,
+      tags: tagList,
+      date: date || null,
+      title: title.trim() || null,
+    }
+  }
+
+  async function save() {
+    if (!body.trim()) {
+      saveMsg = 'Il body non può essere vuoto.'
+      return
+    }
+    if (!topic.trim()) {
+      saveMsg = 'Topic obbligatorio.'
+      return
+    }
+
+    saving = true
+    saveMsg = ''
+    try {
+      const payload = buildPayload()
+      const targetId = (id || lessonId || '').trim()
+      let lesson: Lesson
+      if (targetId) {
+        lesson = await api.updateLesson(targetId, payload)
+      } else {
+        lesson = await api.createVaultLesson({
+          ...payload,
+          id: lessonId.trim() || null,
+        })
+      }
+      saveMsg = `Salvato nel vault: ${lesson.id}`
+      navigate({ view: 'detail', id: lesson.id })
+    } catch (e) {
+      saveMsg = e instanceof Error ? e.message : String(e)
+    } finally {
+      saving = false
+    }
+  }
+
   $effect(() => {
     if (id) {
       loadExisting(id)
@@ -107,17 +159,20 @@
   <section class="card editor-pane">
     <div class="head">
       <h2>{id ? 'Modifica LeLe' : 'Nuova LeLe'}</h2>
-      <button class="btn btn-primary" disabled title="Write-back vault — Fase 2">
-        Salva (fase 2)
+      <button class="btn btn-primary" onclick={save} disabled={saving}>
+        {saving ? 'Salvataggio…' : 'Salva nel vault'}
       </button>
     </div>
 
     {#if loadError}
       <p class="error">{loadError}</p>
     {/if}
+    {#if saveMsg}
+      <p class={saveMsg.startsWith('Salvato') ? 'ok' : 'error'}>{saveMsg}</p>
+    {/if}
 
     <div class="meta-grid">
-      <label>ID <input bind:value={lessonId} placeholder="auto" readonly={!!id} /></label>
+      <label>ID <input bind:value={lessonId} placeholder="auto (topic/data.slug)" readonly={!!id} /></label>
       <label>Topic <input bind:value={topic} oninput={scheduleSuggest} /></label>
       <label>Source <input bind:value={source} oninput={scheduleSuggest} /></label>
       <label>Importance <input type="number" min="1" max="5" bind:value={importance} oninput={scheduleSuggest} /></label>

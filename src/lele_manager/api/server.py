@@ -15,6 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
 from lele_manager.core.config import resolve_data_path, resolve_model_path
+from lele_manager.core.vault import (
+    build_vault_tree,
+    find_markdown_by_id,
+    import_vault_to_jsonl,
+    require_vault_dir,
+    resolve_vault_dir,
+    default_relative_path,
+    write_lesson_markdown,
+)
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import (
     load_topic_model,
@@ -191,6 +200,47 @@ class HealthResponse(BaseModel):
     status: str
     has_data: bool
     has_model: bool
+
+
+class VaultStatusResponse(BaseModel):
+    vault_dir: str
+    exists: bool
+
+
+class VaultTreeResponse(BaseModel):
+    vault_dir: str
+    tree: dict
+
+
+class VaultImportResponse(BaseModel):
+    message: str
+    n_lessons: int
+    output_path: str
+    topics: List[str]
+
+
+class LessonVaultWrite(BaseModel):
+    """Payload per scrittura LeLe nel vault Markdown."""
+
+    text: str = Field(..., description="Corpo markdown (senza frontmatter).")
+    topic: str = Field(..., min_length=1)
+    source: str = Field(default="note")
+    importance: int = Field(default=3, ge=1, le=5)
+    tags: Optional[List[str]] = Field(default=None)
+    date: Optional[str] = Field(default=None)
+    title: Optional[str] = Field(default=None)
+
+
+class LessonVaultCreate(LessonVaultWrite):
+    id: Optional[str] = Field(
+        default=None,
+        description="ID LeLe. Se omesso viene derivato da topic/data/titolo.",
+    )
+
+
+class OpsRefreshResponse(BaseModel):
+    import_result: VaultImportResponse
+    train_result: Optional[TrainResponse] = None
 
 
 # -----------------------------------------------------------------------------
@@ -527,70 +577,7 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
     return results
 
 
-@app.get("/lessons/{lesson_id}", response_model=Lesson)
-def get_lesson(lesson_id: str) -> Lesson:
-    """
-    Recupera una singola LeLe per ID.
-    Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
-    """
-    df = load_lessons_df()
-    if df.empty:
-        raise HTTPException(status_code=404, detail="Nessuna LeLe presente.")
-
-    matches = df[df["id"].astype(str) == lesson_id]
-    if matches.empty:
-        raise HTTPException(status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata.")
-
-    row = matches.iloc[0]
-
-    # Normalizza stringhe (gestisce NaN/NaT/Timestamp -> str o None)
-    topic_val = _to_optional_str(row.get("topic"))
-    source_val = _to_optional_str(row.get("source"))
-    date_val = _to_optional_str(row.get("date"))
-    title_val = _to_optional_str(row.get("title"))
-
-    # importance robusta
-    raw_importance = row.get("importance")
-    if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
-        importance_val = None
-    else:
-        try:
-            importance_val = int(raw_importance)
-        except (TypeError, ValueError):
-            importance_val = None
-
-    # tags: solo se lista
-    raw_tags = row.get("tags")
-    tags_val = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else None
-
-    return Lesson(
-        id=str(row["id"]),
-        text=str(row["text"]),
-        topic=topic_val,
-        source=source_val,
-        importance=importance_val,
-        tags=tags_val,
-        date=date_val,
-        title=title_val,
-    )
-
-
-@app.post("/lessons", response_model=Lesson, status_code=201)
-def add_lesson(lesson_in: LessonCreate) -> Lesson:
-    """
-    Aggiunge una nuova LeLe al dataset (append su lessons.jsonl (data path)).
-    L'ID viene generato se non fornito.
-    """
-    lele_id = lesson_in.id or uuid.uuid4().hex
-    payload = lesson_in.dict(exclude={"id"})
-    if not payload.get("created_at"):
-        payload["created_at"] = datetime.now(timezone.utc).isoformat()
-    lesson = Lesson(id=lele_id, **payload)
-    append_lesson_to_jsonl(lesson)
-    return lesson
-
-
-@app.get("/lessons/{lesson_id}/similar", response_model=SimilarResponse, response_model_exclude_none=True)
+@app.get("/lessons/{lesson_id:path}/similar", response_model=SimilarResponse, response_model_exclude_none=True)
 def similar_lessons(
     lesson_id: str,
     explain: bool = Query(default=False, description="Se true, include meta e rank per debug."),
@@ -655,6 +642,66 @@ def similar_lessons(
         results=items,
         meta=meta,
     )
+
+
+@app.get("/lessons/{lesson_id:path}", response_model=Lesson)
+def get_lesson(lesson_id: str) -> Lesson:
+    """
+    Recupera una singola LeLe per ID.
+    Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
+    """
+    df = load_lessons_df()
+    if df.empty:
+        raise HTTPException(status_code=404, detail="Nessuna LeLe presente.")
+
+    matches = df[df["id"].astype(str) == lesson_id]
+    if matches.empty:
+        raise HTTPException(status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata.")
+
+    row = matches.iloc[0]
+
+    topic_val = _to_optional_str(row.get("topic"))
+    source_val = _to_optional_str(row.get("source"))
+    date_val = _to_optional_str(row.get("date"))
+    title_val = _to_optional_str(row.get("title"))
+
+    raw_importance = row.get("importance")
+    if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
+        importance_val = None
+    else:
+        try:
+            importance_val = int(raw_importance)
+        except (TypeError, ValueError):
+            importance_val = None
+
+    raw_tags = row.get("tags")
+    tags_val = [str(t) for t in raw_tags] if isinstance(raw_tags, list) else None
+
+    return Lesson(
+        id=str(row["id"]),
+        text=str(row["text"]),
+        topic=topic_val,
+        source=source_val,
+        importance=importance_val,
+        tags=tags_val,
+        date=date_val,
+        title=title_val,
+    )
+
+
+@app.post("/lessons", response_model=Lesson, status_code=201)
+def add_lesson(lesson_in: LessonCreate) -> Lesson:
+    """
+    Aggiunge una nuova LeLe al dataset (append su lessons.jsonl (data path)).
+    L'ID viene generato se non fornito.
+    """
+    lele_id = lesson_in.id or uuid.uuid4().hex
+    payload = lesson_in.dict(exclude={"id"})
+    if not payload.get("created_at"):
+        payload["created_at"] = datetime.now(timezone.utc).isoformat()
+    lesson = Lesson(id=lele_id, **payload)
+    append_lesson_to_jsonl(lesson)
+    return lesson
 
 
 @app.post("/similar", response_model=SimilarResponse, response_model_exclude_none=True)
@@ -756,6 +803,130 @@ def train_topic() -> TrainResponse:
         n_lessons=int(len(df_train)),
         topics=topics,
     )
+
+
+def _sync_vault_import() -> VaultImportResponse:
+    vault_dir = require_vault_dir()
+    data_path = get_data_path()
+    result = import_vault_to_jsonl(vault_dir, data_path)
+    invalidate_similarity_cache()
+    return VaultImportResponse(
+        message=f"Import completato: {result['n_lessons']} LeLe",
+        n_lessons=int(result["n_lessons"]),
+        output_path=str(result["output_path"]),
+        topics=list(result["topics"]),
+    )
+
+
+def _lesson_date_or_today(date_val: Optional[str]) -> str:
+    if date_val and str(date_val).strip():
+        return str(date_val).strip()
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _write_lesson_to_vault(
+    *,
+    lesson_id: str,
+    payload: LessonVaultWrite,
+    relative_path: Optional[str] = None,
+) -> Path:
+    vault_dir = require_vault_dir()
+    tags = payload.tags or []
+    date_str = _lesson_date_or_today(payload.date)
+    return write_lesson_markdown(
+        vault_dir,
+        lesson_id=lesson_id,
+        body=payload.text,
+        topic=payload.topic.strip(),
+        source=payload.source.strip() or "note",
+        importance=int(payload.importance),
+        tags=[str(t).strip() for t in tags if str(t).strip()],
+        date=date_str,
+        title=payload.title.strip() if payload.title else None,
+        relative_path=relative_path,
+    )
+
+
+@app.get("/vault/status", response_model=VaultStatusResponse)
+def vault_status() -> VaultStatusResponse:
+    vault_dir = resolve_vault_dir()
+    return VaultStatusResponse(vault_dir=str(vault_dir), exists=vault_dir.is_dir())
+
+
+@app.get("/vault/tree", response_model=VaultTreeResponse)
+def vault_tree() -> VaultTreeResponse:
+    vault_dir = require_vault_dir()
+    tree = build_vault_tree(vault_dir)
+    return VaultTreeResponse(vault_dir=str(vault_dir), tree=tree.to_dict())
+
+
+@app.post("/vault/import", response_model=VaultImportResponse)
+def vault_import() -> VaultImportResponse:
+    """Importa il vault Markdown nel dataset JSONL configurato."""
+    try:
+        return _sync_vault_import()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/vault/lessons", response_model=Lesson, status_code=201)
+def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
+    """Crea una nuova LeLe come file `.md` nel vault e risincronizza il JSONL."""
+    date_str = _lesson_date_or_today(body.date)
+    topic = body.topic.strip()
+    lesson_id = (body.id or "").strip()
+    if not lesson_id:
+        rel = default_relative_path(
+            lesson_id=f"{topic}/{date_str}.lesson",
+            topic=topic,
+            date=date_str,
+            title=body.title,
+        )
+        lesson_id = rel.removesuffix(".md")
+
+    try:
+        _write_lesson_to_vault(lesson_id=lesson_id, payload=body)
+        _sync_vault_import()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return get_lesson(lesson_id)
+
+
+@app.put("/lessons/{lesson_id:path}", response_model=Lesson)
+def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
+    """Aggiorna una LeLe: write-back su vault `.md` + re-import JSONL."""
+    try:
+        vault_dir = require_vault_dir()
+        existing = find_markdown_by_id(vault_dir, lesson_id)
+        rel_path = existing.relative_to(vault_dir).as_posix() if existing else None
+        _write_lesson_to_vault(lesson_id=lesson_id, payload=body, relative_path=rel_path)
+        _sync_vault_import()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return get_lesson(lesson_id)
+
+
+@app.post("/ops/refresh", response_model=OpsRefreshResponse)
+def ops_refresh(
+    train: bool = Query(default=True, description="Se true, riallena anche il topic model."),
+) -> OpsRefreshResponse:
+    """Import vault → JSONL e opzionalmente train topic model (come lele-api-refresh)."""
+    try:
+        import_result = _sync_vault_import()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    train_result: Optional[TrainResponse] = None
+    if train:
+        train_result = train_topic()
+
+    return OpsRefreshResponse(import_result=import_result, train_result=train_result)
 
 
 @app.get("/ui", response_class=HTMLResponse)
