@@ -11,6 +11,26 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-05
+
+### Added
+- **Explain similarity (Fase 4.1, #90):** `explain=true` su `/similar`, `/editor/suggest`, `GET /lessons/{id}/similar` con rank, topic, `tags_shared` e meta query.
+- GUI: pannello **“Perché simile?”** in Detail e Editor (`SimilarPanel`).
+- CLI: `lele similar --explain`, `lele suggest --explain`.
+- **Export search → Markdown (Fase 4.2, #87):** `POST /export/search` (`text/markdown` o JSON), `core/export.py`.
+- GUI: **Esporta .md** in Browse; export per bucket in Timeline.
+- CLI: `lele export --search "…" --topic python -o results.md`.
+- **Playwright E2E smoke (Fase 4.3):** `npm run test:e2e`, fixture `scripts/e2e-prepare.py`, job CI `e2e`.
+- Test: `test_api_similar_explain.py`, `test_export_search.py`, `frontend/e2e/smoke.spec.ts`.
+
+### Changed
+- CI: tre job (`test`, `e2e`, `packaging-smoke`).
+
+### Docs
+- `docs/gui-design.md`: sezione Fase 4.
+- `docs/phase-4-issue.md`: tracking Fase 4 completo.
+- README: endpoint export, explain, Test E2E.
+
 ## [1.8.0] - 2026-07-05
 
 ### Added
@@ -164,7 +184,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/gcomneno/lele-manager/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/gcomneno/lele-manager/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/gcomneno/lele-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/gcomneno/lele-manager/compare/v1.5.0...v1.6.0
