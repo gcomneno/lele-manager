@@ -502,6 +502,8 @@ Oltre alla CLI e al PoC legacy (`GET /ui`), LeLe Manager include una **GUI Svelt
 
 Richiede `LELE_VAULT_DIR` (default `~/LeLeVault`).
 
+Design completo: [`docs/gui-design.md`](docs/gui-design.md)
+
 **Dev frontend** (hot reload, proxy API):
 
 ```bash
