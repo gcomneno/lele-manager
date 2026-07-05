@@ -74,5 +74,10 @@ vault/
 # Frontend / GUI build artifacts
 frontend/node_modules/
 frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
 src/lele_manager/gui/static/*
 !src/lele_manager/gui/static/.gitkeep
+
+# E2E fixture (generated locally / in CI)
+.e2e-fixture/
