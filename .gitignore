@@ -70,3 +70,9 @@ models/
 
 # Lele-Vault
 vault/
+
+# Frontend / GUI build artifacts
+frontend/node_modules/
+frontend/dist/
+src/lele_manager/gui/static/*
+!src/lele_manager/gui/static/.gitkeep
