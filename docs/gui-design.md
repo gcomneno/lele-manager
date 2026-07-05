@@ -278,13 +278,13 @@ La GUI-alpha può usare solo API già presenti:
 
 ### Fase 3+
 
-| Endpoint | Issue correlata |
-|----------|-----------------|
-| `/stats/summary` | #88 |
-| `/lessons/timeline` | #89 |
-| `/export/search` | #87 |
-| `/similar/explain` (esteso) | #90 |
-| `/lessons/duplicates` | #85 |
+| Endpoint | Issue correlata | Stato |
+|----------|-----------------|-------|
+| `/stats/summary` | #88 | ✅ v1.8.0 |
+| `/stats/timeline` | #89 | ✅ v1.8.0 |
+| `/export/search` | #87 | ✅ v1.9.0 |
+| `explain=true` su similarità | #90 | ✅ v1.9.0 |
+| `/lessons/duplicates` | #85 | Fase 5 |
 
 ### Real-time suggest
 
@@ -399,3 +399,39 @@ lele-manager/
 - Epic GUI: [#95](https://github.com/gcomneno/lele-manager/issues/95)
 - Milestone: [v2.0](https://github.com/gcomneno/lele-manager/milestone/3)
 - Issue correlate: #88, #89, #87, #90, #85, #84, #92
+
+---
+
+## 11. Fase 4 — Explain, export, E2E ✅ (v1.9.0)
+
+| Blocco | Deliverable | Note |
+|--------|-------------|------|
+| 4.1 Explain | Pannello **“Perché simile?”** in Detail/Editor | `explain=true`: rank, topic, tag overlap, meta query |
+| 4.2 Export | `POST /export/search` + **Esporta .md** in Browse | Frontmatter YAML opzionale; export bucket in Timeline |
+| 4.3 E2E | Playwright smoke (3 test) | CI job `e2e`; `scripts/e2e-serve.sh` + fixture `.e2e-fixture/` |
+| 4.4 Release | CHANGELOG + bump `1.9.0` | Milestone GUI v2.0 — epic #95 |
+
+### Wireframe aggiornamenti
+
+**Detail / Editor — pannello destro:**
+```
+┌─ Perché simile? ─────────────────┐
+│ top_k=5, min_score=0.10           │
+│ #1  0.84  python                  │
+│ python/2025-01-01.slug            │
+│ tag in comune: pytest             │
+└───────────────────────────────────┘
+```
+
+**Browse — azioni:**
+```
+[Cerca] [Lista tutte] [Esporta .md] [Reset]
+```
+
+### CLI Fase 4
+
+```bash
+lele similar <id> --explain
+lele suggest --text "..." --explain
+lele export --search "pytest" --topic python -o results.md
+```
