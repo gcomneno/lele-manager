@@ -68,9 +68,9 @@ Questa fase porta la GUI da “funziona” a “mi fido mentre scrivo”: capire
 
 ### 4.4 Documentazione & release
 
-- [ ] Aggiornare `docs/gui-design.md` (sezione Fase 4)
-- [ ] `CHANGELOG.md` + bump `1.9.0`
-- [ ] README: explain + export + E2E
+- [x] Aggiornare `docs/gui-design.md` (sezione Fase 4)
+- [x] `CHANGELOG.md` + bump `1.9.0`
+- [x] README: explain + export + E2E
 
 ---
 
@@ -86,11 +86,11 @@ Questa fase porta la GUI da “funziona” a “mi fido mentre scrivo”: capire
 
 ## Acceptance criteria (Fase 4 done)
 
-- [ ] In GUI vedo *perché* una LeLe è simile (non solo il numero)
-- [ ] Posso esportare una ricerca Browse in `.md` utilizzabile in Obsidian/vault
-- [ ] CI verde con smoke Playwright
-- [ ] `pytest` resta verde (nessuna regressione API)
-- [ ] Issue #90 e #87 chiudibili (o chiuse con riferimento a questa)
+- [x] In GUI vedo *perché* una LeLe è simile (non solo il numero)
+- [x] Posso esportare una ricerca Browse in `.md` utilizzabile in Obsidian/vault
+- [x] CI verde con smoke Playwright
+- [x] `pytest` resta verde (nessuna regressione API)
+- [x] Issue #90 e #87 chiudibili (o chiuse con riferimento a questa)
 
 ---
 

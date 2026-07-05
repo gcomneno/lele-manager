@@ -466,10 +466,12 @@ Modalità “solo API” (dataset e modello già pronti):
 - `GET /health` → stato rapido del servizio (dati/modello presenti).
 - `GET /lessons` → lista/ricerca delle LeLe (query param base).
 - `GET /lessons/{id}` → dettaglio di una LeLe.
-- `GET /lessons/{id}/similar` → LeLe simili a quella indicata.
+- `GET /lessons/{id}/similar` → LeLe simili (`?explain=true` per rank, topic, tag overlap).
+- `POST /similar`, `POST /editor/suggest` → similarità da testo (`?explain=true` opzionale).
+- `POST /export/search` → export risultati ricerca in Markdown (`?format=markdown|json`).
+- `GET /stats/summary`, `GET /stats/timeline` → statistiche e timeline.
 - `POST /train/topic` → (ri)allena il topic model a partire da `data/lessons.jsonl`.
 - `POST /lessons/search` → ricerca avanzata con payload JSON (testo + filtri).
-- `POST /similar` → suggerisce LeLe simili a partire da testo libero (senza `lesson_id`).
 
 ---
 
@@ -488,14 +490,14 @@ Oltre alla CLI e al PoC legacy (`GET /ui`), LeLe Manager include una **GUI Svelt
 # http://127.0.0.1:8000/app/
 ```
 
-### Viste disponibili (Fase 1)
+### Viste disponibili
 
 | Vista | Cosa fa |
 |-------|---------|
-| **Browse** | Ricerca avanzata (`POST /lessons/search`) + filtri |
-| **Detail** | Lettura LeLe + pannello simili |
-| **Editor** | Scrittura con suggest live (`POST /editor/suggest`) |
-| **Timeline** | Acquisizione conoscenza per mese/anno/topic |
+| **Browse** | Ricerca avanzata + filtri + **Esporta .md** (v1.9) |
+| **Detail** | Lettura LeLe + pannello **“Perché simile?”** con explain (v1.9) |
+| **Editor** | Scrittura con suggest live + explain nel pannello simili |
+| **Timeline** | Acquisizione conoscenza + export per bucket (v1.9) |
 | **Stats** | Dashboard: conteggi, tag, topic, medie |
 | **Vault** | Albero filesystem reale (`GET /vault/tree`) + import |
 | **Ops** | Health + retrain + **import vault** + **refresh completo** |
@@ -669,6 +671,20 @@ Modalità watch (ogni 2 secondi):
 
 ```bash
 lele suggest --watch note.md --every 2
+```
+
+### 📤 Export ricerca in Markdown (v1.9)
+
+```bash
+lele export --search "pytest" --topic python -o results.md
+lele export --search "git" -o git-lessons.md --no-frontmatter
+```
+
+### 🔬 Explain similarity (v1.9)
+
+```bash
+lele similar "python/2025-01-01.slug" --explain
+lele suggest --text "pytest fixtures" --explain
 ```
 
 Opzioni principali:
