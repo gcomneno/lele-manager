@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import lele_manager.api.server as server_mod
-import pandas as pd
 from fastapi.testclient import TestClient
 
 from lele_manager.api.server import app
