@@ -115,142 +115,94 @@ In pratica oggi ho:
 
 ---
 
-## 4. TODO “assoluti” (da fare davvero)
-Queste sono le cose da fare **prima** di complicare il progetto con nuove feature grosse.
+## 4. TODO “assoluti” — stato aggiornato (2026-07)
 
-### 4.1. Test automatici minimi
+La maggior parte dei TODO originali è **completata**. Questa sezione riflette lo stato reale del codice su `main`.
+
+### 4.1. Test automatici minimi ✅
+
 **Obiettivo:** evitare che una modifica futura spacchi in silenzio il flusso base.
 
-- [ ] **Test `import_from_dir`**
-  - [ ] frontmatter mancante → viene creato correttamente (`id`, `topic`, `source`, `importance`).
-  - [ ] `date` YAML → finisce come stringa `"YYYY-MM-DD"` nel JSONL.
-  - [ ] `--on-duplicate overwrite` / `skip` / `error`:
-    - [ ] overwrite: vince l’ultima versione,
-    - [ ] skip: vince la prima,
-    - [ ] error: solleva eccezione al primo duplicato.
-  - [ ] hash frontmatter (SHA-256) stabile al cambiare dell’ordine delle chiavi.
+- [x] **Test `import_from_dir`** (`test_import_from_dir.py`, `test_import_from_dir_cli.py`, `test_frontmatter_hash.py`)
+  - [x] frontmatter mancante → viene creato correttamente
+  - [x] `date` YAML → stringa `"YYYY-MM-DD"` nel JSONL
+  - [x] `--on-duplicate overwrite` / `skip` / `error`
+  - [x] hash frontmatter (SHA-256) stabile
 
-- [ ] **Test `train_topic_model`**
-  - [ ] dataset con due topic diversi → training ok.
-  - [ ] dataset con un solo topic → `ValueError` con messaggio leggibile.
-  - [ ] dataset senza colonna `topic` → `KeyError` chiaro.
+- [x] **Test `train_topic_model`** (`test_train_topic_model_cli.py`, `test_text_ml.py`)
+  - [x] dataset con due topic → training ok
+  - [x] dataset con un solo topic → `ValueError` leggibile
+  - [x] dataset senza colonna `topic` → errore chiaro
 
-- [ ] **Test API base**
-  - [ ] `GET /health` con:
-    - dataset/modello presenti,
-    - dataset/modello mancanti.
-  - [ ] `GET /lessons` con JSONL contenente:
-    - valori `NaN`/`NaT` su `date`/`title`,
-    - `tags` non lista → vengono resi `null`.
-  - [ ] `GET /lessons/{id}`:
-    - id presente → 200,
-    - id assente → 404.
-  - [ ] `GET /lessons/{id}/similar` con:
-    - modello presente → risposta ok,
-    - modello mancante → errore 503 leggibile.
+- [x] **Test API base** (`test_api_basic.py`, `test_search_api.py`, `test_api_similar_edgecases.py`, …)
+  - [x] `GET /health` (dataset/modello presenti o mancanti)
+  - [x] `GET /lessons` con `NaN`/`NaT` e `tags` non lista
+  - [x] `GET /lessons/{id}` → 200 / 404
+  - [x] `GET /lessons/{id}/similar` → ok o 503 se modello mancante
 
-### 4.2. Endpoint di ricerca avanzata
+Suite attuale: **~36 file di test, ~75 casi** — copertura ben oltre il minimo originale.
 
-_Nota: `POST /similar` (text-based similarity) è stato implementato in v1.2.0._
+### 4.2. Endpoint di ricerca avanzata ✅
 
-**Motivazione:** i query param (`q`, `topic`, `source`, `limit`) sono limitati; serve qualcosa di più espressivo.
+- [x] `POST /lessons/search` con payload JSON (`topic_in`, `source_in`, `importance_gte/lte`, `limit`, …)
+- [x] Filtri lato server con DataFrame normalizzato + ordinamento deterministico
+- [x] Esempi nel README
 
-- [ ] Aggiungere endpoint `POST /lessons/search` con payload JSON, es.:
+### 4.3. Client CLI sopra le API ✅
 
-```json
-{
-"q": "pytest",
-"topic_in": ["python", "git"],
-"source_in": ["note", "chatgpt"],
-"importance_gte": 3,
-"importance_lte": 5,
-"limit": 20
-}
-```
+- [x] `lele search "pytest" --topic python --limit 10`
+- [x] `lele show <id>`
+- [x] `lele similar <id> --top-k 5 --min-score 0.1`
+- [x] `lele train-topic`
+- [x] `lele suggest` (`--text`, `--file`, stdin, `--watch`)
+- [x] Configurazione via `LELE_API_URL` (default `http://127.0.0.1:8000`)
 
-* [ ] Implementare logica di filtro lato server con un DataFrame “pulito” (simile all’attuale `list_lessons`, ma più ricca).
-* [ ] Aggiungere esempi nel README.
+### 4.4. Documentazione & versioni ✅ (con piccoli residui)
 
-### 4.3. Client CLI sopra le API
-
-_Stato: prima versione implementata in v1.2.0 (`lele suggest`)._
-
-**Motivazione:** non voglio ricordarmi `curl` a memoria ogni volta.
-
-Nuovo modulo CLI, ad es. `lele_manager.cli.api_client` + entrypoint `lele` (o simile):
-
-* [ ] `lele search "pytest" --topic python --limit 10`
-* [ ] `lele show <id>`
-* [ ] `lele similar <id> --top-k 5 --min-score 0.1`
-* [ ] `lele train-topic` (chiama `POST /train/topic`)
-
-Extra:
-* [ ] Configurazione host/port in un file di config o variabile d’ambiente (di default `http://127.0.0.1:8000`).
-
-### 4.4. Documentazione & versioni
-* [ ] Aggiungere una sezione **“Versioni”** nel README (o in `CHANGELOG.md`), es.:
-
-  ```markdown
-  ## Versioni
-
-  - 1.0.0 – Prima versione completa:
-    - LeLe Vault (Markdown + YAML),
-    - import JSONL,
-    - topic model + similarità,
-    - API FastAPI,
-    - script `lele-refresh`.
-  ```
-
-* [ ] Aggiungere 1–2 **“User story complete”** nel README:
-
-  * [ ] “Aggiungo una nuova LeLe Git nel vault → la vedo via `/lessons` → chiedo simili via `/lessons/{id}/similar`”.
-  * [ ] “Aggiorno una LeLe esistente (stesso `id`) → `lele-refresh` → dataset e modello aggiornati”.
+- [x] Sezione **Versioni** nel README + `CHANGELOG.md`
+- [x] User stories complete nel README
+- [x] `LICENSE` (MIT)
+- [ ] Pin dipendenze in `pyproject.toml` (reproducibilità build)
+- [x] Tag `v1.5.0` per le feature post-1.4.1
 
 ---
 
 ## 5. Evoluzione futura (nice-to-have)
-Queste sono le idee “da laboratorio” che possono arrivare dopo i TODO assoluti.
+Queste sono le idee “da laboratorio” — alcune già parzialmente realizzate.
 
 ### 5.1. ML più ricco
-- [ ] Embedding densi (SVD / doc2vec / altro) al posto/insieme di TF-IDF.
+- [x] Embedding densi (SVD) come backend opt-in (`LsaSimilarityBackend`, TF-IDF + TruncatedSVD).
+- [ ] doc2vec / altri embedding al posto/insieme di TF-IDF.
 - [ ] MLP o altro modellino leggero sopra le feature attuali per:
   * migliorare similarità,
   * stimare una “priorità di revisita” della LeLe (ranking personalizzato).
 
 ### 5.2. UX & interfacce
-- [ ] Mini UI web (HTML/JS minimale) servita da FastAPI:
-  * pagina `/ui` con:
-    * barra di ricerca,
-    * lista risultati,
-    * pannello “similar” a lato.
-- [ ] Integrazione con editor (in futuro):
-  * script che, mentre scrivi una LeLe, chiama `/lessons/similar` e propone link.
+- [x] Mini UI web (`GET /ui`) con ricerca e similarità free-text.
+- [x] Integrazione editor: `POST /editor/suggest` per similarità live mentre si scrive.
+- [ ] Plugin editor nativo (VS Code / Obsidian) che chiama l’API in background.
 
 ### 5.3. Architettura & distribuzione
-- [ ] Separazione netta in moduli:
-  * `lele_manager.core` (modello dati, IO),
-  * `lele_manager.ml` (feature, modelli),
-  * `lele_manager.cli`,
-  * `lele_manager.api`.
-- [ ] Packaging per PyPI:
-  * pubblicare il pacchetto `lele-manager`,
-  * in modo da poterlo usare/pilottare da altri tool GiadaWare.
+- [x] Separazione in moduli (`core`, `ml`, `cli`, `api`).
+- [x] Packaging smoke test + release workflow (PyPI gated da `PYPI_ENABLED`).
+- [ ] Refactor `server.py` in router FastAPI separati.
+- [ ] Pubblicazione effettiva su PyPI.
+- [ ] Pin dipendenze per build riproducibili.
 
 ---
 
 ## 6. Priorità operative (in ordine pratico)
-1. ✅ *Già fatto*: Vault + import + ML + API + `lele-refresh`.
-2. 🔴 **Subito dopo**:
-   1. Test minimi (`import_from_dir`, `train_topic_model`, API base).
-   2. Endpoint `POST /lessons/search`.
-   3. Client CLI `lele` sopra le API.
-3. 🟡 **Quando c’è fiato**:
-   * versione 1.0.1 / 1.1.0 con search avanzata + CLI,
-   * UI minimale,
-   * miglioramenti ML/UX.
-4. 🟢 **Ricerca & giocattoni**:
-   * embedding più sofisticati,
+1. ✅ Vault + import + ML + API + `lele-refresh`.
+2. ✅ Test minimi, `POST /lessons/search`, client CLI `lele`.
+3. ✅ UI minimale, similarity service boundary, backend abstraction, LSA opt-in.
+4. 🔴 **Prossimi passi sensati**:
+   1. Tag release `v1.5.0` (feature post-1.4.1 documentate in `CHANGELOG.md`).
+   2. Pin dipendenze (`pyproject.toml` o lockfile).
+   3. Split `server.py` in router (manutenibilità).
+5. 🟢 **Ricerca & giocattoni**:
+   * embedding più sofisticati (doc2vec, ecc.),
    * ranking personalizzato,
+   * plugin editor,
    * integrazione con altri progetti (GYTE, ecc.).
 
 ---
