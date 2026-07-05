@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type Lesson, type SimilarItem } from '../lib/api'
+  import { api, type Lesson, type SimilarItem, type SimilarMeta } from '../lib/api'
   import { navigate } from '../lib/router'
   import { renderMarkdown } from '../lib/markdown'
   import SimilarPanel from '../components/SimilarPanel.svelte'
@@ -12,6 +12,7 @@
 
   let lesson = $state<Lesson | null>(null)
   let similar = $state<SimilarItem[]>([])
+  let similarMeta = $state<SimilarMeta | null>(null)
   let loading = $state(true)
   let similarLoading = $state(false)
   let error = $state('')
@@ -34,8 +35,9 @@
     similarLoading = true
     similarError = ''
     try {
-      const resp = await api.similarById(id, 8, 0.05)
+      const resp = await api.similarById(id, 8, 0.05, true)
       similar = resp.results
+      similarMeta = resp.meta ?? null
     } catch (e) {
       similar = []
       similarError = e instanceof Error ? e.message : String(e)
@@ -92,6 +94,8 @@
     <SimilarPanel
       title="LeLe simili"
       items={similar}
+      meta={similarMeta}
+      explain={true}
       loading={similarLoading}
       error={similarError}
     />
