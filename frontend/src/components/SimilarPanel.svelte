@@ -1,20 +1,24 @@
 <script lang="ts">
-  import type { SimilarItem } from '../lib/api'
+  import type { SimilarItem, SimilarMeta } from '../lib/api'
   import { navigate } from '../lib/router'
 
   interface Props {
     title?: string
     items: SimilarItem[]
+    meta?: SimilarMeta | null
     loading?: boolean
     error?: string
+    explain?: boolean
     onclickItem?: (id: string) => void
   }
 
   let {
     title = 'Simili',
     items,
+    meta = null,
     loading = false,
     error = '',
+    explain = true,
     onclickItem,
   }: Props = $props()
 
@@ -25,7 +29,19 @@
 </script>
 
 <section class="card similar-panel">
-  <h3>{title}</h3>
+  <h3>{explain ? 'Perché simile?' : title}</h3>
+
+  {#if explain && meta}
+    <p class="explain-meta">
+      top_k={meta.top_k}, min_score={meta.min_score.toFixed(2)}
+      {#if meta.query_topic}
+        · query topic: <strong>{meta.query_topic}</strong>
+      {/if}
+      {#if meta.query_tags?.length}
+        · tag query: {meta.query_tags.join(', ')}
+      {/if}
+    </p>
+  {/if}
 
   {#if loading}
     <p class="meta">Caricamento…</p>
@@ -38,9 +54,20 @@
       {#each items as item}
         <li>
           <button type="button" class="item" onclick={() => handleClick(item.id)}>
-            <span class="score">{item.score.toFixed(2)}</span>
+            <div class="row-top">
+              {#if explain && item.rank != null}
+                <span class="rank">#{item.rank}</span>
+              {/if}
+              <span class="score">{item.score.toFixed(2)}</span>
+              {#if explain && item.topic}
+                <span class="topic">{item.topic}</span>
+              {/if}
+            </div>
             <span class="id">{item.id}</span>
             <span class="preview">{item.text_preview}</span>
+            {#if explain && item.tags_shared?.length}
+              <span class="tags-shared">tag in comune: {item.tags_shared.join(', ')}</span>
+            {/if}
           </button>
         </li>
       {/each}
@@ -51,6 +78,13 @@
 <style>
   h3 {
     margin: 0 0 12px;
+  }
+
+  .explain-meta {
+    margin: 0 0 12px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.4;
   }
 
   ul {
@@ -72,10 +106,31 @@
     gap: 4px;
   }
 
+  .row-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rank {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+
   .score {
     color: var(--accent);
     font-weight: 700;
     font-size: 0.85rem;
+  }
+
+  .topic {
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #f0ebe3;
+    color: var(--text);
   }
 
   .id {
@@ -86,5 +141,10 @@
   .preview {
     color: var(--muted);
     font-size: 0.85rem;
+  }
+
+  .tags-shared {
+    font-size: 0.75rem;
+    color: var(--accent);
   }
 </style>

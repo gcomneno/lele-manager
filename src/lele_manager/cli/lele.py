@@ -119,6 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Stampa la risposta come JSON invece che in formato umano.",
     )
+    p_similar.add_argument(
+        "--explain",
+        action="store_true",
+        help="Include rank, topic e meta di debug (explain=true).",
+    )
 
 
     # ------------------------------------------------------------------
@@ -165,6 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Stampa la risposta come JSON invece che in formato umano.",
+    )
+    p_suggest.add_argument(
+        "--explain",
+        action="store_true",
+        help="Include rank, topic e meta di debug (explain=true).",
     )
     # ------------------------------------------------------------------
     # lele train-topic
@@ -267,12 +277,19 @@ def _print_human_lesson(item: Dict[str, Any]) -> None:
     print(item.get("text") or "")
 
 
-def _print_human_similar(results: List[Dict[str, Any]], query: str) -> None:
+def _print_human_similar(results: List[Dict[str, Any]], query: str, meta: Dict[str, Any] | None = None) -> None:
     print("=== Query ===")
     q = query.replace("\n", " ")
     if len(q) > 140:
         q = q[:137] + "..."
     print(q)
+    if meta:
+        parts = [f"top_k={meta.get('top_k')}", f"min_score={meta.get('min_score')}"]
+        if meta.get("query_topic"):
+            parts.append(f"query_topic={meta['query_topic']}")
+        if meta.get("query_tags"):
+            parts.append(f"query_tags={','.join(meta['query_tags'])}")
+        print(f"[meta] {', '.join(str(p) for p in parts)}")
     print("")
     if not results:
         print("[info] Nessuna lesson simile trovata.")
@@ -282,8 +299,15 @@ def _print_human_similar(results: List[Dict[str, Any]], query: str) -> None:
     for r in results:
         lesson_id = r.get("id", "")
         score = r.get("score", 0.0)
+        rank = r.get("rank")
+        topic = r.get("topic")
         text_preview = r.get("text_preview", "")
-        print(f"- {lesson_id} | score={score:.3f}")
+        rank_prefix = f"#{rank} " if rank is not None else ""
+        topic_suffix = f" | topic={topic}" if topic else ""
+        print(f"- {rank_prefix}{lesson_id} | score={score:.3f}{topic_suffix}")
+        tags_shared = r.get("tags_shared") or []
+        if tags_shared:
+            print(f"  tag in comune: {', '.join(str(t) for t in tags_shared)}")
         print(f"  {text_preview}")
 
 
@@ -353,6 +377,8 @@ def cmd_similar(base_url: str, args: argparse.Namespace) -> int:
         "top_k": args.top_k,
         "min_score": args.min_score,
     }
+    if getattr(args, "explain", False):
+        params["explain"] = True
 
     with httpx.Client(base_url=base_url, timeout=10.0) as client:
         try:
@@ -372,11 +398,12 @@ def cmd_similar(base_url: str, args: argparse.Namespace) -> int:
     data = resp.json()
     query_text = data.get("query", "")
     results = data.get("results", [])
+    meta = data.get("meta")
 
     if args.json:
         _print_json(data)
     else:
-        _print_human_similar(results, query_text)
+        _print_human_similar(results, query_text, meta)
     return 0
 
 def _read_text_or_stdin(args: argparse.Namespace) -> str:
@@ -405,7 +432,10 @@ def cmd_suggest(base_url: str, args: argparse.Namespace) -> int:
 
         with httpx.Client(base_url=base_url, timeout=10.0) as client:
             try:
-                resp = client.post("/similar", json=payload)
+                post_kwargs: Dict[str, Any] = {"json": payload}
+                if getattr(args, "explain", False):
+                    post_kwargs["params"] = {"explain": "true"}
+                resp = client.post("/similar", **post_kwargs)
             except httpx.RequestError as exc:
                 print(f"[errore] Errore di rete verso {exc.request.url}: {exc}", file=sys.stderr)
                 return 1
@@ -424,7 +454,8 @@ def cmd_suggest(base_url: str, args: argparse.Namespace) -> int:
         else:
             query_text = data.get("query", "")
             results = data.get("results", [])
-            _print_human_similar(results, query_text)
+            meta = data.get("meta")
+            _print_human_similar(results, query_text, meta)
         return 0
 
     watch = getattr(args, "watch", None)

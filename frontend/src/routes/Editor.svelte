@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type Lesson, type SimilarItem } from '../lib/api'
+  import { api, type Lesson, type SimilarItem, type SimilarMeta } from '../lib/api'
   import { stripFrontmatter } from '../lib/markdown'
   import { navigate } from '../lib/router'
   import SimilarPanel from '../components/SimilarPanel.svelte'
@@ -20,6 +20,7 @@
   let lessonId = $state('')
 
   let similar = $state<SimilarItem[]>([])
+  let similarMeta = $state<SimilarMeta | null>(null)
   let similarLoading = $state(false)
   let similarError = $state('')
   let loadError = $state('')
@@ -63,8 +64,9 @@
     similarLoading = true
     similarError = ''
     try {
-      const resp = await api.editorSuggest(text, topK, minScore)
+      const resp = await api.editorSuggest(text, topK, minScore, true)
       similar = resp.results
+      similarMeta = resp.meta ?? null
     } catch (e) {
       similar = []
       similarError = e instanceof Error ? e.message : String(e)
@@ -200,6 +202,8 @@
   <SimilarPanel
     title="Simili live"
     items={similar}
+    meta={similarMeta}
+    explain={true}
     loading={similarLoading}
     error={similarError}
   />
