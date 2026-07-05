@@ -57,12 +57,12 @@ Questa fase porta la GUI da “funziona” a “mi fido mentre scrivo”: capire
 
 ### 4.3 Playwright E2E smoke
 
-- [ ] Setup `frontend/` — `@playwright/test`, script `npm run test:e2e`
-- [ ] CI: avvia API test fixture + build GUI + 3 smoke:
-  - [ ] browse → click risultato → detail
-  - [ ] editor: digita testo → suggest panel risponde (mock o dataset fixture)
-  - [ ] stats/timeline caricano senza 500
-- [ ] Documentare in README sezione “Test E2E”
+- [x] Setup `frontend/` — `@playwright/test`, script `npm run test:e2e`
+- [x] CI: avvia API test fixture + build GUI + 3 smoke:
+  - [x] browse → click risultato → detail
+  - [x] editor: digita testo → suggest panel risponde (mock o dataset fixture)
+  - [x] stats/timeline caricano senza 500
+- [x] Documentare in README sezione “Test E2E”
 
 **Non in scope:** copertura E2E completa di ogni vista.
 

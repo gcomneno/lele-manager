@@ -14,7 +14,7 @@ Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Mana
 
 ## ✅ Quality gates (quick scan)
 
-- **CI**: `ruff check .` + `pytest` (GitHub Actions, Python 3.12)
+- **CI**: `ruff check .` + `pytest` + Playwright E2E smoke (GitHub Actions, Python 3.12 + Node 22)
 - **Security**: `pip-audit` + `bandit` (GitHub Actions)
 - **pre-commit**: whitespace/end-of-file, `check-yaml`, `ruff`
 
@@ -516,6 +516,23 @@ npm install
 npm run dev
 # apri l'URL indicato da Vite (proxy verso :8000 se configurato)
 ```
+
+### Test E2E (Playwright)
+
+Smoke test sulla GUI servita dall'API (fixture JSONL + topic model dedicati):
+
+```bash
+# prerequisiti: Python venv con pip install -e ".[dev]", GUI buildata
+./scripts/build-gui.sh
+
+cd frontend
+npm install
+npx playwright install chromium   # prima volta
+npm run test:e2e
+```
+
+Lo script `scripts/e2e-serve.sh` avvia uvicorn su `:8765` con dataset `.e2e-fixture/`.
+In CI il job `e2e` esegue gli stessi test dopo build GUI + `pytest`.
 
 ---
 
