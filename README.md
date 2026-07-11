@@ -201,6 +201,10 @@ Cosa fa:
 - crea in RAM una mappa `id → record`;
 - scrive da zero `data/lessons.jsonl` con una riga per ogni `id` unico.
 
+Il flag `--write-missing-frontmatter` completa o ripara soltanto i campi mancanti o
+non validi nei file Markdown. Un frontmatter già completo e valido non viene
+riscritto: le normalizzazioni necessarie al JSONL avvengono esclusivamente in RAM.
+
 ### Gestione dei duplicati: `--on-duplicate`
 
 L’identità delle LeLe è l’`id` nel frontmatter.
