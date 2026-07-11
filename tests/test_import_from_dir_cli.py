@@ -262,3 +262,165 @@ def test_import_from_dir_on_duplicate_skip_keeps_first(tmp_path: Path) -> None:
     record = json.loads(lines[0])
     assert "PRIMO" in record.get("text", "")
     assert "SECONDO" not in record.get("text", "")
+
+
+
+def test_valid_frontmatter_is_byte_for_byte_unchanged(tmp_path: Path) -> None:
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    md_path = vault_dir / "valid.md"
+    original = textwrap.dedent(
+        """\
+        ---
+        id: test/valid
+        topic: scrittura
+        source: note
+        importance: 3
+        tags: [italiano, qualità]
+        date: 2025-12-05
+        title: "Perché — è importante"
+        ---
+
+        Testo già valido con accenti.
+        """
+    ).encode("utf-8")
+    md_path.write_bytes(original)
+
+    output_path = tmp_path / "lessons.jsonl"
+    result = run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "lele_manager.cli.import_from_dir",
+            str(vault_dir),
+            str(output_path),
+            "--default-source",
+            "note",
+            "--default-importance",
+            "3",
+            "--write-missing-frontmatter",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert md_path.read_bytes() == original
+
+
+def test_required_rewrite_preserves_unicode_and_field_order(tmp_path: Path) -> None:
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    md_path = vault_dir / "unicode.md"
+    md_path.write_text(
+        textwrap.dedent(
+            """\
+            ---
+            id: test/unicode
+            topic: qualità
+            source: note
+            title: "Perché — già così"
+            tags: [caffè, città]
+            ---
+
+            È un contenuto leggibile.
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "lele_manager.cli.import_from_dir",
+            str(vault_dir),
+            str(tmp_path / "lessons.jsonl"),
+            "--default-importance",
+            "3",
+            "--write-missing-frontmatter",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    rewritten = md_path.read_text(encoding="utf-8")
+    assert "qualità" in rewritten
+    assert "Perché — già così" in rewritten
+    assert "caffè" in rewritten
+    assert "\\u" not in rewritten
+    assert "\\x" not in rewritten
+    assert rewritten.index("title:") < rewritten.index("tags:") < rewritten.index("importance:")
+    assert _parse_frontmatter(rewritten)["importance"] == 3
+
+
+def test_jsonl_normalizes_metadata_without_rewriting_source(tmp_path: Path) -> None:
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    md_path = vault_dir / "normalized.md"
+    original = textwrap.dedent(
+        """\
+        ---
+        id: test/normalized
+        topic: test
+        source: note
+        importance: "4"
+        tags: "python, pytest"
+        date: 2025-12-05
+        ---
+        Body.
+        """
+    ).encode("utf-8")
+    md_path.write_bytes(original)
+    output_path = tmp_path / "lessons.jsonl"
+
+    result = run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "lele_manager.cli.import_from_dir",
+            str(vault_dir),
+            str(output_path),
+            "--write-missing-frontmatter",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(output_path.read_text(encoding="utf-8"))
+    assert record["date"] == "2025-12-05"
+    assert record["importance"] == 4
+    assert record["tags"] == ["python", "pytest"]
+    assert record["frontmatter"]["date"] == "2025-12-05"
+    assert md_path.read_bytes() == original
+
+
+def test_valid_vault_import_does_not_modify_sources(tmp_path: Path) -> None:
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    sources = {
+        "a.md": b"---\nid: vault/a\ntopic: alpha\nsource: note\nimportance: 3\ntags: [alpha]\ndate: 2025-01-01\ntitle: LeLe A\n---\nA\n",
+        "b.md": "---\nid: vault/b\ntopic: beta\nsource: note\nimportance: 5\ntags: [città]\ndate: 2025-01-02\ntitle: LeLe B\n---\nB — è valido\n".encode("utf-8"),
+    }
+    for name, content in sources.items():
+        (vault_dir / name).write_bytes(content)
+    output_path = tmp_path / "lessons.jsonl"
+
+    result = run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "lele_manager.cli.import_from_dir",
+            str(vault_dir),
+            str(output_path),
+            "--default-source",
+            "note",
+            "--default-importance",
+            "3",
+            "--write-missing-frontmatter",
+        ]
+    )
+
+    assert result.returncode == 0, result.stderr
+    records = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert [(record["id"], record["date"]) for record in records] == [
+        ("vault/a", "2025-01-01"),
+        ("vault/b", "2025-01-02"),
+    ]
+    assert {name: (vault_dir / name).read_bytes() for name in sources} == sources
