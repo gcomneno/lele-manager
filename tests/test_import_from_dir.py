@@ -52,7 +52,7 @@ def test_import_writes_missing_frontmatter_fields(tmp_path: Path) -> None:
     assert fm["date"] == "2025-11-20"
 
 
-def test_import_normalizes_yaml_date_type(tmp_path: Path) -> None:
+def test_import_normalizes_yaml_date_type_without_rewriting_source(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
 
@@ -69,6 +69,7 @@ Body
 """,
         encoding="utf-8",
     )
+    original = md.read_bytes()
 
     records = import_from_dir(
         input_dir=vault,
@@ -81,8 +82,5 @@ Body
 
     rec = records["x/1"]
     assert rec.date == "2025-01-01"
-
-    updated = md.read_text(encoding="utf-8")
-    fm = _read_frontmatter(updated)
-    # dopo rewrite, deve essere stringa YYYY-MM-DD, non oggetto date
-    assert fm["date"] == "2025-01-01"
+    assert rec.frontmatter["date"] == "2025-01-01"
+    assert md.read_bytes() == original

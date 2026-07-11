@@ -69,7 +69,7 @@ def parse_markdown_with_frontmatter(content: str) -> Tuple[Dict[str, object], st
 
 
 def render_markdown_with_frontmatter(frontmatter: Dict[str, object], body: str) -> str:
-    fm_text = yaml.safe_dump(frontmatter, sort_keys=False).rstrip()
+    fm_text = yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False).rstrip()
     return f"---\n{fm_text}\n---\n\n{body.rstrip()}\n"
 
 
@@ -86,7 +86,8 @@ def derive_id_from_path(md_path: Path, root_dir: Path) -> str:
 def derive_topic(frontmatter: Dict[str, object], md_path: Path, default_topic: Optional[str]) -> Optional[str]:
     if "topic" in frontmatter and isinstance(frontmatter["topic"], str):
         t = frontmatter["topic"].strip()
-        return t or None
+        if t:
+            return t
     if default_topic:
         return default_topic
     parent = md_path.parent.name
@@ -176,8 +177,9 @@ def import_from_dir(
             print(f"[warn] Impossibile leggere {rel_path} come UTF-8, salto.")
             continue
 
-        frontmatter, body = parse_markdown_with_frontmatter(content)
-        original_fm = dict(frontmatter)
+        source_frontmatter, body = parse_markdown_with_frontmatter(content)
+        frontmatter = dict(source_frontmatter)
+        source_frontmatter_changed = False
 
         # ID
         raw_id = frontmatter.get("id")
@@ -186,19 +188,30 @@ def import_from_dir(
         else:
             lele_id = derive_id_from_path(md_path, input_dir)
             frontmatter["id"] = lele_id
+            if write_missing_frontmatter:
+                source_frontmatter["id"] = lele_id
+                source_frontmatter_changed = True
 
         # topic
         topic = derive_topic(frontmatter, md_path, default_topic)
-        if write_missing_frontmatter and ("topic" not in frontmatter) and topic is not None:
+        if topic is not None and not (
+            isinstance(frontmatter.get("topic"), str) and frontmatter["topic"].strip()
+        ):
             frontmatter["topic"] = topic
+            if write_missing_frontmatter:
+                source_frontmatter["topic"] = topic
+                source_frontmatter_changed = True
 
         # source
-        if "source" in frontmatter and isinstance(frontmatter["source"], str):
-            source = frontmatter["source"].strip() or None
+        if isinstance(frontmatter.get("source"), str) and frontmatter["source"].strip():
+            source = frontmatter["source"].strip()
         else:
             source = default_source
-            if write_missing_frontmatter and default_source is not None:
-                frontmatter.setdefault("source", default_source)
+            if default_source is not None:
+                frontmatter["source"] = default_source
+                if write_missing_frontmatter:
+                    source_frontmatter["source"] = default_source
+                    source_frontmatter_changed = True
 
         # importance
         if "importance" in frontmatter:
@@ -206,25 +219,32 @@ def import_from_dir(
                 importance = int(frontmatter["importance"])  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 importance = default_importance
-                if write_missing_frontmatter and default_importance is not None:
+                if default_importance is not None:
                     frontmatter["importance"] = int(default_importance)
+                    if write_missing_frontmatter:
+                        source_frontmatter["importance"] = int(default_importance)
+                        source_frontmatter_changed = True
         else:
             importance = default_importance
-            if write_missing_frontmatter and default_importance is not None:
+            if default_importance is not None:
                 frontmatter["importance"] = int(default_importance)
+                if write_missing_frontmatter:
+                    source_frontmatter["importance"] = int(default_importance)
+                    source_frontmatter_changed = True
 
         # tags
         tags = normalize_tags(frontmatter.get("tags"))
 
         # date (normalizzata)
         date = derive_date(frontmatter, md_path)
-        if write_missing_frontmatter:
-            if "date" in frontmatter:
-                norm = _normalize_frontmatter_date(frontmatter.get("date"))
-                if norm and frontmatter.get("date") != norm:
-                    frontmatter["date"] = norm
-            if "date" not in frontmatter and date is not None:
-                frontmatter["date"] = date
+        normalized_date = _normalize_frontmatter_date(frontmatter.get("date"))
+        if normalized_date is not None:
+            frontmatter["date"] = normalized_date
+        elif date is not None:
+            frontmatter["date"] = date
+            if write_missing_frontmatter:
+                source_frontmatter["date"] = date
+                source_frontmatter_changed = True
 
         # title
         title = None
@@ -264,13 +284,9 @@ def import_from_dir(
         records_by_id[lele_id] = record
         first_path_by_id[lele_id] = md_path
 
-        # Riscrivi se il frontmatter è cambiato (non solo id)
-        if write_missing_frontmatter:
-            before = yaml.safe_dump(original_fm, sort_keys=True)
-            after = yaml.safe_dump(frontmatter, sort_keys=True)
-            if before != after:
-                new_content = render_markdown_with_frontmatter(frontmatter, body)
-                files_to_update.append((md_path, new_content))
+        if write_missing_frontmatter and source_frontmatter_changed:
+            new_content = render_markdown_with_frontmatter(source_frontmatter, body)
+            files_to_update.append((md_path, new_content))
 
     if files_to_update:
         print(f"[info] Aggiorno {len(files_to_update)} file per aggiungere/sincronizzare il frontmatter.")
@@ -317,7 +333,10 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--write-missing-frontmatter",
         action="store_true",
-        help="Se impostato, aggiunge/sincronizza il frontmatter (id incluso) nei file che ne sono sprovvisti.",
+        help=(
+            "Completa o ripara i campi mancanti/non validi del frontmatter sorgente; "
+            "i file già validi non vengono riscritti."
+        ),
     )
     return parser.parse_args(argv)
 
