@@ -145,7 +145,7 @@ Convenzioni (soft):
 - directory = **topic** principale (`python`, `cpp`, `linux`, `writing`, …);
 - filename = `YYYY-MM-DD.slug.md` (senza underscore, usa `.` e `-`).
 
-### Frontmatter YAML: schema base
+### Frontmatter YAML: schema accettato dall'importer
 
 Ogni LeLe può avere in testa un frontmatter YAML:
 
@@ -161,7 +161,8 @@ title: "LL-5 — std::cin vs std::getline"
 ---
 ```
 
-Campi supportati (tutti opzionali, tranne `id` che viene generato se manca):
+L'importer accetta uno schema tollerante. I campi sono opzionali; quando `id`
+manca viene generato dal percorso:
 
 - `id` (str) → identità stabile della LeLe
   - se non presente, viene derivato dal path relativo, es. `cpp/2025-11-20.cin-vs-getline`;
@@ -174,6 +175,52 @@ Campi supportati (tutti opzionali, tranne `id` che viene generato se manca):
 - `title` (str) → titolo umano della LeLe (opzionale).
 
 Internamente LeLe Manager calcola anche un `frontmatter_hash` (hash del solo frontmatter) utile per debug/versioning, ma l’identità resta sempre `id`.
+
+Questo è lo schema di ingresso accettato dall'importer, non una garanzia che ogni
+file importabile superi anche i controlli canonici di `doctor`.
+
+### Schema canonico validato da doctor
+
+`lele doctor` applica uno schema distinto e rigoroso. Richiede tutti e sette i
+campi `id`, `topic`, `source`, `importance`, `tags`, `date` e `title`; `id`,
+`topic`, `source` e `title` devono essere stringhe non vuote, `importance` un
+intero tra 1 e 5, `date` una data valida `YYYY-MM-DD` e `tags` una lista non
+vuota composta da stringhe non vuote. Richiede inoltre un body Markdown non
+vuoto.
+
+Quando è disponibile un contesto vault, ogni file selezionato deve appartenere
+alla sua radice, anche dopo la risoluzione dei symlink. Nel vault canonico,
+`topic` deve corrispondere alla prima directory del percorso relativo e `id` al
+percorso relativo senza estensione `.md`. Di conseguenza, dopo aver spostato un
+file occorre riallineare anche il suo `id` (e il `topic`, se cambia directory)
+perché superi `doctor`. Soltanto la validazione locale senza alcun contesto vault
+omette i controlli basati sul percorso.
+
+### Controllo locale del vault
+
+`lele doctor` verifica i file Markdown localmente, senza richiedere il server API e
+senza scrivere o riserializzare i Markdown. Non modifica intenzionalmente
+contenuto, mtime o permessi; la lettura può però causare l'aggiornamento
+dell'access time da parte del filesystem.
+
+```bash
+# Controlla ricorsivamente il vault configurato in LELE_VAULT_DIR
+lele doctor
+
+# Controlla ricorsivamente un vault specifico
+lele doctor --vault /path/to/LeLeVault
+
+# Controlla soltanto uno o più file (usando il vault configurato come contesto)
+lele doctor "$LELE_VAULT_DIR/python/2026-07-13.example.md"
+
+# Produce un report JSON adatto agli script
+lele doctor --json
+```
+
+Il controllo valida frontmatter e body e cerca ID duplicati nell'intero vault
+disponibile. L'exit code è `0` per un report valido, `1` per errori di
+validazione e `2` per errori operativi o di utilizzo, inclusa la selezione di un
+file esterno al vault configurato.
 
 ### Import da vault Markdown → JSONL
 

@@ -10,6 +10,14 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from lele_manager.core.doctor import (
+    DoctorOperationalError,
+    DoctorProblem,
+    DoctorReport,
+    check_markdown_files,
+)
+from lele_manager.core.vault import ENV_VAULT_DIR, resolve_vault_dir
+
 DEFAULT_BASE_URL = os.environ.get("LELE_API_URL", "http://127.0.0.1:8000")
 
 
@@ -278,6 +286,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Stampa la risposta come JSON invece che in formato umano.",
+    )
+
+    # ------------------------------------------------------------------
+    # lele doctor [FILE ...]
+    # ------------------------------------------------------------------
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        help="Controlla localmente e senza modifiche le LeLe Markdown.",
+    )
+    p_doctor.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        metavar="FILE",
+        help="File Markdown da controllare (default: tutto il vault).",
+    )
+    p_doctor.add_argument(
+        "--vault",
+        type=Path,
+        help="Radice del vault e contesto per path e ID duplicati.",
+    )
+    p_doctor.add_argument(
+        "--json",
+        action="store_true",
+        help="Stampa un report JSON stabile.",
     )
 
     return parser
@@ -652,6 +685,61 @@ def cmd_timeline(base_url: str, args: argparse.Namespace) -> int:
     return 0
 
 
+def _print_human_doctor(report: DoctorReport) -> None:
+    problems_by_path: Dict[str, List[DoctorProblem]] = {}
+    for problem in report.problems:
+        problems_by_path.setdefault(problem.path, []).append(problem)
+
+    for path in report.checked_files:
+        file_problems = problems_by_path.get(path, [])
+        if not file_problems:
+            print(f"[ok] {path}")
+            continue
+        for problem in file_problems:
+            field = f" ({problem.field})" if problem.field else ""
+            print(f"[errore] {path}{field}: {problem.message}")
+
+    print(
+        f"[info] File controllati: {report.files_checked} | "
+        f"ID unici: {report.unique_ids} | Errori: {report.error_count}"
+    )
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    vault_dir: Optional[Path]
+    if args.vault is not None:
+        vault_dir = args.vault
+    elif not args.paths or os.environ.get(ENV_VAULT_DIR):
+        vault_dir = resolve_vault_dir()
+    else:
+        vault_dir = None
+
+    try:
+        report = check_markdown_files(args.paths, vault_dir=vault_dir)
+    except DoctorOperationalError as exc:
+        if args.json:
+            _print_json(
+                {
+                    "valid": False,
+                    "files_checked": 0,
+                    "checked_files": [],
+                    "unique_ids": 0,
+                    "error_count": 0,
+                    "problems": [],
+                    "operational_error": str(exc),
+                }
+            )
+        else:
+            print(f"[errore] {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        _print_json(report.to_dict())
+    else:
+        _print_human_doctor(report)
+    return 0 if report.valid else 1
+
+
 # ----------------------------------------------------------------------
 # main
 # ----------------------------------------------------------------------
@@ -677,6 +765,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             code = cmd_stats(base_url, args)
         elif args.command == "timeline":
             code = cmd_timeline(base_url, args)
+        elif args.command == "doctor":
+            code = cmd_doctor(args)
         else:
             parser.error(f"Comando non riconosciuto: {args.command!r}")
             return
