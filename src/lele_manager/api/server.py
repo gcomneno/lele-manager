@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
 from lele_manager.core.analytics import compute_stats_summary, compute_timeline
+from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
 from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
@@ -212,6 +213,29 @@ class SimilarBatchRequest(BaseModel):
 
 class SimilarBatchResponse(BaseModel):
     items: List[SimilarResponse]
+
+
+class DuplicatePairResponse(BaseModel):
+    left_id: str
+    right_id: str
+    left_position: int
+    right_position: int
+    left_path: Optional[str] = None
+    right_path: Optional[str] = None
+    kind: Literal["exact", "near"]
+    score: float
+    reasons: List[str]
+    shared_tags: List[str]
+
+
+class DuplicateReportResponse(BaseModel):
+    lessons_analyzed: int
+    total_pairs: int
+    exact_pairs: int
+    near_pairs: int
+    min_score: float
+    exact_only: bool
+    pairs: List[DuplicatePairResponse]
 
 
 class TrainResponse(BaseModel):
@@ -597,6 +621,44 @@ def health() -> HealthResponse:
         has_data=has_data,
         has_model=has_model,
     )
+
+
+@app.get("/duplicates", response_model=DuplicateReportResponse)
+def duplicates(
+    min_score: float = Query(
+        default=DEFAULT_MIN_SCORE,
+        ge=0.0,
+        le=1.0,
+        description="Soglia euristica minima per le coppie near.",
+    ),
+    limit: Optional[int] = Query(
+        default=None,
+        ge=1,
+        le=10_000,
+        description="Numero massimo di coppie restituite, dopo l'ordinamento.",
+    ),
+    exact_only: bool = Query(
+        default=False,
+        description="Rileva solo duplicati esatti senza richiedere il modello.",
+    ),
+) -> DuplicateReportResponse:
+    """Analizza globalmente il dataset senza modificarlo."""
+    df = load_lessons_df()
+    transformer = None
+    feature_matrix = None
+    if not exact_only and len(df) > 1:
+        index = build_similarity_index(df)
+        transformer = index.transformer
+        feature_matrix = index.feature_matrix
+    report = find_duplicates(
+        df,
+        transformer=transformer,
+        feature_matrix=feature_matrix,
+        min_score=min_score,
+        exact_only=exact_only,
+        limit=limit,
+    )
+    return DuplicateReportResponse(**report.to_dict())
 
 
 @app.get("/lessons", response_model=List[LessonSearchResult])
