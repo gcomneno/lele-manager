@@ -192,6 +192,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include rank, topic e meta di debug (explain=true).",
     )
 
+    # ------------------------------------------------------------------
+    # lele duplicates
+    # ------------------------------------------------------------------
+    p_duplicates = subparsers.add_parser(
+        "duplicates",
+        help="Rileva duplicati esatti e quasi-duplicati (GET /duplicates).",
+    )
+    p_duplicates.add_argument(
+        "--min-score",
+        type=float,
+        default=0.85,
+        help="Soglia euristica per i quasi-duplicati (default: 0.85).",
+    )
+    p_duplicates.add_argument(
+        "--limit",
+        type=int,
+        help="Numero massimo di coppie restituite.",
+    )
+    p_duplicates.add_argument(
+        "--exact-only",
+        action="store_true",
+        help="Cerca solo duplicati esatti; non richiede il modello.",
+    )
+    p_duplicates.add_argument(
+        "--json",
+        action="store_true",
+        help="Stampa il report JSON senza testo aggiuntivo.",
+    )
+
 
     # ------------------------------------------------------------------
     # lele suggest
@@ -403,6 +432,32 @@ def _print_human_similar(results: List[Dict[str, Any]], query: str, meta: Dict[s
         print(f"  {text_preview}")
 
 
+def _print_human_duplicates(report: Dict[str, Any]) -> None:
+    print(
+        f"[info] LeLe analizzate: {report.get('lessons_analyzed', 0)} | "
+        f"Coppie: {report.get('total_pairs', 0)} | "
+        f"Exact: {report.get('exact_pairs', 0)} | Near: {report.get('near_pairs', 0)} | "
+        f"Soglia: {report.get('min_score', 0.85)}"
+    )
+    pairs = report.get("pairs") or []
+    if not pairs:
+        print("[info] Nessun duplicato o quasi-duplicato trovato.")
+        return
+    for pair in pairs:
+        left = f"{pair.get('left_id', '')} (riga {int(pair.get('left_position', 0)) + 1})"
+        right = f"{pair.get('right_id', '')} (riga {int(pair.get('right_position', 0)) + 1})"
+        print(
+            f"- [{str(pair.get('kind', '')).upper()}] {left} ↔ {right} | "
+            f"score={float(pair.get('score', 0.0)):.4f}"
+        )
+        reasons = pair.get("reasons") or []
+        if reasons:
+            print(f"  motivi: {', '.join(str(reason) for reason in reasons)}")
+        shared_tags = pair.get("shared_tags") or []
+        if shared_tags:
+            print(f"  tag condivisi: {', '.join(str(tag) for tag in shared_tags)}")
+
+
 # ----------------------------------------------------------------------
 # Command handlers
 # ----------------------------------------------------------------------
@@ -532,6 +587,46 @@ def cmd_similar(base_url: str, args: argparse.Namespace) -> int:
         _print_json(data)
     else:
         _print_human_similar(results, query_text, meta)
+    return 0
+
+
+def cmd_duplicates(base_url: str, args: argparse.Namespace) -> int:
+    if not 0.0 <= args.min_score <= 1.0:
+        print("[errore] --min-score deve essere compreso tra 0 e 1.", file=sys.stderr)
+        return 2
+    if args.limit is not None and not 1 <= args.limit <= 10_000:
+        print("[errore] --limit deve essere compreso tra 1 e 10000.", file=sys.stderr)
+        return 2
+
+    params: Dict[str, Any] = {
+        "min_score": args.min_score,
+        "exact_only": args.exact_only,
+    }
+    if args.limit is not None:
+        params["limit"] = args.limit
+    with httpx.Client(base_url=base_url, timeout=60.0) as client:
+        try:
+            resp = client.get("/duplicates", params=params)
+        except httpx.RequestError as exc:
+            print(f"[errore] Errore di rete verso {exc.request.url}: {exc}", file=sys.stderr)
+            return 1
+
+    if resp.status_code == 503:
+        print(
+            "[errore] Modello mancante. Allena prima con: lele train-topic, "
+            "oppure usa --exact-only.",
+            file=sys.stderr,
+        )
+        return 1
+    if resp.status_code >= 400:
+        print(f"[errore] {resp.status_code} {resp.text}", file=sys.stderr)
+        return 1
+
+    data = resp.json()
+    if args.json:
+        _print_json(data)
+    else:
+        _print_human_duplicates(data)
     return 0
 
 def _read_text_or_stdin(args: argparse.Namespace) -> str:
@@ -757,6 +852,8 @@ def main(argv: Optional[List[str]] = None) -> None:
             code = cmd_show(base_url, args)
         elif args.command == "similar":
             code = cmd_similar(base_url, args)
+        elif args.command == "duplicates":
+            code = cmd_duplicates(base_url, args)
         elif args.command == "suggest":
             code = cmd_suggest(base_url, args)
         elif args.command == "train-topic":

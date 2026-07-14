@@ -518,6 +518,8 @@ Modalità “solo API” (dataset e modello già pronti):
 - `GET /lessons` → lista/ricerca delle LeLe (query param base).
 - `GET /lessons/{id}` → dettaglio di una LeLe.
 - `GET /lessons/{id}/similar` → LeLe simili (`?explain=true` per rank, topic, tag overlap).
+- `GET /duplicates` → report read-only di duplicati esatti e quasi-duplicati
+  (`min_score`, `limit`, `exact_only`).
 - `POST /similar`, `POST /editor/suggest` → similarità da testo (`?explain=true` opzionale).
 - `POST /export/search` → export risultati ricerca in Markdown (`?format=markdown|json`).
 - `GET /stats/summary`, `GET /stats/timeline` → statistiche e timeline.
@@ -730,6 +732,30 @@ lele suggest --watch note.md --every 2
 lele export --search "pytest" --topic python -o results.md
 lele export --search "git" -o git-lessons.md --no-frontmatter
 ```
+
+### 🧬 Rilevare duplicati e quasi-duplicati
+
+`lele duplicates` analizza globalmente il dataset tramite l'API, senza modificare
+JSONL, vault o modelli:
+
+```bash
+lele duplicates
+lele duplicates --min-score 0.90 --limit 100
+lele duplicates --exact-only
+lele duplicates --json
+```
+
+I duplicati `exact` comprendono ID ripetuti e testi uguali dopo una
+normalizzazione prudente di Unicode, line ending e spazi finali. I candidati
+`near` sono invece coppie non esatte il cui punteggio cosine, calcolato con lo
+stesso estrattore fittato usato dalla similarità esistente, raggiunge
+`--min-score`. Topic, titolo, fonte, data e tag condivisi sono segnali
+esplicativi: da soli non rendono una coppia `near`.
+
+La soglia predefinita `0.85` è euristica e configurabile. Il modello addestrato
+è necessario per i `near`; `--exact-only` funziona senza modello. Il confronto
+globale usa tempo e memoria quadratici rispetto al numero di lesson ed è
+destinato all'attuale dataset personale, non a collezioni molto grandi.
 
 ### 🔬 Explain similarity (v1.9)
 
