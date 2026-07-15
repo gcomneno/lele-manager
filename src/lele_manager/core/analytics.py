@@ -86,17 +86,17 @@ def compute_timeline(df: pd.DataFrame, group_by: GroupBy = "month") -> Dict[str,
             buckets.setdefault(key, []).append(str(row["id"]))
     else:
         dates = _date_series(work)
-        for idx, row in work.iterrows():
-            dt = dates.loc[idx]
+        lesson_ids = work["id"].astype(str).tolist()
+        for lesson_id, dt in zip(lesson_ids, dates.tolist()):
             if pd.isna(dt):
                 key = "(senza data)"
             elif group_by == "year":
                 key = f"{dt.year:04d}"
             else:
                 key = f"{dt.year:04d}-{dt.month:02d}"
-            buckets.setdefault(key, []).append(str(row["id"]))
+            buckets.setdefault(key, []).append(lesson_id)
 
-    bucket_list = [
+    bucket_list: List[Dict[str, Any]] = [
         {"key": key, "count": len(ids), "lesson_ids": ids}
         for key, ids in buckets.items()
     ]

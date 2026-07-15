@@ -70,13 +70,22 @@ class LessonSimilarityIndex:
         [features] -> [clf]
         """
         try:
-            transformer: LessonFeatureExtractor = pipeline.named_steps["features"]  # type: ignore[assignment]
+            feature_step = pipeline.named_steps["features"]
         except KeyError:
             raise KeyError(
                 "Pipeline must have a 'features' step of type LessonFeatureExtractor."
             )
 
-        return cls.from_dataframe(df=df, transformer=transformer, id_column=id_column)
+        if not isinstance(feature_step, LessonFeatureExtractor):
+            raise TypeError(
+                "Pipeline step 'features' must be a LessonFeatureExtractor."
+            )
+
+        return cls.from_dataframe(
+            df=df,
+            transformer=feature_step,
+            id_column=id_column,
+        )
 
     def most_similar_with_ranking(
         self,

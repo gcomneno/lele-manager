@@ -6,10 +6,16 @@ from typing import Optional, Protocol
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
 
 from lele_manager.core.ranking import SimilarityRankingConfig
 from lele_manager.ml.features import LessonFeatureExtractor
 from lele_manager.ml.similarity import LessonSimilarityIndex, LessonSimilarityResult
+
+
+class _SvdTransformer(Protocol):
+    def transform(self, matrix: sparse.spmatrix) -> np.ndarray:
+        ...
 
 
 # --------------------------
@@ -33,7 +39,7 @@ class _LsaCacheKey_Internal:
 class _LsaIndexCache_Internal:
     lesson_ids: np.ndarray
     x_dense: np.ndarray
-    svd: object
+    svd: _SvdTransformer
 
 
 class _TfidfLsaBackend_Internal:
@@ -64,7 +70,6 @@ class _TfidfLsaBackend_Internal:
         if cached is not None:
             return cached
 
-        from scipy import sparse
         from sklearn.decomposition import TruncatedSVD
 
         # ids
@@ -148,7 +153,7 @@ class _LsaIndexCache:
     lesson_ids: np.ndarray
     x_dense: np.ndarray
     # store fitted svd so we can transform query vectors consistently
-    svd: object
+    svd: _SvdTransformer
 
 
 class TfidfLsaSimilarityBackend:
@@ -180,7 +185,6 @@ class TfidfLsaSimilarityBackend:
         if cached is not None:
             return cached
 
-        from scipy import sparse
         from sklearn.decomposition import TruncatedSVD
 
         # ids are derived exactly like LessonSimilarityIndex.from_dataframe
@@ -230,7 +234,6 @@ class TfidfLsaSimilarityBackend:
         if ranking is None:
             ranking = SimilarityRankingConfig()
 
-        from scipy import sparse
 
         cache = self._build_or_get_index(df=df, transformer=transformer)
         query_df = pd.DataFrame({"text": [query_text]})
