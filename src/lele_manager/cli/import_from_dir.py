@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import hashlib
-import json
 import yaml
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple, Union
+
+from lele_manager.composition import projection_store
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
 
@@ -360,13 +361,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         print("[info] Nessuna LeLe importata, nessun file scritto.")
         return
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
     print(f"[info] Scrivo {len(records_by_id)} LeLe in formato JSONL -> {output_path}")
-    with output_path.open("w", encoding="utf-8") as f:
-        for rec in records_by_id.values():
-            line = json.dumps(asdict(rec), ensure_ascii=False, default=str)
-            f.write(line + "\n")
+    projection_store(output_path).publish(
+        [asdict(record) for record in records_by_id.values()]
+    )
 
     print("[ok] Import completato.")
 
