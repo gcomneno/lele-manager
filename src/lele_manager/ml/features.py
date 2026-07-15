@@ -49,7 +49,11 @@ class LessonFeatureExtractor(BaseEstimator, TransformerMixin):
         self._scaler: Optional[StandardScaler] = None
 
     # --- API scikit-learn ---
-    def fit(self, X: pd.DataFrame, y=None):  # type: ignore[override]
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: object = None,
+    ) -> "LessonFeatureExtractor":
         texts = self._get_text_series(X)
 
         # 1) Fit TF-IDF
@@ -63,7 +67,7 @@ class LessonFeatureExtractor(BaseEstimator, TransformerMixin):
 
         return self
 
-    def transform(self, X: pd.DataFrame):  # type: ignore[override]
+    def transform(self, X: pd.DataFrame) -> sparse.csr_matrix:
         texts = self._get_text_series(X)
 
         # 1) TF-IDF

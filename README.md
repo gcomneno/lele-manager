@@ -63,6 +63,13 @@ source .venv/bin/activate  # su Windows: .venv\Scripts\activate
 pip install -e .[dev]
 ```
 
+Verifica statica dell'intero package Python usando Python 3.12,
+la stessa versione adottata dalla CI:
+
+```bash
+mypy src/lele_manager
+```
+
 ---
 
 ## 🛠️ Primi tool CLI (palestra)

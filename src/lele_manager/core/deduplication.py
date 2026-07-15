@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import math
 import unicodedata
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, cast
 
 import numpy as np
 import pandas as pd
@@ -14,6 +14,11 @@ from lele_manager.ml.features import LessonFeatureExtractor
 
 
 DEFAULT_MIN_SCORE = 0.85
+
+
+class _SupportsToCsr(Protocol):
+    def tocsr(self) -> sparse.csr_matrix:
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,12 +165,18 @@ def find_duplicates(
     df = lessons.reset_index(drop=True)
     if not exact_only and feature_matrix is not None and feature_matrix.shape[0] != len(df):
         raise ValueError("feature matrix must have the same number of rows as lessons")
-    scores = None
+    scores: np.ndarray | None = None
     if not exact_only and len(df) > 1:
-        matrix = feature_matrix
-        if matrix is None:
-            matrix = transformer.transform(df)  # type: ignore[union-attr]
-        matrix = sparse.csr_matrix(matrix)
+        matrix_input = feature_matrix
+        if matrix_input is None:
+            assert transformer is not None
+            matrix_input = transformer.transform(df)
+
+        if isinstance(matrix_input, np.ndarray):
+            matrix = sparse.csr_matrix(matrix_input)
+        else:
+            matrix = cast(_SupportsToCsr, matrix_input).tocsr()
+
         scores = cosine_similarity(matrix)
 
     pairs: list[DuplicatePair] = []
@@ -196,7 +207,8 @@ def find_duplicates(
             else:
                 if exact_only:
                     continue
-                score = float(scores[left_pos, right_pos])  # type: ignore[index]
+                assert scores is not None
+                score = float(scores[left_pos, right_pos])
                 if min_score > 0.0 and score < min_score:
                     continue
                 kind = "near"

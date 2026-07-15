@@ -7,7 +7,7 @@ import yaml
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple
 
 from lele_manager.composition import projection_store
 
@@ -95,7 +95,7 @@ def derive_topic(frontmatter: Dict[str, object], md_path: Path, default_topic: O
     return parent or None
 
 
-def normalize_tags(value: Union[str, List[str], None]) -> List[str]:
+def normalize_tags(value: object) -> List[str]:
     if value is None:
         return []
     if isinstance(value, list):
@@ -104,6 +104,18 @@ def normalize_tags(value: Union[str, List[str], None]) -> List[str]:
     if "," in txt:
         return [part.strip() for part in txt.split(",") if part.strip()]
     return [txt.strip()] if txt.strip() else []
+
+
+def _normalize_importance(
+    value: object,
+    default: Optional[int],
+) -> Tuple[Optional[int], bool]:
+    if isinstance(value, (str, bytes, bytearray, int, float)):
+        try:
+            return int(value), False
+        except (TypeError, ValueError):
+            pass
+    return default, True
 
 
 def _normalize_frontmatter_date(value: object) -> Optional[str]:
@@ -195,17 +207,18 @@ def import_from_dir(
 
         # topic
         topic = derive_topic(frontmatter, md_path, default_topic)
-        if topic is not None and not (
-            isinstance(frontmatter.get("topic"), str) and frontmatter["topic"].strip()
-        ):
+        raw_topic = frontmatter.get("topic")
+        if topic is not None and not (isinstance(raw_topic, str) and raw_topic.strip()):
             frontmatter["topic"] = topic
             if write_missing_frontmatter:
                 source_frontmatter["topic"] = topic
                 source_frontmatter_changed = True
 
         # source
-        if isinstance(frontmatter.get("source"), str) and frontmatter["source"].strip():
-            source = frontmatter["source"].strip()
+        source: Optional[str]
+        raw_source = frontmatter.get("source")
+        if isinstance(raw_source, str) and raw_source.strip():
+            source = raw_source.strip()
         else:
             source = default_source
             if default_source is not None:
@@ -216,15 +229,15 @@ def import_from_dir(
 
         # importance
         if "importance" in frontmatter:
-            try:
-                importance = int(frontmatter["importance"])  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                importance = default_importance
-                if default_importance is not None:
-                    frontmatter["importance"] = int(default_importance)
-                    if write_missing_frontmatter:
-                        source_frontmatter["importance"] = int(default_importance)
-                        source_frontmatter_changed = True
+            importance, used_default_importance = _normalize_importance(
+                frontmatter["importance"],
+                default_importance,
+            )
+            if used_default_importance and default_importance is not None:
+                frontmatter["importance"] = int(default_importance)
+                if write_missing_frontmatter:
+                    source_frontmatter["importance"] = int(default_importance)
+                    source_frontmatter_changed = True
         else:
             importance = default_importance
             if default_importance is not None:
@@ -350,7 +363,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     records_by_id = import_from_dir(
         input_dir=input_dir,
-        on_duplicate=args.on_duplicate,  # type: ignore[arg-type]
+        on_duplicate=args.on_duplicate,
         default_source=args.default_source,
         default_importance=args.default_importance,
         default_topic=args.default_topic,
