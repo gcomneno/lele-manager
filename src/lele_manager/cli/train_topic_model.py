@@ -4,8 +4,9 @@ import argparse
 from pathlib import Path
 from typing import List, Optional
 
-import pandas as pd
-
+from lele_manager.application.dataframes import records_to_legacy_dataframe
+from lele_manager.composition import projection_store
+from lele_manager.core.projection_store import ProjectionStoreError
 from lele_manager.ml.topic_model import load_topic_model, save_topic_model, train_topic_model
 from lele_manager.core.config import default_data_path
 
@@ -68,8 +69,8 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     print(f"[info] Carico dataset da: {input_path}")
     try:
-        df = pd.read_json(input_path, lines=True)
-    except ValueError as exc:
+        df = records_to_legacy_dataframe(projection_store(input_path).snapshot().list())
+    except (ProjectionStoreError, ValueError) as exc:
         raise SystemExit(f"[errore] JSONL non valido o non leggibile: {exc}")
 
     # Normalizza nomi colonne per il modello

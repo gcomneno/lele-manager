@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
+from lele_manager.composition import projection_store
 from lele_manager.cli.import_from_dir import (
     compute_frontmatter_hash,
     derive_id_from_path,
@@ -210,10 +210,7 @@ def import_vault_to_jsonl(
         default_topic=None,
         write_missing_frontmatter=write_missing_frontmatter,
     )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        for rec in records.values():
-            f.write(json.dumps(rec.__dict__, ensure_ascii=False, default=str) + "\n")
+    projection_store(output_path).publish([rec.__dict__ for rec in records.values()])
     topics = sorted({str(r.topic) for r in records.values() if r.topic})
     return {
         "n_lessons": len(records),
@@ -228,18 +225,7 @@ def upsert_jsonl_lesson(
 ) -> None:
     """Replace a lesson row by id or append if new."""
     lesson_id = str(record["id"])
-    rows: List[Dict[str, Any]] = []
-    if output_path.is_file():
-        with output_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                data = json.loads(line)
-                if str(data.get("id")) != lesson_id:
-                    rows.append(data)
+    store = projection_store(output_path)
+    rows = [row for row in store.snapshot().list() if str(row["id"]) != lesson_id]
     rows.append(record)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    store.publish(rows)
