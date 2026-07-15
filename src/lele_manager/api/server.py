@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 import pandas as pd
 
@@ -15,6 +14,9 @@ from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
 from lele_manager.core.analytics import compute_stats_summary, compute_timeline
+from lele_manager.application.dataframes import records_to_legacy_dataframe
+from lele_manager.composition import legacy_jsonl_append_facade, projection_store
+from lele_manager.core.projection_store import DuplicateLessonIdError, ProjectionStoreError
 from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
 from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.config import resolve_data_path, resolve_model_path
@@ -325,10 +327,6 @@ class TimelineResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Helper di I/O
 # -----------------------------------------------------------------------------
-def _ensure_data_dir() -> None:
-    get_data_path().parent.mkdir(parents=True, exist_ok=True)
-
-
 def _ensure_model_dir() -> None:
     get_model_path().parent.mkdir(parents=True, exist_ok=True)
 
@@ -339,18 +337,14 @@ def load_lessons_df() -> pd.DataFrame:
     Se il file non esiste, restituisce un DataFrame vuoto con colonne standard.
     Gestisce errori di parsing in modo esplicito.
     """
-    data_path = get_data_path()
-    if not data_path.exists():
-        return pd.DataFrame(columns=["id", "text", "topic", "source", "importance", "tags", "date", "title", "created_at"])
-
     try:
-        df = pd.read_json(data_path, lines=True)
-    except ValueError as e:
-        # Errore di parsing: JSONL corrotto o riga invalida
+        records = projection_store(get_data_path()).snapshot().list()
+        df = records_to_legacy_dataframe(records)
+    except ProjectionStoreError as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Errore nel parsing di {data_path}: {e}",
-        )
+            detail=f"Errore nel parsing di {get_data_path()}: {e}",
+        ) from e
 
     # Assicuriamoci che almeno queste colonne esistano
     for col in ["id", "text", "topic", "source", "importance", "tags", "date", "title", "created_at"]:
@@ -378,11 +372,16 @@ def append_lesson_to_jsonl(lesson: Lesson) -> None:
     """
     Appende una singola LeLe al file JSONL.
     """
-    _ensure_data_dir()
     record = lesson.dict()
-    data_path = get_data_path()
-    with data_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    try:
+        legacy_jsonl_append_facade(get_data_path()).append(record)
+    except DuplicateLessonIdError as exc:
+        raise HTTPException(status_code=409, detail=f"Lesson ID già esistente: {lesson.id}") from exc
+    except ProjectionStoreError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Dataset esistente non valido; append annullato: {exc}",
+        ) from exc
 
 
 def _file_mtime_ns(path: Path) -> int:

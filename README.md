@@ -44,7 +44,8 @@ Ogni volta che imparo qualcosa (da ChatGPT, da libri, da esperimenti), LeLe Mana
 - `scikit-learn` per ML classico (classificatori, KNN/similarity, ecc.)
 - (opzionale) piccolo **MLP** per migliorare embedding/scoring
 - **FastAPI + Uvicorn** per esporre API HTTP
-- Storage: **JSONL / SQLite** (a seconda della fase del progetto)
+- Storage: port di proiezione backend-neutral con adapter **JSONL** predefinito
+  (SQLite è una fase successiva; vedi `docs/projection-store.md`)
 
 ---
 

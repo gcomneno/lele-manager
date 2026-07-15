@@ -8,6 +8,7 @@ from typing import Sequence
 
 from lele_manager.core.model import Lesson
 from lele_manager.core.storage import append_lesson, default_db_path
+from lele_manager.core.projection_store import ProjectionStoreError
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -80,7 +81,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         tags=tags,
     )
 
-    append_lesson(lesson, args.db)
+    try:
+        append_lesson(lesson, args.db)
+    except ProjectionStoreError as exc:
+        raise SystemExit(f"Impossibile aggiungere la lesson: {exc}") from exc
 
     print(f"Lesson salvata con id={lesson.id} in {args.db}")
 

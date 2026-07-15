@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable, List
-import json
 
+from lele_manager.composition import legacy_jsonl_append_facade, projection_store
 from .model import Lesson
 from .paths import lessons_path
 
@@ -18,11 +18,7 @@ def append_lesson(lesson: Lesson, db_path: Path | None = None) -> None:
     if db_path is None:
         db_path = default_db_path()
 
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    line = json.dumps(lesson.to_dict(), ensure_ascii=False)
-    with db_path.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
+    legacy_jsonl_append_facade(db_path).append(lesson.to_dict())
 
 
 def load_lessons(db_path: Path | None = None) -> List[Lesson]:
@@ -30,18 +26,7 @@ def load_lessons(db_path: Path | None = None) -> List[Lesson]:
     if db_path is None:
         db_path = default_db_path()
 
-    if not db_path.exists():
-        return []
-
-    lessons: List[Lesson] = []
-    with db_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            lessons.append(Lesson.from_dict(data))
-    return lessons
+    return [Lesson.from_dict(dict(row)) for row in projection_store(db_path).snapshot().list()]
 
 
 def iter_lessons(db_path: Path | None = None) -> Iterable[Lesson]:
@@ -49,13 +34,5 @@ def iter_lessons(db_path: Path | None = None) -> Iterable[Lesson]:
     if db_path is None:
         db_path = default_db_path()
 
-    if not db_path.exists():
-        return
-
-    with db_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            yield Lesson.from_dict(data)
+    for row in projection_store(db_path).snapshot().list():
+        yield Lesson.from_dict(dict(row))

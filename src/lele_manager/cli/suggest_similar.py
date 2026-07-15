@@ -6,6 +6,9 @@ from typing import List, Optional
 
 import pandas as pd
 
+from lele_manager.application.dataframes import records_to_legacy_dataframe
+from lele_manager.composition import projection_store
+from lele_manager.core.projection_store import ProjectionStoreError
 from lele_manager.core.config import default_data_path
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.similarity_service import similar_by_lesson_id, similar_by_text
@@ -73,7 +76,10 @@ def _load_dataset(dataset_path: Path, text_column: str) -> pd.DataFrame:
     if not dataset_path.exists():
         raise SystemExit(f"[err] Dataset non trovato: {dataset_path}")
 
-    df = pd.read_json(dataset_path, lines=True)
+    try:
+        df = records_to_legacy_dataframe(projection_store(dataset_path).snapshot().list())
+    except (ProjectionStoreError, ValueError) as exc:
+        raise SystemExit(f"[err] JSONL non valido o non leggibile: {exc}") from exc
     if df.empty:
         raise SystemExit("[err] Dataset vuoto: nessuna lesson disponibile.")
 
