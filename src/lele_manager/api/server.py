@@ -1219,7 +1219,8 @@ def root_redirect() -> RedirectResponse:
 
 
 if GUI_DIR is not None:
-    _assets_dir = GUI_DIR / "assets"
+    _gui_dir = GUI_DIR
+    _assets_dir = _gui_dir / "assets"
     if _assets_dir.is_dir():
         app.mount("/app/assets", StaticFiles(directory=_assets_dir), name="gui-assets")
 
@@ -1227,7 +1228,7 @@ if GUI_DIR is not None:
     @app.get("/app/", include_in_schema=False)
     @app.get("/app/{full_path:path}", include_in_schema=False)
     def gui_app(full_path: str = "") -> FileResponse:
-        index = GUI_DIR / "index.html"
+        index = _gui_dir / "index.html"
         return FileResponse(index)
 else:
 

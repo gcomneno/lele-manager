@@ -5,3 +5,7 @@ scikit-learn
 fastapi
 uvicorn[standard]
 pytest
+mypy
+pandas-stubs
+types-PyYAML
+scipy-stubs; python_version >= "3.12"
