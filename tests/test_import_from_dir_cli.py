@@ -627,3 +627,55 @@ def test_dry_run_rejects_invalid_existing_snapshot_without_modifying_it(
     assert "Output corrente non valido o non leggibile" in result.stderr
     assert result.stdout == ""
     assert output.read_bytes() == existing_output
+
+
+def test_dry_run_round_trip_nested_yaml_date_is_unchanged(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "lesson.md").write_text(
+        "---\nid: lesson\nmetadata:\n  schedule:\n    due: 2026-07-16\n---\nBody\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "lessons.jsonl"
+    initial = import_cli.analyze_import_from_dir(
+        vault, "overwrite", "manual", 3, None, False
+    )
+    import_cli.projection_store(output).publish(list(initial.candidate_records.values()))
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 0
+    assert "Riepilogo: create=0, update=0, unchanged=1, removed=0" in result.stdout
+
+
+def test_dry_run_output_directory_is_controlled_io_error(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+    output = tmp_path / "output-directory"
+    output.mkdir()
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 2
+    assert "Output corrente non valido o non leggibile" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_dry_run_permission_error_is_controlled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+
+    class DeniedStore:
+        def snapshot(self) -> object:
+            raise PermissionError("denied")
+
+    monkeypatch.setattr(import_cli, "projection_store", lambda path: DeniedStore())
+    with pytest.raises(SystemExit) as exc_info:
+        import_cli.main([str(vault), str(tmp_path / "out.jsonl"), "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "Output corrente non valido o non leggibile" in captured.err
+    assert "Traceback" not in captured.err
