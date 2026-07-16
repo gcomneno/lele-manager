@@ -15,6 +15,7 @@ import tempfile
 import stat
 from typing import Any
 
+from lele_manager.core.json_compat import canonical_json
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
     LessonOrder,
@@ -27,9 +28,7 @@ from lele_manager.core.projection_store import (
 
 def _canonical_json(record: LessonRecord) -> str:
     try:
-        return json.dumps(
-            record, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
-        )
+        return canonical_json(record)
     except (TypeError, ValueError) as exc:
         raise MalformedProjectionError(f"lesson record is not JSON serializable: {exc}") from exc
 

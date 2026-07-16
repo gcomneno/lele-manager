@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -6,12 +7,22 @@ from pathlib import Path
 import textwrap
 import yaml
 
+import pytest
+
+from lele_manager.cli import import_from_dir as import_cli
+
 
 def run_cmd(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
     """Helper per eseguire un comando Python -m ... in modo robusto."""
+    project_root = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(project_root / "src"), env.get("PYTHONPATH", "")]
+    )
     return subprocess.run(
         args,
         cwd=str(cwd) if cwd else None,
+        env=env,
         check=False,
         capture_output=True,
         text=True,
@@ -424,3 +435,270 @@ def test_valid_vault_import_does_not_modify_sources(tmp_path: Path) -> None:
         ("vault/b", "2025-01-02"),
     ]
     assert {name: (vault_dir / name).read_bytes() for name in sources} == sources
+
+
+def _dry_run(vault: Path, output: Path, *extra: str) -> subprocess.CompletedProcess:
+    return run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "lele_manager.cli.import_from_dir",
+            str(vault),
+            str(output),
+            "--dry-run",
+            *extra,
+        ]
+    )
+
+
+def _lesson(path: Path, lesson_id: str, body: str = "Body") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\nid: {lesson_id}\ntopic: topic\nsource: manual\nimportance: 3\n---\n{body}\n",
+        encoding="utf-8",
+    )
+
+
+def test_parse_args_accepts_dry_run() -> None:
+    assert import_cli.parse_args(["vault", "out.jsonl", "--dry-run"]).dry_run is True
+
+
+def test_dry_run_does_not_create_output_or_parent_and_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.MD", "uppercase")
+    output = tmp_path / "missing" / "nested" / "lessons.jsonl"
+
+    first = _dry_run(vault, output)
+    second = _dry_run(vault, output)
+
+    assert first.returncode == second.returncode == 0
+    assert first.stdout == second.stdout
+    assert "create=1" in first.stdout
+    assert "uppercase — lesson.MD" in first.stdout
+    assert not output.exists()
+    assert not output.parent.exists()
+
+
+def test_dry_run_preserves_existing_output_and_source_with_pending_write(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    markdown = vault / "topic" / "2025-01-01.lesson.md"
+    markdown.parent.mkdir(parents=True)
+    markdown.write_bytes(b"Body without frontmatter\n")
+    original_source = markdown.read_bytes()
+    output = tmp_path / "lessons.jsonl"
+    output.write_bytes(b'{"id":"old","text":"untouched"}\n')
+    original_output = output.read_bytes()
+
+    result = _dry_run(vault, output, "--write-missing-frontmatter")
+
+    assert result.returncode == 0
+    assert "pending source writes:" in result.stdout
+    assert "topic/2025-01-01.lesson.md" in result.stdout
+    assert output.read_bytes() == original_output
+    assert markdown.read_bytes() == original_source
+
+
+def test_dry_run_never_calls_publish(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "one.md", "one")
+
+    class Snapshot:
+        def list(self) -> tuple[dict[str, object], ...]:
+            return ()
+
+    class SpyStore:
+        def snapshot(self) -> Snapshot:
+            return Snapshot()
+
+        def publish(self, records: object) -> None:
+            pytest.fail(f"publish called with {records!r}")
+
+    monkeypatch.setattr(import_cli, "projection_store", lambda path: SpyStore())
+    import_cli.main([str(vault), str(tmp_path / "out.jsonl"), "--dry-run"])
+
+
+def test_dry_run_reports_all_change_kinds(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "same.md", "same")
+    _lesson(vault / "changed.md", "changed", "new")
+    _lesson(vault / "new.md", "new")
+    baseline = import_cli.analyze_import_from_dir(
+        vault, "overwrite", "manual", 3, None, False
+    )
+    same = dict(baseline.candidate_records["same"])
+    changed = dict(baseline.candidate_records["changed"])
+    changed["text"] = "old"
+    output = tmp_path / "lessons.jsonl"
+    output.write_text(
+        "\n".join(json.dumps(record) for record in [same, changed, {"id": "removed"}])
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 0
+    assert "Riepilogo: create=1, update=1, unchanged=1, removed=1" in result.stdout
+    for expected in ("new — new.md", "changed — changed.md", "same — same.md", "removed"):
+        assert expected in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("policy", "returncode", "resolution"),
+    [("error", 1, "blocked"), ("skip", 0, "kept_first"), ("overwrite", 0, "kept_last")],
+)
+def test_dry_run_duplicate_exit_codes(
+    tmp_path: Path, policy: str, returncode: int, resolution: str
+) -> None:
+    vault = tmp_path / policy
+    _lesson(vault / "a.md", "dup", "first")
+    _lesson(vault / "b.md", "dup", "second")
+
+    result = _dry_run(vault, tmp_path / f"{policy}.jsonl", "--on-duplicate", policy)
+
+    assert result.returncode == returncode
+    assert f"policy={policy}; risoluzione={resolution}" in result.stdout
+    assert "Nessuna modifica applicata." in result.stdout
+
+
+def test_dry_run_reports_ignored_and_malformed_yaml(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "ignored.txt").write_text("ignored", encoding="utf-8")
+    (vault / "bad.md").write_text("---\nid: [broken\n---\nBody\n", encoding="utf-8")
+
+    result = _dry_run(vault, tmp_path / "out.jsonl")
+
+    assert result.returncode == 0
+    assert "[non bloccante] malformed_yaml — bad.md" in result.stdout
+    assert "ignored.txt: not_markdown" in result.stdout
+
+
+def test_dry_run_empty_directory_does_not_report_total_removal(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    output = tmp_path / "lessons.jsonl"
+    output.write_text('{"id":"existing"}\n', encoding="utf-8")
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 0
+    assert "removed=0" in result.stdout
+    assert "Pubblicazione replace-all: non avverrebbe." in result.stdout
+
+
+
+def test_dry_run_missing_input_is_global_error_without_side_effects(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "missing-vault"
+    output = tmp_path / "missing-output" / "lessons.jsonl"
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 2
+    assert "Directory di input non trovata" in result.stderr
+    assert result.stdout == ""
+    assert not output.exists()
+    assert not output.parent.exists()
+
+@pytest.mark.parametrize(
+    "existing_output",
+    [
+        b"not-json\n",
+        b'{"id":"duplicate"}\n{"id":"duplicate"}\n',
+    ],
+)
+def test_dry_run_rejects_invalid_existing_snapshot_without_modifying_it(
+    tmp_path: Path, existing_output: bytes
+) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+    output = tmp_path / "lessons.jsonl"
+    output.write_bytes(existing_output)
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 2
+    assert "Output corrente non valido o non leggibile" in result.stderr
+    assert result.stdout == ""
+    assert output.read_bytes() == existing_output
+
+
+def test_dry_run_round_trip_nested_yaml_date_is_unchanged(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "lesson.md").write_text(
+        "---\nid: lesson\nmetadata:\n  schedule:\n    due: 2026-07-16\n---\nBody\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "lessons.jsonl"
+    initial = import_cli.analyze_import_from_dir(
+        vault, "overwrite", "manual", 3, None, False
+    )
+    import_cli.projection_store(output).publish(list(initial.candidate_records.values()))
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 0
+    assert "Riepilogo: create=0, update=0, unchanged=1, removed=0" in result.stdout
+
+
+def test_dry_run_output_directory_is_controlled_io_error(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+    output = tmp_path / "output-directory"
+    output.mkdir()
+
+    result = _dry_run(vault, output)
+
+    assert result.returncode == 2
+    assert "Output corrente non valido o non leggibile" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
+def test_dry_run_permission_error_is_controlled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+
+    class DeniedStore:
+        def snapshot(self) -> object:
+            raise PermissionError("denied")
+
+    monkeypatch.setattr(import_cli, "projection_store", lambda path: DeniedStore())
+    with pytest.raises(SystemExit) as exc_info:
+        import_cli.main([str(vault), str(tmp_path / "out.jsonl"), "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "Output corrente non valido o non leggibile" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_dry_run_input_io_error_is_controlled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+
+    def deny_analysis(*args: object, **kwargs: object) -> object:
+        raise PermissionError("input denied")
+
+    monkeypatch.setattr(import_cli, "analyze_import_from_dir", deny_analysis)
+
+    with pytest.raises(SystemExit) as exc_info:
+        import_cli.main([str(vault), str(tmp_path / "out.jsonl"), "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "Impossibile leggere la directory di input" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
