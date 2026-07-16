@@ -84,3 +84,18 @@ Body
     assert rec.date == "2025-01-01"
     assert rec.frontmatter["date"] == "2025-01-01"
     assert md.read_bytes() == original
+
+
+def test_overwrite_updates_only_winning_duplicate_source(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    paths = [vault / name for name in ("a.md", "b.md", "c.md")]
+    for index, path in enumerate(paths, start=1):
+        path.write_text(f"---\nid: dup\n---\nbody {index}\n", encoding="utf-8")
+    originals = [path.read_bytes() for path in paths]
+
+    records = import_from_dir(vault, "overwrite", "note", 3, None, True)
+
+    assert records["dup"].text == "body 3"
+    assert [path.read_bytes() for path in paths[:2]] == originals[:2]
+    assert paths[2].read_bytes() != originals[2]

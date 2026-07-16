@@ -95,6 +95,37 @@ def test_duplicate_policies(
     assert plan.blocking is blocking
 
 
+@pytest.mark.parametrize(
+    ("policy", "winner", "pending_path", "blocking"),
+    [
+        ("error", "first", None, True),
+        ("skip", "first", "a.md", False),
+        ("overwrite", "third", "c.md", False),
+    ],
+)
+def test_three_duplicates_keep_only_winner_pending_write(
+    tmp_path: Path,
+    policy: str,
+    winner: str,
+    pending_path: str | None,
+    blocking: bool,
+) -> None:
+    vault = tmp_path / "vault"
+    for name, body in (("a.md", "first"), ("b.md", "second"), ("c.md", "third")):
+        path = vault / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"---\nid: dup\n---\n{body}\n", encoding="utf-8")
+
+    plan = _analyze(vault, on_duplicate=policy, write_missing_frontmatter=True)
+
+    assert plan.blocking is blocking
+    assert plan.candidate_records["dup"]["text"] == winner
+    assert [item.duplicate_path for item in plan.duplicates] == ["b.md", "c.md"]
+    expected_paths = [] if pending_path is None else [pending_path]
+    assert [item.path for item in plan.pending_source_writes] == expected_paths
+    assert sorted(plan.pending_source_contents) == expected_paths
+
+
 def test_ignored_file_pending_write_and_analysis_has_no_side_effects(
     tmp_path: Path,
 ) -> None:

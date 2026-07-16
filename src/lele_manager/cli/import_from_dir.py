@@ -22,6 +22,7 @@ from lele_manager.core.import_plan import (
     PendingSourceWrite,
     ValidationProblem,
 )
+from lele_manager.core.json_compat import json_native
 from lele_manager.core.projection_store import ProjectionStoreError
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
@@ -196,6 +197,7 @@ def analyze_import_from_dir(
 
     records_by_id: Dict[str, LeLeRecord] = {}
     first_path_by_id: Dict[str, Path] = {}
+    pending_source_by_id: dict[str, tuple[PendingSourceWrite, str] | None] = {}
     plan = ImportPlan()
 
     for path in sorted(input_dir.rglob("*")):
@@ -371,15 +373,25 @@ def analyze_import_from_dir(
                     )
                 )
 
-        records_by_id[lele_id] = record
-        first_path_by_id[lele_id] = md_path
-
+        pending_source: tuple[PendingSourceWrite, str] | None = None
         if write_missing_frontmatter and source_frontmatter_changed:
             new_content = render_markdown_with_frontmatter(source_frontmatter, body)
-            plan.pending_source_writes.append(
-                PendingSourceWrite(rel_path, "complete_frontmatter")
+            pending_source = (
+                PendingSourceWrite(rel_path, "complete_frontmatter"),
+                new_content,
             )
-            plan.pending_source_contents[rel_path] = new_content
+
+        records_by_id[lele_id] = record
+        first_path_by_id[lele_id] = md_path
+        pending_source_by_id[lele_id] = pending_source
+
+    if not plan.blocking:
+        for lesson_id in sorted(pending_source_by_id):
+            pending = pending_source_by_id[lesson_id]
+            if pending is not None:
+                source_write, content = pending
+                plan.pending_source_writes.append(source_write)
+                plan.pending_source_contents[source_write.path] = content
 
     plan.candidate_records = {
         lesson_id: asdict(record) for lesson_id, record in records_by_id.items()
@@ -393,7 +405,7 @@ def analyze_import_from_dir(
         existing = existing_by_id.get(lesson_id)
         if existing is None:
             kind = LessonChangeKind.CREATE
-        elif dict(existing) == candidate:
+        elif json_native(existing) == json_native(candidate):
             kind = LessonChangeKind.UNCHANGED
         else:
             kind = LessonChangeKind.UPDATE
@@ -620,7 +632,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         store = projection_store(output_path)
         try:
             existing_records = store.snapshot().list()
-        except ProjectionStoreError as exc:
+        except (ProjectionStoreError, OSError) as exc:
             print(
                 f"[errore] Output corrente non valido o non leggibile: {exc}",
                 file=sys.stderr,
