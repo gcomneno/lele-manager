@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import hashlib
+import sys
 import yaml
 
 from dataclasses import asdict, dataclass
@@ -21,6 +22,7 @@ from lele_manager.core.import_plan import (
     PendingSourceWrite,
     ValidationProblem,
 )
+from lele_manager.core.projection_store import ProjectionStoreError
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
 
@@ -470,6 +472,86 @@ def import_from_dir(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+def render_import_plan(plan: ImportPlan) -> str:
+    """Render a stable, human-readable dry-run report."""
+    changes_by_kind = {
+        kind: sorted(
+            (change for change in plan.changes if change.kind is kind),
+            key=lambda change: (change.lesson_id, change.path or ""),
+        )
+        for kind in LessonChangeKind
+    }
+    lines = [
+        "Piano import (dry-run)",
+        "Riepilogo: "
+        + ", ".join(
+            f"{kind.value}={len(changes_by_kind[kind])}"
+            for kind in LessonChangeKind
+        )
+        + f", duplicati={len(plan.duplicates)}"
+        + f", problemi={len(plan.validation_problems)}"
+        + f", file ignorati={len(plan.ignored_files)}"
+        + f", scritture sorgenti={len(plan.pending_source_writes)}",
+    ]
+
+    for kind in LessonChangeKind:
+        lines.append(f"{kind.value}:")
+        changes = changes_by_kind[kind]
+        if not changes:
+            lines.append("  (nessuno)")
+        for change in changes:
+            location = f" — {change.path}" if change.path else ""
+            lines.append(f"  - {change.lesson_id}{location}")
+
+    lines.append("duplicate IDs:")
+    if not plan.duplicates:
+        lines.append("  (nessuno)")
+    for duplicate in sorted(
+        plan.duplicates,
+        key=lambda item: (item.lesson_id, item.first_path, item.duplicate_path),
+    ):
+        lines.append(
+            f"  - {duplicate.lesson_id}: {duplicate.first_path} / "
+            f"{duplicate.duplicate_path}; policy={duplicate.policy.value}; "
+            f"risoluzione={duplicate.resolution.value}"
+        )
+
+    lines.append("validation problems:")
+    if not plan.validation_problems:
+        lines.append("  (nessuno)")
+    for problem in sorted(
+        plan.validation_problems,
+        key=lambda item: (item.path or "", item.code, item.field or "", item.message),
+    ):
+        severity = "bloccante" if problem.blocking else "non bloccante"
+        location = f" — {problem.path}" if problem.path else ""
+        field = f"; campo={problem.field}" if problem.field else ""
+        lines.append(
+            f"  - [{severity}] {problem.code}{location}{field}: {problem.message}"
+        )
+
+    lines.append("ignored files:")
+    if not plan.ignored_files:
+        lines.append("  (nessuno)")
+    for ignored in sorted(plan.ignored_files, key=lambda item: (item.path, item.reason)):
+        lines.append(f"  - {ignored.path}: {ignored.reason}")
+
+    lines.append("pending source writes:")
+    if not plan.pending_source_writes:
+        lines.append("  (nessuna)")
+    for pending in sorted(
+        plan.pending_source_writes, key=lambda item: (item.path, item.reason)
+    ):
+        lines.append(f"  - {pending.path}: {pending.reason}")
+
+    if plan.replace_all:
+        lines.append("Pubblicazione replace-all: avverrebbe.")
+    else:
+        lines.append("Pubblicazione replace-all: non avverrebbe.")
+    lines.append("Nessuna modifica applicata.")
+    return "\n".join(lines)
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -513,6 +595,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             "i file già validi non vengono riscritti."
         ),
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Analizza e mostra le modifiche senza applicare alcuna scrittura.",
+    )
     return parser.parse_args(argv)
 
 
@@ -521,6 +608,37 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     input_dir = Path(args.input_dir).resolve()
     output_path = Path(args.output).resolve()
+
+    if args.dry_run:
+        if not input_dir.is_dir():
+            print(
+                f"[errore] Directory di input non trovata: {input_dir}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+
+        store = projection_store(output_path)
+        try:
+            existing_records = store.snapshot().list()
+        except ProjectionStoreError as exc:
+            print(
+                f"[errore] Output corrente non valido o non leggibile: {exc}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from exc
+        plan = analyze_import_from_dir(
+            input_dir=input_dir,
+            on_duplicate=args.on_duplicate,
+            default_source=args.default_source,
+            default_importance=args.default_importance,
+            default_topic=args.default_topic,
+            write_missing_frontmatter=args.write_missing_frontmatter,
+            existing_records=existing_records,
+        )
+        print(render_import_plan(plan))
+        if plan.blocking:
+            raise SystemExit(1)
+        return
 
     records_by_id = import_from_dir(
         input_dir=input_dir,
