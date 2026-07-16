@@ -121,6 +121,7 @@ def test_three_duplicates_keep_only_winner_pending_write(
     assert plan.blocking is blocking
     assert plan.candidate_records["dup"]["text"] == winner
     assert [item.duplicate_path for item in plan.duplicates] == ["b.md", "c.md"]
+    assert [item.first_path for item in plan.duplicates] == ["a.md", "a.md"]
     expected_paths = [] if pending_path is None else [pending_path]
     assert [item.path for item in plan.pending_source_writes] == expected_paths
     assert sorted(plan.pending_source_contents) == expected_paths

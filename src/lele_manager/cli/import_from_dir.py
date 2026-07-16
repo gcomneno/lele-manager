@@ -382,7 +382,8 @@ def analyze_import_from_dir(
             )
 
         records_by_id[lele_id] = record
-        first_path_by_id[lele_id] = md_path
+        if lele_id not in first_path_by_id:
+            first_path_by_id[lele_id] = md_path
         pending_source_by_id[lele_id] = pending_source
 
     if not plan.blocking:
@@ -638,15 +639,22 @@ def main(argv: Optional[List[str]] = None) -> None:
                 file=sys.stderr,
             )
             raise SystemExit(2) from exc
-        plan = analyze_import_from_dir(
-            input_dir=input_dir,
-            on_duplicate=args.on_duplicate,
-            default_source=args.default_source,
-            default_importance=args.default_importance,
-            default_topic=args.default_topic,
-            write_missing_frontmatter=args.write_missing_frontmatter,
-            existing_records=existing_records,
-        )
+        try:
+            plan = analyze_import_from_dir(
+                input_dir=input_dir,
+                on_duplicate=args.on_duplicate,
+                default_source=args.default_source,
+                default_importance=args.default_importance,
+                default_topic=args.default_topic,
+                write_missing_frontmatter=args.write_missing_frontmatter,
+                existing_records=existing_records,
+            )
+        except OSError as exc:
+            print(
+                f"[errore] Impossibile leggere la directory di input: {exc}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from exc
         print(render_import_plan(plan))
         if plan.blocking:
             raise SystemExit(1)
