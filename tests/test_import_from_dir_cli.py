@@ -679,3 +679,26 @@ def test_dry_run_permission_error_is_controlled(
     assert exc_info.value.code == 2
     assert "Output corrente non valido o non leggibile" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_dry_run_input_io_error_is_controlled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    vault = tmp_path / "vault"
+    _lesson(vault / "lesson.md", "lesson")
+
+    def deny_analysis(*args: object, **kwargs: object) -> object:
+        raise PermissionError("input denied")
+
+    monkeypatch.setattr(import_cli, "analyze_import_from_dir", deny_analysis)
+
+    with pytest.raises(SystemExit) as exc_info:
+        import_cli.main([str(vault), str(tmp_path / "out.jsonl"), "--dry-run"])
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "Impossibile leggere la directory di input" in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
