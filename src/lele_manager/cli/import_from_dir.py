@@ -7,9 +7,20 @@ import yaml
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from lele_manager.composition import projection_store
+from lele_manager.core.import_plan import (
+    DuplicateId,
+    DuplicatePolicy as PlanDuplicatePolicy,
+    DuplicateResolution,
+    IgnoredFile,
+    ImportPlan,
+    LessonChange,
+    LessonChangeKind,
+    PendingSourceWrite,
+    ValidationProblem,
+)
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
 
@@ -84,7 +95,9 @@ def derive_id_from_path(md_path: Path, root_dir: Path) -> str:
     return rel
 
 
-def derive_topic(frontmatter: Dict[str, object], md_path: Path, default_topic: Optional[str]) -> Optional[str]:
+def derive_topic(
+    frontmatter: Dict[str, object], md_path: Path, default_topic: Optional[str]
+) -> Optional[str]:
     if "topic" in frontmatter and isinstance(frontmatter["topic"], str):
         t = frontmatter["topic"].strip()
         if t:
@@ -159,27 +172,39 @@ def compute_frontmatter_hash(frontmatter: Dict[str, object]) -> str:
 # ---------------------------------------------------------------------------
 # Importer
 # ---------------------------------------------------------------------------
-def import_from_dir(
+def _markdown_files(input_dir: Path) -> List[Path]:
+    return sorted(
+        path
+        for path in input_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() == ".md"
+    )
+
+
+def analyze_import_from_dir(
     input_dir: Path,
     on_duplicate: DuplicatePolicy,
     default_source: Optional[str],
     default_importance: Optional[int],
     default_topic: Optional[str],
     write_missing_frontmatter: bool,
-) -> Dict[str, LeLeRecord]:
+    existing_records: Sequence[Mapping[str, Any]] = (),
+) -> ImportPlan:
     if not input_dir.is_dir():
         raise SystemExit(f"[errore] Directory di input non trovata: {input_dir}")
 
     records_by_id: Dict[str, LeLeRecord] = {}
     first_path_by_id: Dict[str, Path] = {}
-    files_to_update: List[Tuple[Path, str]] = []
+    plan = ImportPlan()
 
-    md_files = sorted(input_dir.rglob("*.md"))
+    for path in sorted(input_dir.rglob("*")):
+        if path.is_file() and path.suffix.lower() != ".md":
+            plan.ignored_files.append(
+                IgnoredFile(path.relative_to(input_dir).as_posix(), "not_markdown")
+            )
+
+    md_files = _markdown_files(input_dir)
     if not md_files:
-        print(f"[warn] Nessun file .md trovato sotto {input_dir}")
-        return records_by_id
-
-    print(f"[info] Trovati {len(md_files)} file .md sotto {input_dir}")
+        return plan
 
     for md_path in md_files:
         rel_path = md_path.relative_to(input_dir).as_posix()
@@ -187,10 +212,24 @@ def import_from_dir(
         try:
             content = md_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
-            print(f"[warn] Impossibile leggere {rel_path} come UTF-8, salto.")
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_utf8",
+                    message="Impossibile leggere il file come UTF-8.",
+                    path=rel_path,
+                )
+            )
             continue
 
         source_frontmatter, body = parse_markdown_with_frontmatter(content)
+        if _has_malformed_yaml_frontmatter(content):
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="malformed_yaml",
+                    message="Frontmatter YAML malformato; trattato come assente.",
+                    path=rel_path,
+                )
+            )
         frontmatter = dict(source_frontmatter)
         source_frontmatter_changed = False
 
@@ -288,26 +327,144 @@ def import_from_dir(
             msg = f"ID duplicato '{lele_id}' in {rel_path} (già visto in {existing_path.relative_to(input_dir)})"
 
             if on_duplicate == "error":
-                raise SystemExit(f"[errore] {msg}")
+                resolution = DuplicateResolution.BLOCKED
+                plan.validation_problems.append(
+                    ValidationProblem(
+                        code="duplicate_id",
+                        message=msg,
+                        path=rel_path,
+                        field="id",
+                        blocking=True,
+                    )
+                )
+                plan.duplicates.append(
+                    DuplicateId(
+                        lele_id,
+                        existing_path.relative_to(input_dir).as_posix(),
+                        rel_path,
+                        PlanDuplicatePolicy.ERROR,
+                        resolution,
+                    )
+                )
+                continue
             if on_duplicate == "skip":
-                print(f"[warn] {msg} -> skip nuovo file.")
+                plan.duplicates.append(
+                    DuplicateId(
+                        lele_id,
+                        existing_path.relative_to(input_dir).as_posix(),
+                        rel_path,
+                        PlanDuplicatePolicy.SKIP,
+                        DuplicateResolution.KEPT_FIRST,
+                    )
+                )
                 continue
             if on_duplicate == "overwrite":
-                print(f"[info] {msg} -> overwrite con {rel_path}.")
+                plan.duplicates.append(
+                    DuplicateId(
+                        lele_id,
+                        existing_path.relative_to(input_dir).as_posix(),
+                        rel_path,
+                        PlanDuplicatePolicy.OVERWRITE,
+                        DuplicateResolution.KEPT_LAST,
+                    )
+                )
 
         records_by_id[lele_id] = record
         first_path_by_id[lele_id] = md_path
 
         if write_missing_frontmatter and source_frontmatter_changed:
             new_content = render_markdown_with_frontmatter(source_frontmatter, body)
-            files_to_update.append((md_path, new_content))
+            plan.pending_source_writes.append(
+                PendingSourceWrite(rel_path, "complete_frontmatter")
+            )
+            plan.pending_source_contents[rel_path] = new_content
 
-    if files_to_update:
-        print(f"[info] Aggiorno {len(files_to_update)} file per aggiungere/sincronizzare il frontmatter.")
-        for md_path, new_content in files_to_update:
-            md_path.write_text(new_content, encoding="utf-8")
+    plan.candidate_records = {
+        lesson_id: asdict(record) for lesson_id, record in records_by_id.items()
+    }
+    plan.replace_all = bool(records_by_id) and not plan.blocking
+    existing_by_id = {
+        str(record["id"]): record for record in existing_records if "id" in record
+    }
+    for lesson_id, record in records_by_id.items():
+        candidate = asdict(record)
+        existing = existing_by_id.get(lesson_id)
+        if existing is None:
+            kind = LessonChangeKind.CREATE
+        elif dict(existing) == candidate:
+            kind = LessonChangeKind.UNCHANGED
+        else:
+            kind = LessonChangeKind.UPDATE
+        plan.changes.append(LessonChange(lesson_id, kind, record.path))
+    if plan.replace_all:
+        for lesson_id in existing_by_id.keys() - records_by_id.keys():
+            plan.changes.append(LessonChange(lesson_id, LessonChangeKind.REMOVED))
+    return plan
 
-    return records_by_id
+
+def _has_malformed_yaml_frontmatter(content: str) -> bool:
+    lines = content.splitlines()
+    if not lines or not lines[0].strip().startswith("---"):
+        return False
+    for index in range(1, len(lines)):
+        if lines[index].strip().startswith("---"):
+            try:
+                return not isinstance(
+                    yaml.safe_load("\n".join(lines[1:index])) or {}, dict
+                )
+            except yaml.YAMLError:
+                return True
+    return False
+
+
+def import_from_dir(
+    input_dir: Path,
+    on_duplicate: DuplicatePolicy,
+    default_source: Optional[str],
+    default_importance: Optional[int],
+    default_topic: Optional[str],
+    write_missing_frontmatter: bool,
+) -> Dict[str, LeLeRecord]:
+    plan = analyze_import_from_dir(
+        input_dir,
+        on_duplicate,
+        default_source,
+        default_importance,
+        default_topic,
+        write_missing_frontmatter,
+    )
+    md_files = _markdown_files(input_dir)
+    if not md_files:
+        print(f"[warn] Nessun file .md trovato sotto {input_dir}")
+        return {}
+    print(f"[info] Trovati {len(md_files)} file .md sotto {input_dir}")
+    for duplicate in plan.duplicates:
+        msg = (
+            f"ID duplicato '{duplicate.lesson_id}' in {duplicate.duplicate_path} "
+            f"(già visto in {duplicate.first_path})"
+        )
+        if duplicate.policy is PlanDuplicatePolicy.ERROR:
+            raise SystemExit(f"[errore] {msg}")
+        if duplicate.policy is PlanDuplicatePolicy.SKIP:
+            print(f"[warn] {msg} -> skip nuovo file.")
+        else:
+            print(f"[info] {msg} -> overwrite con {duplicate.duplicate_path}.")
+    for problem in plan.validation_problems:
+        if problem.code == "invalid_utf8":
+            print(f"[warn] Impossibile leggere {problem.path} come UTF-8, salto.")
+    if plan.pending_source_writes:
+        print(
+            f"[info] Aggiorno {len(plan.pending_source_writes)} file per "
+            "aggiungere/sincronizzare il frontmatter."
+        )
+        for pending in plan.pending_source_writes:
+            (input_dir / pending.path).write_text(
+                plan.pending_source_contents[pending.path], encoding="utf-8"
+            )
+    return {
+        lesson_id: LeLeRecord(**dict(record))
+        for lesson_id, record in plan.candidate_records.items()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -320,8 +477,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
             "e genera un file JSONL compatibile con LeLe Manager."
         )
     )
-    parser.add_argument("input_dir", help="Directory radice che contiene le LeLe in formato Markdown.")
-    parser.add_argument("output", help="Percorso del file JSONL di output (sarà sovrascritto).")
+    parser.add_argument(
+        "input_dir", help="Directory radice che contiene le LeLe in formato Markdown."
+    )
+    parser.add_argument(
+        "output", help="Percorso del file JSONL di output (sarà sovrascritto)."
+    )
     parser.add_argument(
         "--on-duplicate",
         choices=["overwrite", "skip", "error"],
