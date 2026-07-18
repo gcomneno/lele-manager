@@ -15,8 +15,14 @@ from threading import Lock
 
 from lele_manager.core.analytics import compute_stats_summary, compute_timeline
 from lele_manager.application.dataframes import records_to_legacy_dataframe
+from lele_manager.application.external_lessons import external_lessons_feed
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
-from lele_manager.core.projection_store import DuplicateLessonIdError, ProjectionStoreError
+from lele_manager.core.projection_store import (
+    DuplicateLessonIdError,
+    LessonOrder,
+    LessonQuery,
+    ProjectionStoreError,
+)
 from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
 from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.config import resolve_data_path, resolve_model_path
@@ -122,6 +128,26 @@ class Lesson(LessonBase):
 
 class LessonSearchResult(Lesson):
     pass
+
+
+class ExternalLessonResponse(BaseModel):
+    id: str
+    text: str
+    title: Optional[str]
+    topic: Optional[str]
+    source: Optional[str]
+    importance: Optional[int]
+    tags: List[str]
+    date: Optional[str]
+    created_at: Optional[str]
+
+
+class ExternalLessonsResponse(BaseModel):
+    schema_version: Literal[1]
+    generation: str
+    total_lessons: int
+    returned_lessons: int
+    lessons: List[ExternalLessonResponse]
 
 
 class LessonSearchRequest(BaseModel):
@@ -608,6 +634,56 @@ def _row_to_search_result(row: dict) -> LessonSearchResult:
 # -----------------------------------------------------------------------------
 # Endpoint
 # -----------------------------------------------------------------------------
+@app.get("/integrations/v1/lessons", response_model=ExternalLessonsResponse)
+def integration_lessons(
+    q: Optional[str] = Query(default=None),
+    topic: Optional[List[str]] = Query(default=None),
+    source: Optional[List[str]] = Query(default=None),
+    tag: Optional[List[str]] = Query(default=None),
+    importance_gte: Optional[int] = Query(default=None),
+    importance_lte: Optional[int] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=1),
+) -> ExternalLessonsResponse:
+    """Expose a stable, read-only lesson projection to external tools."""
+    query = LessonQuery(
+        text=q,
+        topics=topic,
+        sources=source,
+        tags=tag,
+        importance_gte=importance_gte,
+        importance_lte=importance_lte,
+        order=LessonOrder.ID,
+        limit=limit,
+    )
+    try:
+        feed = external_lessons_feed(projection_store(get_data_path()), query)
+    except (ProjectionStoreError, OSError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Lesson projection is unavailable.",
+        ) from exc
+    return ExternalLessonsResponse(
+        schema_version=feed.schema_version,
+        generation=feed.generation,
+        total_lessons=feed.total_lessons,
+        returned_lessons=feed.returned_lessons,
+        lessons=[
+            ExternalLessonResponse(
+                id=lesson.id,
+                text=lesson.text,
+                title=lesson.title,
+                topic=lesson.topic,
+                source=lesson.source,
+                importance=lesson.importance,
+                tags=lesson.tags,
+                date=lesson.date,
+                created_at=lesson.created_at,
+            )
+            for lesson in feed.lessons
+        ],
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """
