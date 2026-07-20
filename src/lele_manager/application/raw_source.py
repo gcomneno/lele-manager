@@ -28,6 +28,28 @@ class SourceKind(str, Enum):
     IN_MEMORY = "in_memory"
 
 
+@dataclass(frozen=True)
+class SourceSpan:
+    """Half-open character offsets in normalized source content."""
+
+    start: int
+    end: int
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.start, bool)
+            or not isinstance(self.start, int)
+            or self.start < 0
+        ):
+            raise ValueError("source span start must be a non-negative integer")
+        if (
+            isinstance(self.end, bool)
+            or not isinstance(self.end, int)
+            or self.end < self.start
+        ):
+            raise ValueError("source span end must be at least start")
+
+
 def normalize_line_endings(content: str) -> str:
     """Convert CRLF and lone CR line endings to LF, changing nothing else."""
     return content.replace("\r\n", "\n").replace("\r", "\n")

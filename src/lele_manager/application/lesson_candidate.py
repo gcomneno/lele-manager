@@ -16,7 +16,11 @@ import math
 from types import MappingProxyType
 from typing import Mapping, Protocol, Sequence
 
-from lele_manager.application.raw_source import SourceKind, normalize_line_endings
+from lele_manager.application.raw_source import (
+    SourceKind,
+    SourceSpan,
+    normalize_line_endings,
+)
 from lele_manager.core.json_compat import canonical_json
 
 
@@ -54,20 +58,6 @@ class ImmutableCandidateFieldError(CandidateRepositoryError):
 def _validate_unicode(value: str, name: str) -> None:
     if any("\ud800" <= character <= "\udfff" for character in value):
         raise ValueError(f"{name} must not contain Unicode surrogate code points")
-
-
-@dataclass(frozen=True)
-class SourceSpan:
-    """Half-open character offsets in normalized source content."""
-
-    start: int
-    end: int
-
-    def __post_init__(self) -> None:
-        if isinstance(self.start, bool) or not isinstance(self.start, int) or self.start < 0:
-            raise ValueError("source span start must be a non-negative integer")
-        if isinstance(self.end, bool) or not isinstance(self.end, int) or self.end < self.start:
-            raise ValueError("source span end must be at least start")
 
 
 def _freeze_json(value: object, name: str, active: set[int]) -> object:
