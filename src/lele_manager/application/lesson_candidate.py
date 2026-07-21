@@ -1,9 +1,11 @@
 """Backend-neutral lesson-candidate domain and staging repository port.
 
 Candidate identity is the SHA-256 digest of canonical JSON containing the
-normalized candidate text and its source/chunk identity.  Ingestion timestamps,
-run metadata, transformations, proposed metadata and lifecycle state are
-deliberately excluded, so replaying identical input produces the same ID.
+normalized immutable source text and its source/chunk identity.
+
+Ingestion timestamps, run metadata, transformations, proposed text, proposed
+metadata, lifecycle state, revision and review history are deliberately
+excluded, so replaying identical source input produces the same candidate ID.
 """
 
 from __future__ import annotations
@@ -31,6 +33,12 @@ class CandidateState(str, Enum):
     APPROVED = "approved"
 
 
+class CandidateReviewAction(str, Enum):
+    REVISED = "revised"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 class CandidateRepositoryError(Exception):
     """Base class for controlled candidate repository failures."""
 
@@ -53,6 +61,10 @@ class CandidateStorageError(CandidateRepositoryError):
 
 class ImmutableCandidateFieldError(CandidateRepositoryError):
     """An update attempted to change candidate identity or provenance."""
+
+
+class CandidateRevisionConflictError(CandidateRepositoryError):
+    """The persisted candidate revision differs from the expected revision."""
 
 
 def _validate_unicode(value: str, name: str) -> None:
@@ -104,6 +116,59 @@ def _freeze_metadata(name: str, value: Mapping[str, object]) -> Mapping[str, obj
     frozen = _freeze_json(value, name, set())
     assert isinstance(frozen, Mapping)
     return frozen
+
+
+@dataclass(frozen=True)
+class CandidateReviewEvent:
+    revision: int
+    action: CandidateReviewAction
+    occurred_at: datetime
+    previous_state: CandidateState
+    resulting_state: CandidateState
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.revision) is not int or self.revision < 1:
+            raise ValueError("review event revision must be a positive integer")
+        if type(self.action) is not CandidateReviewAction:
+            raise TypeError("review event action must be a CandidateReviewAction")
+        if type(self.occurred_at) is not datetime:
+            raise TypeError("review event timestamp must be a datetime")
+        try:
+            offset = self.occurred_at.utcoffset()
+        except Exception:
+            raise ValueError("review event timestamp must be timezone-aware") from None
+        if offset is None:
+            raise ValueError("review event timestamp must be timezone-aware")
+        if type(self.previous_state) is not CandidateState:
+            raise TypeError("review event previous state must be a CandidateState")
+        if type(self.resulting_state) is not CandidateState:
+            raise TypeError("review event resulting state must be a CandidateState")
+        if self.reason is not None:
+            if type(self.reason) is not str or not self.reason.strip():
+                raise ValueError("review event reason must be None or a non-empty string")
+            _validate_unicode(self.reason, "review event reason")
+
+        allowed = {
+            CandidateReviewAction.REVISED: (
+                CandidateState.STAGED,
+                CandidateState.STAGED,
+            ),
+            CandidateReviewAction.ACCEPTED: (
+                CandidateState.STAGED,
+                CandidateState.IN_REVIEW,
+            ),
+        }
+        if self.action in allowed and (
+            self.previous_state,
+            self.resulting_state,
+        ) != allowed[self.action]:
+            raise ValueError("review event action does not match its state transition")
+        if self.action is CandidateReviewAction.REJECTED and (
+            self.previous_state not in (CandidateState.STAGED, CandidateState.IN_REVIEW)
+            or self.resulting_state is not CandidateState.REJECTED
+        ):
+            raise ValueError("review event action does not match its state transition")
 
 
 @dataclass(frozen=True)
@@ -163,6 +228,9 @@ class LessonCandidate:
     provenance: CandidateProvenance
     proposed_metadata: Mapping[str, object] | None = None
     state: CandidateState = CandidateState.STAGED
+    proposed_text: str | None = None
+    revision: int = 0
+    review_history: tuple[CandidateReviewEvent, ...] = ()
     candidate_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -171,6 +239,13 @@ class LessonCandidate:
         _validate_unicode(self.text, "candidate text")
         if not isinstance(self.provenance, CandidateProvenance):
             raise TypeError("candidate provenance must be CandidateProvenance")
+        if self.proposed_text is not None:
+            if type(self.proposed_text) is not str or not self.proposed_text.strip():
+                raise ValueError("proposed text must be None or a non-whitespace string")
+            _validate_unicode(self.proposed_text, "proposed text")
+            object.__setattr__(
+                self, "proposed_text", normalize_line_endings(self.proposed_text)
+            )
         if self.proposed_metadata is not None:
             object.__setattr__(
                 self,
@@ -179,6 +254,26 @@ class LessonCandidate:
             )
         if not isinstance(self.state, CandidateState):
             raise TypeError("candidate state must be a CandidateState")
+        if type(self.revision) is not int or self.revision < 0:
+            raise ValueError("candidate revision must be a non-negative integer")
+        if not isinstance(self.review_history, tuple):
+            raise TypeError("candidate review history must be a tuple")
+        for expected_revision, event in enumerate(self.review_history, start=1):
+            if type(event) is not CandidateReviewEvent:
+                raise TypeError("candidate review history must contain review events")
+            if event.revision != expected_revision:
+                raise ValueError("review event revisions must be exactly 1..revision")
+            if expected_revision > 1:
+                previous = self.review_history[expected_revision - 2]
+                if previous.resulting_state is not event.previous_state:
+                    raise ValueError("review events must form a consistent state chain")
+        if self.review_history:
+            if len(self.review_history) != self.revision:
+                raise ValueError("review event revisions must be exactly 1..revision")
+            if self.review_history[-1].resulting_state is not self.state:
+                raise ValueError("review history final state must equal candidate state")
+        elif self.revision != 0:
+            raise ValueError("empty review history requires revision zero")
 
         normalized_text = normalize_line_endings(self.text)
         object.__setattr__(self, "text", normalized_text)
@@ -194,6 +289,10 @@ class LessonCandidate:
         digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()
         object.__setattr__(self, "candidate_id", f"sha256:{digest}")
 
+    @property
+    def effective_text(self) -> str:
+        return self.proposed_text if self.proposed_text is not None else self.text
+
 
 class CandidateRepository(Protocol):
     """Create/read/list/update boundary for isolated staged candidates."""
@@ -205,5 +304,9 @@ class CandidateRepository(Protocol):
     def list(self) -> Sequence[LessonCandidate]: ...
 
     def update(
-        self, candidate_id: str, candidate: LessonCandidate
+        self,
+        candidate_id: str,
+        candidate: LessonCandidate,
+        *,
+        expected_revision: int,
     ) -> LessonCandidate: ...
