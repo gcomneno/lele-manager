@@ -13,6 +13,9 @@ from typing import Mapping, Sequence
 from lele_manager.application.lesson_candidate import (
     CandidateNotFoundError,
     CandidateProvenance,
+    CandidateReviewAction,
+    CandidateReviewEvent,
+    CandidateRevisionConflictError,
     CandidateState,
     CandidateStorageError,
     DuplicateCandidateIdError,
@@ -24,9 +27,17 @@ from lele_manager.application.lesson_candidate import (
 from lele_manager.application.raw_source import SourceKind
 from lele_manager.core.json_compat import canonical_json
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ROOT_FIELDS = {"candidates", "schema_version"}
-CANDIDATE_FIELDS = {"candidate_id", "proposed_metadata", "provenance", "state", "text"}
+CANDIDATE_FIELDS_V1 = {
+    "candidate_id", "proposed_metadata", "provenance", "state", "text",
+}
+CANDIDATE_FIELDS_V2 = CANDIDATE_FIELDS_V1 | {
+    "proposed_text", "revision", "review_history",
+}
+REVIEW_EVENT_FIELDS = {
+    "action", "occurred_at", "previous_state", "reason", "resulting_state", "revision",
+}
 PROVENANCE_FIELDS = {
     "chunk_index", "ingested_at", "run_metadata", "source_fingerprint",
     "source_kind", "source_logical_name", "source_span", "transformations",
@@ -48,6 +59,7 @@ def _candidate_to_dict(candidate: LessonCandidate) -> dict[str, object]:
     span = provenance.source_span
     return {
         "candidate_id": candidate.candidate_id,
+        "proposed_text": candidate.proposed_text,
         "proposed_metadata": _json_value(candidate.proposed_metadata),
         "provenance": {
             "chunk_index": provenance.chunk_index,
@@ -60,6 +72,18 @@ def _candidate_to_dict(candidate: LessonCandidate) -> dict[str, object]:
             "transformations": _json_value(provenance.transformations),
         },
         "state": candidate.state.value,
+        "revision": candidate.revision,
+        "review_history": [
+            {
+                "action": event.action.value,
+                "occurred_at": event.occurred_at.isoformat(),
+                "previous_state": event.previous_state.value,
+                "reason": event.reason,
+                "resulting_state": event.resulting_state.value,
+                "revision": event.revision,
+            }
+            for event in candidate.review_history
+        ],
         "text": candidate.text,
     }
 
@@ -88,10 +112,15 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _candidate_from_dict(value: object, position: int) -> LessonCandidate:
+def _candidate_from_dict(
+    value: object, position: int, schema_version: int
+) -> LessonCandidate:
     try:
         record = _object(value, f"candidate {position}")
-        _exact_fields(record, CANDIDATE_FIELDS, f"candidate {position}")
+        expected_fields = (
+            CANDIDATE_FIELDS_V1 if schema_version == 1 else CANDIDATE_FIELDS_V2
+        )
+        _exact_fields(record, expected_fields, f"candidate {position}")
         provenance_data = _object(record["provenance"], f"candidate {position} provenance")
         _exact_fields(provenance_data, PROVENANCE_FIELDS, f"candidate {position} provenance")
         raw_span = provenance_data["source_span"]
@@ -112,6 +141,26 @@ def _candidate_from_dict(value: object, position: int) -> LessonCandidate:
         run_metadata = _object(provenance_data["run_metadata"], "run metadata")
         proposed_raw = record["proposed_metadata"]
         proposed = None if proposed_raw is None else _object(proposed_raw, "proposed metadata")
+        review_history: tuple[CandidateReviewEvent, ...] = ()
+        if schema_version == 2:
+            raw_history = record["review_history"]
+            if not isinstance(raw_history, list):
+                raise MalformedStagingDataError("review history must be an array")
+            events: list[CandidateReviewEvent] = []
+            for event_position, raw_event in enumerate(raw_history, start=1):
+                event = _object(raw_event, f"review event {event_position}")
+                _exact_fields(event, REVIEW_EVENT_FIELDS, f"review event {event_position}")
+                events.append(
+                    CandidateReviewEvent(
+                        revision=event["revision"],  # type: ignore[arg-type]
+                        action=CandidateReviewAction(event["action"]),
+                        occurred_at=datetime.fromisoformat(event["occurred_at"]),  # type: ignore[arg-type]
+                        previous_state=CandidateState(event["previous_state"]),
+                        resulting_state=CandidateState(event["resulting_state"]),
+                        reason=event["reason"],  # type: ignore[arg-type]
+                    )
+                )
+            review_history = tuple(events)
         provenance = CandidateProvenance(
             source_kind=SourceKind(provenance_data["source_kind"]),
             source_logical_name=provenance_data["source_logical_name"],  # type: ignore[arg-type]
@@ -125,8 +174,11 @@ def _candidate_from_dict(value: object, position: int) -> LessonCandidate:
         candidate = LessonCandidate(
             text=record["text"],  # type: ignore[arg-type]
             provenance=provenance,
+            proposed_text=record["proposed_text"] if schema_version == 2 else None,  # type: ignore[arg-type]
             proposed_metadata=proposed,
             state=CandidateState(record["state"]),
+            revision=record["revision"] if schema_version == 2 else 0,  # type: ignore[arg-type]
+            review_history=review_history,
         )
         stored_id = record["candidate_id"]
         if not isinstance(stored_id, str) or stored_id != candidate.candidate_id:
@@ -162,7 +214,7 @@ class JsonCandidateRepository:
         root = _object(document, "staging data")
         _exact_fields(root, ROOT_FIELDS, "staging data")
         schema_version = root["schema_version"]
-        if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+        if type(schema_version) is not int or schema_version not in (1, SCHEMA_VERSION):
             raise MalformedStagingDataError("unsupported staging schema version")
         records = root["candidates"]
         if not isinstance(records, list):
@@ -170,7 +222,7 @@ class JsonCandidateRepository:
         candidates: list[LessonCandidate] = []
         seen: set[str] = set()
         for position, record in enumerate(records, start=1):
-            candidate = _candidate_from_dict(record, position)
+            candidate = _candidate_from_dict(record, position, schema_version)
             if candidate.candidate_id in seen:
                 raise DuplicateCandidateIdError(
                     f"duplicate candidate id {candidate.candidate_id!r}"
@@ -232,20 +284,69 @@ class JsonCandidateRepository:
     def list(self) -> tuple[LessonCandidate, ...]:
         return tuple(self._load())
 
-    def update(self, candidate_id: str, candidate: LessonCandidate) -> LessonCandidate:
+    def update(
+        self,
+        candidate_id: str,
+        candidate: LessonCandidate,
+        *,
+        expected_revision: int,
+    ) -> LessonCandidate:
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("expected revision must be a non-negative integer")
         candidates = self._load()
         for position, existing in enumerate(candidates):
             if existing.candidate_id != candidate_id:
                 continue
-            if (
-                candidate.candidate_id != candidate_id
-                or existing.text != candidate.text
-                or existing.provenance != candidate.provenance
-            ):
+            if existing.revision != expected_revision:
+                raise CandidateRevisionConflictError("candidate revision conflict")
+            if type(candidate) is not LessonCandidate:
+                raise CandidateRevisionConflictError("candidate update is malformed")
+            try:
+                proposed_id = candidate.candidate_id
+            except AttributeError:
+                raise CandidateRevisionConflictError(
+                    "candidate update is malformed"
+                ) from None
+            if proposed_id != candidate_id:
                 raise ImmutableCandidateFieldError(
                     "candidate text, identity and provenance are immutable"
                 )
-            candidates[position] = candidate
+            try:
+                candidate_data = _candidate_to_dict(candidate)
+                validated_candidate = _candidate_from_dict(
+                    candidate_data, position + 1, SCHEMA_VERSION
+                )
+            except (
+                MalformedStagingDataError,
+                AttributeError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                raise CandidateRevisionConflictError(
+                    "candidate update is malformed"
+                ) from None
+            existing_data = _candidate_to_dict(existing)
+            if existing.text != validated_candidate.text or canonical_json(
+                existing_data["provenance"]
+            ) != canonical_json(candidate_data["provenance"]):
+                raise ImmutableCandidateFieldError(
+                    "candidate text, identity and provenance are immutable"
+                )
+            if validated_candidate.revision != expected_revision + 1:
+                raise CandidateRevisionConflictError("candidate revision must increment once")
+            candidate_history_data = candidate_data["review_history"]
+            existing_history_data = existing_data["review_history"]
+            assert isinstance(candidate_history_data, list)
+            assert isinstance(existing_history_data, list)
+            if (
+                len(validated_candidate.review_history) != len(existing.review_history) + 1
+                or canonical_json(candidate_history_data[:-1])
+                != canonical_json(existing_history_data)
+            ):
+                raise CandidateRevisionConflictError("candidate review history must append once")
+            candidates[position] = validated_candidate
             self._write(candidates)
-            return candidate
+            return validated_candidate
         raise CandidateNotFoundError(f"candidate {candidate_id!r} was not found")

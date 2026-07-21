@@ -7,6 +7,8 @@ import pytest
 
 from lele_manager.application.lesson_candidate import (
     CandidateProvenance,
+    CandidateReviewAction,
+    CandidateReviewEvent,
     CandidateState,
     LessonCandidate,
     SourceSpan,
@@ -229,3 +231,162 @@ def test_valid_unicode_is_accepted_without_changing_identity_semantics() -> None
 
     assert candidate.text == "Lezione caffè 😀 \U00020000"
     assert candidate.proposed_metadata == {"descrizione": "caffè \U00020000"}
+
+
+def test_proposed_text_effective_text_and_review_data_do_not_change_identity() -> None:
+    baseline = LessonCandidate("source\r\ntext", provenance())
+    event = CandidateReviewEvent(
+        revision=1,
+        action=CandidateReviewAction.REVISED,
+        occurred_at=datetime(2026, 7, 20, tzinfo=timezone.utc),
+        previous_state=CandidateState.STAGED,
+        resulting_state=CandidateState.STAGED,
+        reason="clarified",
+    )
+    revised = replace(
+        baseline,
+        proposed_text="proposal\rtext",
+        proposed_metadata={"changed": True},
+        revision=1,
+        review_history=(event,),
+    )
+
+    assert baseline.effective_text == "source\ntext"
+    assert revised.effective_text == "proposal\ntext"
+    assert revised.candidate_id == baseline.candidate_id
+    assert revised.review_history == (event,)
+    with pytest.raises(AttributeError):
+        revised.review_history += (event,)
+
+
+@pytest.mark.parametrize("revision", [True, -1, 1.0])
+def test_invalid_candidate_revision_is_rejected(revision: object) -> None:
+    with pytest.raises(ValueError, match="revision"):
+        LessonCandidate("text", provenance(), revision=revision)  # type: ignore[arg-type]
+
+
+def test_review_history_must_be_sequential_and_match_state() -> None:
+    event = CandidateReviewEvent(
+        revision=2,
+        action=CandidateReviewAction.ACCEPTED,
+        occurred_at=datetime(2026, 7, 20, tzinfo=timezone.utc),
+        previous_state=CandidateState.STAGED,
+        resulting_state=CandidateState.IN_REVIEW,
+    )
+    with pytest.raises(ValueError, match="1..revision"):
+        LessonCandidate(
+            "text", provenance(), state=CandidateState.IN_REVIEW,
+            revision=1, review_history=(event,),
+        )
+    with pytest.raises(ValueError, match="final state"):
+        LessonCandidate(
+            "text", provenance(), state=CandidateState.STAGED,
+            revision=1, review_history=(replace(event, revision=1),),
+        )
+
+
+def test_legacy_state_without_review_history_is_permitted() -> None:
+    candidate = LessonCandidate("text", provenance(), state=CandidateState.APPROVED)
+    assert candidate.revision == 0
+    assert candidate.review_history == ()
+
+
+@pytest.mark.parametrize("revision", [True, 0, -1, 1.5])
+def test_review_event_revision_rejects_non_positive_exact_integers(
+    revision: object,
+) -> None:
+    with pytest.raises(ValueError, match="revision"):
+        CandidateReviewEvent(
+            revision=revision,  # type: ignore[arg-type]
+            action=CandidateReviewAction.REVISED,
+            occurred_at=datetime(2026, 7, 20, tzinfo=timezone.utc),
+            previous_state=CandidateState.STAGED,
+            resulting_state=CandidateState.STAGED,
+        )
+
+
+def test_review_event_rejects_naive_timestamp_and_surrogate_reason() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        CandidateReviewEvent(
+            1,
+            CandidateReviewAction.REVISED,
+            datetime(2026, 7, 20),
+            CandidateState.STAGED,
+            CandidateState.STAGED,
+        )
+    with pytest.raises(ValueError, match="surrogate"):
+        CandidateReviewEvent(
+            1,
+            CandidateReviewAction.REVISED,
+            datetime(2026, 7, 20, tzinfo=timezone.utc),
+            CandidateState.STAGED,
+            CandidateState.STAGED,
+            "bad\ud800",
+        )
+    with pytest.raises(ValueError, match="reason"):
+        CandidateReviewEvent(
+            1,
+            CandidateReviewAction.REVISED,
+            datetime(2026, 7, 20, tzinfo=timezone.utc),
+            CandidateState.STAGED,
+            CandidateState.STAGED,
+            "   ",
+        )
+
+
+@pytest.mark.parametrize(
+    ("action", "previous", "resulting"),
+    [
+        (CandidateReviewAction.REVISED, CandidateState.STAGED, CandidateState.IN_REVIEW),
+        (CandidateReviewAction.ACCEPTED, CandidateState.IN_REVIEW, CandidateState.IN_REVIEW),
+        (CandidateReviewAction.REJECTED, CandidateState.APPROVED, CandidateState.REJECTED),
+        (CandidateReviewAction.REJECTED, CandidateState.STAGED, CandidateState.STAGED),
+    ],
+)
+def test_review_event_action_and_state_must_be_internally_consistent(
+    action: CandidateReviewAction,
+    previous: CandidateState,
+    resulting: CandidateState,
+) -> None:
+    with pytest.raises(ValueError, match="transition"):
+        CandidateReviewEvent(
+            1,
+            action,
+            datetime(2026, 7, 20, tzinfo=timezone.utc),
+            previous,
+            resulting,
+        )
+
+
+def test_review_history_rejects_reordered_and_disconnected_events() -> None:
+    revised = CandidateReviewEvent(
+        1,
+        CandidateReviewAction.REVISED,
+        datetime(2026, 7, 20, tzinfo=timezone.utc),
+        CandidateState.STAGED,
+        CandidateState.STAGED,
+    )
+    accepted = CandidateReviewEvent(
+        2,
+        CandidateReviewAction.ACCEPTED,
+        datetime(2026, 7, 20, tzinfo=timezone.utc),
+        CandidateState.STAGED,
+        CandidateState.IN_REVIEW,
+    )
+    with pytest.raises(ValueError, match="1..revision"):
+        LessonCandidate(
+            "text", provenance(), state=CandidateState.IN_REVIEW,
+            revision=2, review_history=(accepted, revised),
+        )
+    disconnected = CandidateReviewEvent(
+        2,
+        CandidateReviewAction.REJECTED,
+        datetime(2026, 7, 20, tzinfo=timezone.utc),
+        CandidateState.IN_REVIEW,
+        CandidateState.REJECTED,
+    )
+    with pytest.raises(ValueError, match="consistent state chain"):
+        LessonCandidate(
+            "text", provenance(), state=CandidateState.REJECTED,
+            revision=2, review_history=(revised, disconnected),
+        )

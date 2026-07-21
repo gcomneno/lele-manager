@@ -8,6 +8,8 @@ from typing import Sequence
 import pytest
 
 from lele_manager.application.lesson_candidate import (
+    CandidateReviewAction,
+    CandidateReviewEvent,
     CandidateState,
     CandidateStorageError,
     DuplicateCandidateIdError,
@@ -123,10 +125,21 @@ def test_identical_rerun_skips_and_preserves_review_data() -> None:
     settings = ChunkingSettings(max_characters=19)
     first = service(repository).ingest(source(), settings)
     original = repository.candidates[first.candidate_ids[0]]
+    event = CandidateReviewEvent(
+        1,
+        CandidateReviewAction.ACCEPTED,
+        NOW,
+        CandidateState.STAGED,
+        CandidateState.IN_REVIEW,
+        "ready",
+    )
     reviewed = replace(
         original,
         state=CandidateState.IN_REVIEW,
+        proposed_text="reviewed text",
         proposed_metadata={"topic": "kept"},
+        revision=1,
+        review_history=(event,),
     )
     repository.candidates[reviewed.candidate_id] = reviewed
 
@@ -135,6 +148,7 @@ def test_identical_rerun_skips_and_preserves_review_data() -> None:
     assert rerun.created_candidate_ids == ()
     assert rerun.skipped_candidate_ids == first.candidate_ids
     assert repository.candidates[reviewed.candidate_id] is reviewed
+    assert repository.candidates[reviewed.candidate_id] == reviewed
     assert repository.create_calls == list(first.candidate_ids)
 
 
