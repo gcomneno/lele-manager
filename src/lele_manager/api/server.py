@@ -42,6 +42,7 @@ from lele_manager.ml.topic_model import (
     train_topic_model,
 )
 from lele_manager.ml.similarity_service import similar_by_text, similar_by_lesson_id
+from lele_manager.api.tritalele import router as tritalele_router
 
 
 # Override espliciti (usati nei test via monkeypatch) — se None si usa default_*_path()
@@ -83,6 +84,7 @@ app = FastAPI(
     description="API per gestire e cercare le Lesson Learned (LeLe).",
     version=__version__,
 )
+app.include_router(tritalele_router)
 
 # -----------------------------------------------------------------------------
 # Schemi Pydantic
