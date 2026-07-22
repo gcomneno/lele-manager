@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from lele_manager.cli import tritalele
 from lele_manager.core.doctor import (
     DoctorOperationalError,
     DoctorProblem,
@@ -341,6 +342,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Stampa un report JSON stabile.",
     )
+
+    tritalele.register_commands(subparsers)
 
     return parser
 
@@ -844,7 +847,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     base_url = (args.base_url or DEFAULT_BASE_URL).rstrip("/")
 
     try:
-        if args.command == "search":
+        if hasattr(args, "tritalele_command"):
+            code = tritalele.run_command(args)
+        elif args.command == "search":
             code = cmd_search(base_url, args)
         elif args.command == "export":
             code = cmd_export(base_url, args)

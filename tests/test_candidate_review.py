@@ -218,6 +218,31 @@ def test_repeated_revise_is_deterministic_and_appends_exactly_once() -> None:
     assert clock.calls == 2
 
 
+def test_revise_requires_an_effective_proposal_change() -> None:
+    original = candidate()
+    review, repository, clock = service(original)
+    revised = review.revise_candidate(
+        original.candidate_id,
+        expected_revision=0,
+        proposed_text="reviewed text\r\n",
+        proposed_metadata={"topic": ["testing"]},
+    )
+    before = repository.items[original.candidate_id]
+
+    with pytest.raises(InvalidCandidateReviewInputError):
+        review.revise_candidate(
+            original.candidate_id,
+            expected_revision=1,
+            proposed_text="reviewed text\n",
+            proposed_metadata={"topic": ["testing"]},
+        )
+
+    assert revised == before
+    assert repository.items[original.candidate_id] == before
+    assert repository.update_calls == 1
+    assert clock.calls == 1
+
+
 def test_repository_race_is_translated_and_sanitized() -> None:
     original = candidate()
 
