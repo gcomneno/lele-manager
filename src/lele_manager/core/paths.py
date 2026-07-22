@@ -18,6 +18,7 @@ ENV_DATA_PATH_DEPRECATED = "LELE_DATA_PATH"
 ENV_MODEL_PATH_DEPRECATED = "LELE_MODEL_PATH"
 
 DEFAULT_DB_FILENAME = "lessons.jsonl"
+DEFAULT_CANDIDATES_FILENAME = "candidates.json"
 DEFAULT_TOPIC_MODEL_FILENAME = "topic_model.joblib"
 
 
@@ -88,6 +89,11 @@ def lessons_path() -> Path:
     p = data_dir() / DEFAULT_DB_FILENAME
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def candidates_path() -> Path:
+    """Full path to the local TritaLeLe candidate staging document."""
+    return data_dir() / DEFAULT_CANDIDATES_FILENAME
 
 
 def topic_model_path() -> Path:
