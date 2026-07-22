@@ -4,6 +4,7 @@ Lifecycle policy:
 
 - ``STAGED`` candidates may be revised, accepted or rejected.
 - Revision keeps the candidate ``STAGED``.
+- Revision requires an effective change to proposed text or metadata.
 - Acceptance moves a candidate from ``STAGED`` to ``IN_REVIEW``.
 - Rejection moves ``STAGED`` or ``IN_REVIEW`` to ``REJECTED``.
 - ``REJECTED`` and ``APPROVED`` are terminal for this service.
@@ -222,6 +223,15 @@ class CandidateReviewService:
             raise InvalidCandidateReviewInputError(
                 "invalid candidate review input"
             ) from None
+
+        if (
+            action is CandidateReviewAction.REVISED
+            and validated.proposed_text == current.proposed_text
+            and validated.proposed_metadata == current.proposed_metadata
+        ):
+            raise InvalidCandidateReviewInputError(
+                "candidate revision must make an effective change"
+            )
 
         occurred_at = self._clock()
         event = CandidateReviewEvent(
