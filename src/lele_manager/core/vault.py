@@ -128,6 +128,7 @@ def build_frontmatter(
     tags: List[str],
     date: str,
     title: Optional[str],
+    provenance: Optional[Dict[str, object]] = None,
 ) -> Dict[str, object]:
     frontmatter: Dict[str, object] = {
         "id": lesson_id,
@@ -139,7 +140,36 @@ def build_frontmatter(
     }
     if title:
         frontmatter["title"] = title
+    if provenance is not None:
+        frontmatter["provenance"] = provenance
     return frontmatter
+
+
+def render_lesson_markdown(
+    *,
+    lesson_id: str,
+    body: str,
+    topic: str,
+    source: str,
+    importance: int,
+    tags: List[str],
+    date: str,
+    title: Optional[str] = None,
+    provenance: Optional[Dict[str, object]] = None,
+) -> str:
+    """Render canonical lesson bytes using the established vault conventions."""
+    frontmatter = build_frontmatter(
+        lesson_id=lesson_id,
+        topic=topic,
+        source=source,
+        importance=importance,
+        tags=tags,
+        date=date,
+        title=title,
+        provenance=provenance,
+    )
+    _ = compute_frontmatter_hash(frontmatter)
+    return render_markdown_with_frontmatter(frontmatter, body.strip())
 
 
 def write_lesson_markdown(
@@ -154,6 +184,7 @@ def write_lesson_markdown(
     date: str,
     title: Optional[str] = None,
     relative_path: Optional[str] = None,
+    provenance: Optional[Dict[str, object]] = None,
 ) -> Path:
     """Write or overwrite a lesson markdown file in the vault."""
     vault_dir.mkdir(parents=True, exist_ok=True)
@@ -174,21 +205,19 @@ def write_lesson_markdown(
     except ValueError as exc:
         raise ValueError(f"Refusing to write outside vault: {md_path}") from exc
 
-    frontmatter = build_frontmatter(
+    rendered = render_lesson_markdown(
         lesson_id=lesson_id,
+        body=body,
         topic=topic,
         source=source,
         importance=importance,
         tags=tags,
         date=date,
         title=title,
+        provenance=provenance,
     )
-    _ = compute_frontmatter_hash(frontmatter)
     md_path.parent.mkdir(parents=True, exist_ok=True)
-    md_path.write_text(
-        render_markdown_with_frontmatter(frontmatter, body.strip()),
-        encoding="utf-8",
-    )
+    md_path.write_text(rendered, encoding="utf-8")
     return md_path
 
 
