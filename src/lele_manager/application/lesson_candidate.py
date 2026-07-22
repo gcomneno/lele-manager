@@ -37,6 +37,7 @@ class CandidateReviewAction(str, Enum):
     REVISED = "revised"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
+    APPROVED = "approved"
 
 
 class CandidateRepositoryError(Exception):
@@ -167,6 +168,11 @@ class CandidateReviewEvent:
         if self.action is CandidateReviewAction.REJECTED and (
             self.previous_state not in (CandidateState.STAGED, CandidateState.IN_REVIEW)
             or self.resulting_state is not CandidateState.REJECTED
+        ):
+            raise ValueError("review event action does not match its state transition")
+        if self.action is CandidateReviewAction.APPROVED and (
+            self.previous_state is not CandidateState.IN_REVIEW
+            or self.resulting_state is not CandidateState.APPROVED
         ):
             raise ValueError("review event action does not match its state transition")
 
