@@ -18,7 +18,7 @@ DOCUMENT_PAIRS = (
     (Path("docs/projection-store.md"), Path("docs/it/projection-store.md")),
 )
 
-MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]+]\(([^)]+)\)")
 
 
 def _read(path: Path) -> str:
@@ -56,8 +56,10 @@ def test_language_selectors_are_reciprocal() -> None:
         english_head = "\n".join(_read(english).splitlines()[:8])
         italian_head = "\n".join(_read(italian).splitlines()[:8])
 
-        assert "English" in english_head and "Italiano" in english_head, english
-        assert "English" in italian_head and "Italiano" in italian_head, italian
+        assert "English" in english_head, english
+        assert "Italiano" in english_head, english
+        assert "English" in italian_head, italian
+        assert "Italiano" in italian_head, italian
         assert _relative_link(english, italian) in english_head, english
         assert _relative_link(italian, english) in italian_head, italian
 
@@ -67,7 +69,10 @@ def test_relative_links_in_bilingual_documents_exist() -> None:
     for pair in DOCUMENT_PAIRS:
         for path in pair:
             for target in _relative_targets(path):
-                assert target == repository_root or repository_root in target.parents
+                is_in_repository = (
+                    target == repository_root or repository_root in target.parents
+                )
+                assert is_in_repository, f"{path}: target escapes repository: {target}"
                 assert target.exists(), f"{path}: missing relative target {target}"
 
 
