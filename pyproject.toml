@@ -34,7 +34,7 @@ dev = [
     "pandas",
     "scikit-learn",
     "httpx",
-    "ruff",
+    "ruff==0.15.22",
     "pre-commit",
     "bandit",
     "pip-audit",
