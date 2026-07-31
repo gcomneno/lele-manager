@@ -102,7 +102,7 @@ class LessonFeatureExtractor(BaseEstimator, TransformerMixin):
         lengths = texts.str.len().to_numpy(dtype=float)[:, None]
 
         # Numero di parole (split su whitespace)
-        word_counts = texts.str.split().str.len().to_numpy(dtype=float)[:, None]
+        word_counts = texts.map(lambda text: len(text.split())).to_numpy(dtype=float)[:, None]
 
         # Importance se presente, altrimenti zero
         if "importance" in X.columns:

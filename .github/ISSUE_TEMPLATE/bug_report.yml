@@ -5,45 +5,45 @@ body:
   - type: markdown
     attributes:
       value: |
-        Grazie! Per velocizzare la diagnosi, compila i campi sotto con dettagli riproducibili.
+        Thank you. Provide reproducible details and remove sensitive data.
   - type: textarea
     id: what-happened
     attributes:
-      label: Cosa è successo?
-      description: Cosa ti aspettavi e cosa hai ottenuto.
-      placeholder: "Mi aspettavo X, invece ho visto Y..."
+      label: What happened?
+      description: Describe what you expected and what you observed.
+      placeholder: "I expected X, but observed Y..."
     validations:
       required: true
   - type: textarea
     id: repro
     attributes:
-      label: Come riprodurre
-      description: Passi minimi + comandi + input.
+      label: How to reproduce
+      description: Provide minimal steps, commands, and input.
       placeholder: |
-        1) ...
-        2) ...
-        3) ...
+        1. ...
+        2. ...
+        3. ...
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
-      label: Log / output
-      description: Incolla output rilevante (senza dati sensibili).
+      label: Logs or output
+      description: Paste relevant output without sensitive data.
       render: shell
     validations:
       required: false
   - type: input
     id: python
     attributes:
-      label: Versione Python
-      placeholder: "es. 3.12.2"
+      label: Python version
+      placeholder: "For example: 3.12.2"
     validations:
       required: false
   - type: input
     id: os
     attributes:
-      label: OS
-      placeholder: "es. Ubuntu 24.04 / macOS / Windows"
+      label: Operating system
+      placeholder: "For example: Ubuntu 24.04, macOS, or Windows"
     validations:
       required: false

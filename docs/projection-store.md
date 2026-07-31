@@ -1,5 +1,7 @@
 # Projection store
 
+[English](projection-store.md) | [Italiano](it/projection-store.md)
+
 LeLe Manager accesses its queryable lesson dataset through the typed port in
 `lele_manager.core.projection_store`. The boundary is intentionally small and
 backend-neutral:
