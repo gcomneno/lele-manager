@@ -1,319 +1,587 @@
-# ADR 0001: backend di storage per LeLe Manager
+# ADR 0001: storage backend for LeLe Manager
 
-- **Stato:** Proposto
-- **Data:** 2026-07-13
+> Language policy: ADRs are English-only canonical technical records.
+> See the [documentation policy](../documentation-policy.md).
+
+- **Status:** Proposed
+- **Date:** 2026-07-13
 - **Issue:** [#91 — Compare storage backends](https://github.com/gcomneno/lele-manager/issues/91)
 - **Epic:** [#82 — TritaLeLe Knowledge Ingestion Pipeline](https://github.com/gcomneno/lele-manager/issues/82)
 
-## Contesto
+## Context
 
-LeLe Manager è un'applicazione personale e local-first. Il repository descrive spesso il flusso come `vault Markdown -> JSONL -> ML -> API`, ma il codice attuale non ha una sola sorgente autoritativa applicata in modo uniforme:
+LeLe Manager is a personal local-first application. The repository often
+describes its flow as `Markdown vault -> JSONL -> ML -> API`, but the current
+code does not apply one authoritative source consistently:
 
-- `src/lele_manager/cli/import_from_dir.py::import_from_dir` legge i file Markdown, usa l'`id` nel frontmatter (o lo deriva dal path), normalizza metadati e body e produce record che includono anche `path`, `frontmatter` e `frontmatter_hash`;
-- `src/lele_manager/core/vault.py::write_lesson_markdown` scrive body e frontmatter nel vault, mentre `import_vault_to_jsonl` ricostruisce interamente il JSONL dal vault;
-- `src/lele_manager/api/server.py::create_vault_lesson` e `update_lesson` scrivono prima il Markdown e poi reimportano il vault. Questo rende il vault la sorgente di authoring nel flusso GUI corrente;
-- la stessa API usa però `load_lessons_df` per leggere direttamente JSONL e `append_lesson_to_jsonl` per `POST /lessons`, che non scrive nel vault;
-- le CLI storiche `src/lele_manager/cli/add_lesson.py` e `list_lessons.py` usano direttamente `src/lele_manager/core/storage.py`, basato su append e scansione completa del JSONL;
-- la CLI principale `src/lele_manager/cli/lele.py` e la GUI in `frontend/src/lib/api.ts` passano invece dall'API;
-- training e similarità ricevono `pandas.DataFrame`: `src/lele_manager/cli/train_topic_model.py` e `suggest_similar.py` leggono JSONL, mentre `src/lele_manager/api/server.py::train_topic` e `build_similarity_index` usano il DataFrame caricato dallo stesso dataset. Il modello serializzato da `src/lele_manager/ml/topic_model.py` è un artefatto derivato;
-- `scripts/lele-api-refresh.sh` rende esplicito il rebuild completo `vault -> data/lessons.jsonl -> models/topic_model.joblib`;
-- `tests/test_api_vault.py` verifica write-back Markdown e reimport, mentre `tests/test_lessons_storage.py` e `tests/test_add_lesson_cli.py` preservano il comportamento JSONL diretto;
-- i percorsi predefiniti in `src/lele_manager/core/paths.py` collocano dataset e modello nelle directory XDG. `.gitignore` esclude dati, database e modelli locali, quindi oggi Git versiona il vault dell'utente solo se questo è gestito separatamente, non `data/lessons.jsonl` nel repository.
+- `src/lele_manager/cli/import_from_dir.py::import_from_dir` reads Markdown,
+  uses the frontmatter `id` or derives it from the path, normalizes metadata
+  and body, and produces records that also include `path`, `frontmatter`, and
+  `frontmatter_hash`;
+- `src/lele_manager/core/vault.py::write_lesson_markdown` writes body and
+  frontmatter to the vault, while `import_vault_to_jsonl` rebuilds JSONL from
+  the vault;
+- `src/lele_manager/api/server.py::create_vault_lesson` and `update_lesson`
+  write Markdown first and then reimport the vault, making the vault the
+  authoring source in the current GUI flow;
+- the same API still uses `load_lessons_df` to read JSONL directly and
+  `append_lesson_to_jsonl` for `POST /lessons`, which does not write to the
+  vault;
+- the historical `add_lesson.py` and `list_lessons.py` CLIs use
+  `src/lele_manager/core/storage.py`, which appends and scans JSONL directly;
+- the main `lele` CLI and the GUI use the API instead;
+- training and similarity accept `pandas.DataFrame` values:
+  `train_topic_model.py` and `suggest_similar.py` read JSONL, while API
+  training and similarity load the same dataset into a DataFrame;
+- `models/topic_model.joblib` is a derived artifact;
+- `scripts/lele-api-refresh.sh` makes the complete rebuild explicit:
+  `vault -> data/lessons.jsonl -> models/topic_model.joblib`;
+- vault tests verify Markdown write-back and reimport, while historical storage
+  tests preserve direct JSONL behavior;
+- default dataset and model paths are XDG-based, and `.gitignore` excludes
+  local data, databases, and models from this repository.
 
-Di conseguenza, **oggi il vault è la sorgente intenzionale del flusso completo, ma JSONL è ancora uno storage operativamente mutabile e può contenere record che non esistono nel vault**. Questa ambiguità va risolta prima di aggiungere altri flussi di ingestione. L'ADR definisce lo stato obiettivo; non cambia il comportamento corrente e non implementa la successiva astrazione.
+Therefore, the vault is the intended source for the complete authoring flow,
+but JSONL is still operationally mutable and may contain records absent from
+the vault. This ambiguity must be resolved before adding more ingestion paths.
 
-### Livelli architetturali
+This ADR defines the target state. It does not itself change runtime behavior
+or implement the following abstraction and migration work.
 
-| Livello | Stato attuale | Stato deciso |
+### Architectural layers
+
+| Layer | Current state | Decided target |
 |---|---|---|
-| Vault Markdown | Authoring e write-back GUI; rebuild del dataset | Sorgente autoritativa delle lesson approvate |
-| Storage applicativo | JSONL letto o scritto direttamente da più componenti | SQLite locale, ricostruibile e interrogabile |
-| JSONL | Dataset, storage mutabile, input ML e fixture | Snapshot derivato per export, interoperabilità, fixture e ML |
-| API / CLI / GUI | Accesso misto: API o JSONL diretto | Accesso alle lesson tramite confine applicativo/storage |
-| Topic e similarità | DataFrame da JSONL più modello `joblib` | Artefatti derivati da uno snapshot identificabile dello storage |
-| Export e integrazioni | Markdown da risultati API; JSONL implicito | Operazioni esplicite, separate dal backend |
+| Markdown vault | GUI authoring and write-back; dataset rebuild | Authoritative source for approved lessons |
+| Application storage | JSONL read or written directly by several components | Local, rebuildable, queryable SQLite projection |
+| JSONL | Dataset, mutable storage, ML input, and fixtures | Derived snapshot for export, interoperability, fixtures, and ML |
+| API / CLI / GUI | Mixed access through API or direct JSONL | Access lessons through application and storage boundaries |
+| Topic and similarity | DataFrame from JSONL plus `joblib` model | Derived artifacts tied to an identifiable storage snapshot |
+| Export and integrations | Markdown from API results; implicit JSONL | Explicit operations separated from the backend |
 
-## Requisiti e criteri decisionali
+## Requirements and decision criteria
 
-La scelta deve:
+The selected architecture must:
 
-1. restare semplice da installare e gestire per un'app locale Python;
-2. conservare portabilità, inspectability e possibilità di recupero manuale;
-3. supportare upsert, cancellazioni e sostituzioni complete senza rewrite non protetti;
-4. offrire transazioni, vincoli, query, filtri e indici;
-5. sostenere letture concorrenti e scritture occasionali realistiche per FastAPI/GUI locale;
-6. avere una strategia esplicita per schema e migrazioni;
-7. consentire full-text search senza renderla un prerequisito di portabilità;
-8. funzionare bene sia con dataset piccoli sia con una crescita moderata;
-9. integrarsi con Python, Pandas e scikit-learn;
-10. consentire backup, export e test isolati;
-11. non introdurre un servizio esterno senza un requisito concreto;
-12. minimizzare il costo di migrazione dal codice e dai dati attuali;
-13. mantenere Markdown e JSONL come formati interoperabili, senza confonderli con il database applicativo;
-14. preparare i confini richiesti dalle issue [#92](https://github.com/gcomneno/lele-manager/issues/92), [#93](https://github.com/gcomneno/lele-manager/issues/93) e [#94](https://github.com/gcomneno/lele-manager/issues/94).
+1. remain simple to install and operate for a local Python application;
+2. preserve portability, inspectability, and manual recovery;
+3. support upsert, deletion, and complete replacement without unsafe rewrites;
+4. provide transactions, constraints, queries, filters, and indexes;
+5. support realistic concurrent reads and occasional writes for a local
+   FastAPI/GUI application;
+6. define an explicit schema and migration strategy;
+7. allow full-text search without making it a portability prerequisite;
+8. work for small datasets and moderate growth;
+9. integrate with Python, Pandas, and scikit-learn;
+10. support coherent backups, export, and isolated tests;
+11. avoid an external service without a concrete requirement;
+12. minimize migration cost from current code and data;
+13. preserve Markdown and JSONL as interoperable formats without confusing
+    either with the application database;
+14. prepare the boundaries required by issues
+    [#92](https://github.com/gcomneno/lele-manager/issues/92),
+    [#93](https://github.com/gcomneno/lele-manager/issues/93), and
+    [#94](https://github.com/gcomneno/lele-manager/issues/94).
 
-## Opzioni considerate
+## Options considered
 
 ### JSONL
 
-JSONL ha il costo concettuale e operativo più basso: è UTF-8, leggibile con strumenti comuni, diffabile per riga e già consumato da Pandas e dagli script del progetto. È adatto a export, fixture, scambio e snapshot di training.
+JSONL has the lowest conceptual and operational cost. It is UTF-8, readable by
+common tools, line-diffable, and already consumed by Pandas and project scripts.
+It is appropriate for export, fixtures, exchange, and training snapshots.
 
-Come storage mutabile, però, l'append non garantisce unicità dell'ID e un upsert o delete richiede leggere e riscrivere il file. Il codice corrente mostra entrambi i modelli: `core.storage.append_lesson` appende, mentre `core.vault.upsert_jsonl_lesson` e `import_vault_to_jsonl` riscrivono. Non ci sono transazioni multi-record, schema o indici; lettura e filtri richiedono scansione e materializzazione. Lock, scrittura atomica e recovery dovrebbero essere implementati dall'applicazione. La buona compatibilità teorica con Git non cambia il fatto che i dati locali sono esclusi dal Git del repository.
+As mutable storage, append does not guarantee ID uniqueness, while upsert and
+delete require reading and rewriting the file. The current code demonstrates
+both patterns: `core.storage.append_lesson` appends, while
+`core.vault.upsert_jsonl_lesson` and `import_vault_to_jsonl` rewrite. JSONL
+does not provide multi-record transactions, schema constraints, or indexes.
+Reads and filters require scanning and materialization. Locking, atomic writes,
+and recovery must be implemented by the application. Theoretical Git
+friendliness does not change the fact that local data is excluded from this
+repository.
 
-**Valutazione:** mantenere JSONL come formato derivato, non come backend applicativo primario.
+**Assessment:** retain JSONL as a derived format, not the primary mutable
+application backend.
 
 ### SQLite
 
-SQLite è embedded, serverless e memorizza normalmente il database in un singolo file. Python espone `sqlite3` nella standard library; la documentazione Python precisa però che il modulo dipende dalla libreria SQLite ed è opzionale per chi distribuisce una build CPython. Questo va verificato sulle piattaforme supportate, ma non richiede una nuova dipendenza Python nel packaging ordinario.
+SQLite is embedded and serverless, normally storing a database in one file.
+Python exposes `sqlite3` in the standard library, although the module depends
+on the SQLite library and is optional for distributors of custom CPython
+builds. Supported platforms must verify it, but ordinary packaging does not
+require another Python dependency.
 
-Fornisce transazioni, vincoli, query SQL, indici, update e delete efficienti e una storia di migrazioni tramite versione dello schema. È adatto a una singola applicazione locale con molti read e scritture occasionali. In modalità WAL lettori e writer possono procedere contemporaneamente, ma resta un solo writer alla volta e l'applicazione deve gestire timeout/`SQLITE_BUSY`; il WAL non è adatto a filesystem di rete e i file `-wal`/`-shm` fanno parte dello stato da considerare nelle copie.
+SQLite provides transactions, constraints, SQL queries, indexes, efficient
+updates and deletes, and schema-versioned migrations. It fits one local
+application with many reads and occasional writes. WAL mode permits concurrent
+readers and a writer, but only one writer at a time remains realistic. The
+application must handle timeout and `SQLITE_BUSY`. WAL is unsuitable for
+network filesystems, and `-wal` and `-shm` files are relevant when copying
+state.
 
-FTS5 offre ricerca full-text indicizzata, ma la sua disponibilità dipende da come SQLite è stato compilato. Le build e i pacchetti supportati devono provarla; la ricerca di base deve poter funzionare senza FTS5. Backup coerenti possono usare la Backup API o `VACUUM INTO`; copiare alla cieca il solo file durante una sessione WAL non è una strategia di backup.
+FTS5 provides indexed full-text search when compiled into SQLite. Supported
+builds must detect and test it; baseline search must work without FTS5.
+Coherent backups can use the Backup API or `VACUUM INTO`. Blindly copying only
+the main database file during an active WAL session is not a backup strategy.
 
-L'integrazione con Pandas può avvenire tramite query/record convertiti in DataFrame al confine ML. Il database non va versionato in Git: il vault e gli export testuali restano i formati versionabili e recuperabili.
+Pandas integration can occur by converting query results or records into a
+DataFrame at the ML boundary. The database must not be versioned in Git; the
+vault and textual exports remain the versionable and recoverable formats.
 
-**Valutazione:** miglior corrispondenza al workload locale CRUD + ricerca di LeLe Manager.
+**Assessment:** best match for LeLe Manager's local CRUD and search workload.
 
 ### DuckDB
 
-DuckDB è embedded, transazionale e ottimizzato per workload analitici colonnari e operazioni bulk. Il client Python interroga direttamente DataFrame Pandas, Arrow e altri formati, quindi è molto attraente per EDA, statistiche e preparazione di dataset.
+DuckDB is embedded, transactional, and optimized for columnar analytical
+workloads and bulk operations. Its Python client can query Pandas DataFrames,
+Arrow, and other formats directly, making it attractive for exploratory
+analysis, statistics, and dataset preparation.
 
-Non è però una dipendenza attuale di `pyproject.toml`. La documentazione DuckDB indica come modalità embedded read-write ordinaria un singolo processo, nel quale sono possibili writer concorrenti. La scrittura multi-processo è tecnicamente possibile tramite il protocollo remoto Quack, ancora beta; DuckLake con catalogo PostgreSQL è un'altra alternativa, ma introduce infrastruttura esterna. Queste modalità aggiungono costo operativo senza soddisfare meglio di SQLite il requisito locale, semplice, embedded e orientato al CRUD. Inoltre, molte piccole transazioni non sono il workload primario di DuckDB e i vantaggi colonnari sono limitati per il dataset personale attuale.
+It is not a current `pyproject.toml` dependency. Ordinary embedded read-write
+usage is centered on one process with concurrent writers inside that process.
+Multi-process writing through remote Quack remains beta, while DuckLake with a
+PostgreSQL catalog introduces external infrastructure. These modes add
+operational cost without serving the simple local CRUD requirement better than
+SQLite. Many small transactions are also not DuckDB's primary workload, and
+its columnar advantages are limited for the current personal dataset.
 
-**Valutazione:** non backend CRUD primario; candidato futuro per analisi secondaria su snapshot JSONL/Parquet o, se utile, sui dati SQLite.
+**Assessment:** not the primary CRUD backend; a future analytical layer over
+JSONL, Parquet, or SQLite remains possible when justified.
 
-### Storage document-oriented embedded o locale
+### Embedded or local document-oriented storage
 
-Questa categoria comprende librerie in-process come TinyDB e prodotti embedded analoghi, non un servizio di rete. TinyDB, per esempio, persiste documenti Python in un file JSON e offre una query API. La corrispondenza con frontmatter flessibile è naturale e il debug può restare semplice.
+This category includes in-process libraries such as TinyDB and similar
+embedded products. TinyDB persists Python documents in JSON and offers a query
+API. Flexible frontmatter maps naturally to documents, and debugging can
+remain simple.
 
-Le garanzie su transazioni, concorrenza, indici, full-text search e migrazioni variano però per prodotto. Una soluzione JSON-file ripropone parte dei problemi di rewrite e locking di JSONL; una soluzione più completa aggiunge una dipendenza e un ecosistema specifici. Le lesson hanno già campi stabili e relazioni utili (ID univoco, tag, provenance, generazione di sync): la flessibilità schemaless non compensa la perdita delle funzionalità mature disponibili in SQLite. Campi futuri possono essere gestiti con migrazioni e, se necessario, una colonna JSON per metadati non ancora promossi.
+Transactions, concurrency, indexes, full-text search, and migrations vary by
+product. A JSON-file solution repeats JSONL rewrite and locking problems. A
+more capable solution adds a product-specific dependency and ecosystem.
+Lessons already have stable, useful fields and relationships: unique ID, tags,
+provenance, and synchronization generation. Schemaless flexibility does not
+outweigh the mature consistency and query capabilities of SQLite. Future
+fields can use migrations and, when useful, a JSON column for metadata not yet
+promoted into first-class columns.
 
-**Valutazione:** respinto per il backend primario; nessun vantaggio concreto sufficiente rispetto a SQLite.
+**Assessment:** rejected for the primary backend; no concrete advantage
+outweighs SQLite.
 
-### Document store server esterno
+### External document-store server
 
-MongoDB o un equivalente offre documenti flessibili, query, indici, concorrenza e, in configurazioni appropriate, transazioni. È però un processo o servizio separato da installare, configurare, proteggere, aggiornare e sottoporre a backup. Alcune garanzie dipendono anche dalla topologia di deployment.
+MongoDB or an equivalent provides flexible documents, queries, indexes,
+concurrency, and transactions in suitable deployments. It also requires a
+separate process or service to install, configure, secure, update, and back up.
+Some guarantees depend on deployment topology.
 
-LeLe Manager è oggi personale, locale e distribuibile come applicazione Python. Non esistono requisiti di replica, sharding, accesso remoto multiutente o volume che giustifichino tale costo operativo.
+LeLe Manager is personal, local, and distributable as a Python application.
+There is no replication, sharding, remote multi-user access, or volume
+requirement that justifies this operational cost.
 
-**Valutazione:** respinto. Potrà essere riesaminato solo in presenza di requisiti distribuiti reali.
+**Assessment:** rejected. Reconsider only if real distributed requirements
+emerge.
 
-## Matrice comparativa
+## Comparison matrix
 
-Legenda: `++` molto favorevole, `+` favorevole, `0` neutro/misto, `-` sfavorevole, `--` molto sfavorevole. I punteggi sono valutazioni progettuali per LeLe Manager, non benchmark universali.
+Legend: `++` strongly favorable, `+` favorable, `0` mixed or neutral,
+`-` unfavorable, `--` strongly unfavorable. These are project-specific design
+assessments, not universal benchmarks.
 
-| Criterio | JSONL | SQLite | DuckDB | Document store embedded | Document store server |
+| Criterion | JSONL | SQLite | DuckDB | Embedded document store | Server document store |
 |---|---:|---:|---:|---:|---:|
-| Semplicità operativa local-first | ++ | ++ | + | + | -- |
-| Dipendenze Python/runtime | ++ | ++\* | - | - | -- |
-| Portabilità del dato | ++ | + | + | 0 | 0 |
-| Lettura e debug manuale | ++ | + (CLI/tool) | 0 (tool) | +/0 | 0 |
-| Transazioni e consistenza | -- | ++ | ++ | variabile | ++ |
-| Update e delete | -- | ++ | + | + | ++ |
-| Query, filtri e indici | -- | ++ | ++ | +/0 | ++ |
-| CRUD interattivo | - | ++ | 0/- | +/0 | ++ |
-| Concorrenza per app locale | -- | + | 0/- | variabile | ++ |
-| Schema, vincoli e migrazioni | -- | ++ | + | 0/- | + |
-| Full-text search | -- | +\* | -/0 | variabile | + |
-| Dataset piccoli | ++ | ++ | + | + | - |
-| Crescita moderata | - | ++ | ++ analitica | 0/+ | ++ |
+| Local-first operational simplicity | ++ | ++ | + | + | -- |
+| Python/runtime dependencies | ++ | ++* | - | - | -- |
+| Data portability | ++ | + | + | 0 | 0 |
+| Manual reading and debugging | ++ | + (CLI/tool) | 0 (tool) | +/0 | 0 |
+| Transactions and consistency | -- | ++ | ++ | variable | ++ |
+| Update and delete | -- | ++ | + | + | ++ |
+| Queries, filters, and indexes | -- | ++ | ++ | +/0 | ++ |
+| Interactive CRUD | - | ++ | 0/- | +/0 | ++ |
+| Concurrency for a local app | -- | + | 0/- | variable | ++ |
+| Schema, constraints, and migrations | -- | ++ | + | 0/- | + |
+| Full-text search | -- | +* | -/0 | variable | + |
+| Small datasets | ++ | ++ | + | + | - |
+| Moderate growth | - | ++ | ++ analytical | 0/+ | ++ |
 | Pandas / scikit-learn | ++ | + | ++ | 0/+ | + |
-| Backup coerente | 0 | ++ | + | variabile | + ma operativo |
-| Diff/versionamento Git | ++ | -- | -- | +/-- secondo formato | -- |
-| Test isolati e in-memory | + | ++ | ++ | + | -- |
-| Packaging desktop/locale | ++ | ++\* | 0/- | 0/- | -- |
-| Interoperabilità strumenti | ++ | ++ | ++ | 0/+ | + |
-| Costo migrazione attuale | ++ | + | 0/- | 0/- | -- |
+| Coherent backup | 0 | ++ | + | variable | + with operations |
+| Git diff/versioning | ++ | -- | -- | +/-- by format | -- |
+| Isolated and in-memory tests | + | ++ | ++ | + | -- |
+| Desktop/local packaging | ++ | ++* | 0/- | 0/- | -- |
+| Tool interoperability | ++ | ++ | ++ | 0/+ | + |
+| Current migration cost | ++ | + | 0/- | 0/- | -- |
 
-`\*` La disponibilità di `sqlite3` e soprattutto FTS5 deve essere verificata nelle build Python/SQLite effettivamente distribuite.
+`*` Supported Python and SQLite builds must verify `sqlite3`, and especially
+FTS5, explicitly.
 
-## Decisione
+## Decision
 
-1. **Source of truth e identità:** il vault Markdown diventa la sorgente autoritativa delle lesson approvate. Il body autoritativo vive nel corpo del file e i metadati nel frontmatter. La convenzione canonica lega identità e collocazione: `topic` corrisponde alla prima directory del path relativo e `id` al path relativo senza estensione `.md`. Di conseguenza, spostare o rinominare un file richiede di aggiornare `id`; cambiare la directory topic richiede anche di aggiornare `topic`. Con la convenzione attuale un move o rename è una migrazione d'identità e può invalidare riferimenti esterni.
-2. **Backend applicativo:** SQLite diventa lo storage locale interrogabile e indicizzato. È una proiezione ricostruibile del vault, non una seconda fonte autoritativa indipendente.
-3. **Ruolo di JSONL:** JSONL resta uno snapshot derivato per export, interoperabilità, fixture e input riproducibile di training/analisi. Durante la migrazione può restare un backend di compatibilità dietro l'astrazione della #92, ma non è il backend finale né il luogo canonico delle modifiche.
-4. **Ruolo di DuckDB:** nessun ruolo nel CRUD primario. Può essere rivalutato come strumento analitico secondario quando volume o query colonnari lo giustificheranno, lavorando su export o snapshot.
-5. **Storage document-oriented:** sia il document store embedded sia il server esterno sono respinti. Il primo non offre un vantaggio sufficiente rispetto a SQLite per consistenza e query; il secondo introduce operatività sproporzionata senza requisito distribuito.
-6. **Servizi e confine della #92:** le operazioni user-facing di create, update e delete passano da un servizio di authoring, che valida e scrive il vault. Un servizio di sincronizzazione legge il vault e aggiorna un projection store interrogabile; eventuali `upsert`, `delete` e `replace-all` sono capacità interne usate dal sync, non operazioni offerte alla business logic o agli endpoint per modificare direttamente SQLite. Servizi di export separati leggono uno snapshot della proiezione e producono JSONL o altri formati. L'astrazione della #92 rappresenta il minimo contratto della proiezione senza esporre JSONL, SQLite, SQL, Pandas o filesystem.
-7. **Stato della proiezione:** ogni proiezione registra la generazione o il fingerprint del vault da cui deriva. Un mismatch deve essere rilevabile ed esposto; API e CLI non devono dichiarare corrente una proiezione stale. La policy concreta potrà imporre il sync, restituire un errore esplicito o operare in modalità degradata segnalata, ma lo stale silenzioso è vietato.
+1. **Source of truth and identity:** the Markdown vault becomes the
+   authoritative source for approved lessons. Authoritative content lives in
+   the Markdown body and metadata in frontmatter. The canonical convention
+   binds identity to location: `topic` equals the first relative directory and
+   `id` equals the relative path without `.md`. Renaming or moving a file
+   therefore requires updating `id`; changing the topic directory also
+   requires updating `topic`. Under this convention, a move or rename is an
+   identity migration and may invalidate external references.
 
-Questa è una decisione sullo **stato obiettivo**. La #92 deve inizialmente preservare il comportamento JSONL richiesto dalla propria issue; il passaggio del default a SQLite avverrà solo dopo parità verificata e riconciliazione dei dati JSONL-only.
+2. **Application backend:** SQLite becomes the local indexed and queryable
+   storage. It is a rebuildable projection of the vault, not an independent
+   second source of truth.
 
-## Motivazione
+3. **JSONL role:** JSONL remains a derived snapshot for export,
+   interoperability, fixtures, and reproducible training or analysis input.
+   During migration it may remain a compatibility backend behind issue #92's
+   abstraction, but it is not the final backend or the canonical editing
+   surface.
 
-SQLite risolve i limiti già visibili nel codice: append duplicabili, rewrite completo per upsert, scansioni per ogni filtro e assenza di transazioni. Lo fa con un componente embedded coerente con il packaging e il workload locale, senza imporre un servizio.
+4. **DuckDB role:** DuckDB has no primary CRUD role. It may be reconsidered as
+   a secondary analytical tool when volume or columnar queries justify it,
+   operating over exports or snapshots.
 
-Mantenere Markdown come autorità conserva l'esperienza di authoring, la leggibilità, la portabilità e la storia Git del vault. Mantenere JSONL come snapshot conserva l'integrazione già funzionante con Pandas/scikit-learn e con strumenti esterni, senza chiedergli di essere anche un database mutabile.
+5. **Document-oriented storage:** both embedded and server document stores are
+   rejected. The embedded category does not provide enough advantage over
+   SQLite for consistency and queries; the server category adds
+   disproportionate operations without a distributed requirement.
 
-La separazione elimina inoltre una falsa scelta: Markdown, SQLite e JSONL non competono per lo stesso ruolo. Sono rispettivamente contenuto autoritativo, indice/storage applicativo e formato di scambio o dataset derivato.
+6. **Services and issue #92 boundary:** user-facing create, update, and delete
+   operations pass through an authoring service that validates and writes the
+   vault. A synchronization service reads the vault and updates a queryable
+   projection store. `upsert`, `delete`, and `replace-all` are internal sync
+   capabilities, not business-logic or endpoint operations that modify SQLite
+   directly. Separate export services read a projection snapshot and publish
+   JSONL or other formats. Issue #92's abstraction represents the minimum
+   projection contract without exposing JSONL, SQLite, SQL, Pandas, or the
+   filesystem.
 
-## Conseguenze positive
+7. **Projection state:** each projection records the vault generation or
+   fingerprint from which it was built. A mismatch must be detectable and
+   exposed. API and CLI consumers must not silently report a stale projection
+   as current. The concrete policy may require synchronization, return an
+   explicit error, or operate in a clearly signaled degraded mode.
 
-- ID univoci, vincoli, update, delete e rebuild possono essere atomici nello storage applicativo.
-- API, CLI e GUI possono condividere query e ordinamento senza caricare sempre l'intero dataset.
-- Indici ordinari e, dove disponibile, FTS5 preparano ricerca e filtri più efficienti.
-- SQLite è facile da creare in un file temporaneo o in memoria nei test.
-- Il vault resta leggibile, modificabile con editor comuni e versionabile indipendentemente dall'app.
-- JSONL resta semplice da esportare, ispezionare e caricare in Pandas.
-- Il database può essere ricostruito dal vault dopo corruzione o cambio schema.
-- Il confine storage rende sostituibile il backend senza esporlo ai consumer esterni.
+This is a target-state decision. Issue #92 must initially preserve the JSONL
+behavior required by its own scope. The default changes to SQLite only after
+verified parity and reconciliation of JSONL-only data.
 
-## Conseguenze negative e trade-off
+## Rationale
 
-- Esisteranno migrazioni di schema SQLite e una versione dello schema da mantenere.
-- Il file SQLite non è adatto a diff o merge Git e non deve essere trattato come backup del vault.
-- Il coordinamento tra commit filesystem e transazione SQLite non è una singola transazione ACID. Serve un protocollo di sincronizzazione esplicito.
-- WAL, timeout, checkpoint e gestione di `SQLITE_BUSY` richiedono scelte operative e test; un singolo writer resta il limite realistico.
-- FTS5 non può essere assunto disponibile ovunque: serve feature detection e fallback.
-- La conversione verso DataFrame diventa un adattatore esplicito invece di un semplice `pd.read_json`.
-- Durante la migrazione coesisteranno due backend, aumentando temporaneamente la superficie di test.
-- I record creati solo in JSONL devono essere identificati e riconciliati prima che il vault possa essere dichiarato unica autorità operativa.
+SQLite addresses limitations already visible in the code: duplicate-prone
+append, whole-file rewrites for upsert, scans for each filter, and the absence
+of transactions. It does so with an embedded component compatible with the
+local workload and packaging, without requiring a service.
 
-## Piano di adozione
+Keeping Markdown authoritative preserves the authoring experience,
+readability, portability, and independent Git history of the vault. Keeping
+JSONL as a snapshot preserves working Pandas, scikit-learn, and external-tool
+integration without forcing JSONL to act as a mutable database.
 
-Questo piano appartiene alle issue successive; la #91 non lo implementa.
+The separation also removes a false choice. Markdown, SQLite, and JSONL serve
+different roles: authoritative content, application index/storage, and
+exchange or derived dataset.
 
-1. Nella #92, introdurre il confine storage e un adapter JSONL che preservi il comportamento corrente.
-2. Introdurre il servizio di authoring come unico ingresso user-facing per create, update e delete delle lesson approvate; deve validare e scrivere il vault Markdown.
-3. Introdurre il servizio di sincronizzazione, separato dall'authoring, che pubblica snapshot della proiezione e ne registra generazione o fingerprint; rimuovere dalle regole di business la conoscenza di path JSONL, `pd.read_json` e append/rewrite senza cambiare ancora il backend predefinito.
-4. Aggiungere un adapter SQLite dietro lo stesso confine, con versione dello schema e migrazioni esplicite. Le sue capacità incrementali e transazionali restano interne al sync.
-5. Eseguire un inventario read-only di vault e JSONL. Segnalare duplicati, record JSONL-only, ID mancanti e conflitti; **non modificare automaticamente i Markdown**.
-6. Importare il vault in un database SQLite nuovo e confrontare conteggi, ID, campi, hash e risultati delle query con il backend JSONL.
-7. Solo dopo la riconciliazione, spostare in modo graduale le letture di API e CLI sul backend SQLite; GUI e CLI principale restano consumer dell'API e le scritture continuano a passare dall'authoring del vault.
-8. Separare i servizi di export e generare JSONL esplicitamente come pubblicazione atomica dello stesso snapshot, usandolo per le pipeline non ancora migrate.
-9. Spostare training e similarità verso uno snapshot/DataFrame ottenuto dal confine applicativo, registrandone fingerprint o generazione.
-10. Eliminare gli accessi diretti a JSONL soltanto dopo test di parità, stabilizzazione e una finestra di compatibilità documentata.
+## Positive consequences
 
-## Compatibilità e migrazione
+- Unique IDs, constraints, updates, deletes, and rebuilds can be atomic in the
+  application storage.
+- API, CLI, and GUI can share queries and ordering without always loading the
+  complete dataset.
+- Ordinary indexes and optional FTS5 support more efficient search and filters.
+- SQLite is easy to create in a temporary file or in memory for tests.
+- The vault remains readable, editor-friendly, and independently versionable.
+- JSONL remains easy to export, inspect, and load into Pandas.
+- The database can be rebuilt from the vault after corruption or schema change.
+- The storage boundary keeps the backend replaceable without exposing it to
+  external consumers.
 
-### Modello dei dati
+## Negative consequences and trade-offs
 
-- **Vault:** `id`, topic, source, importance, tags, date, title e provenance approvata nel frontmatter; contenuto nel body Markdown. `topic` deve coincidere con la prima directory del path relativo e `id` con l'intero path relativo senza `.md`; rename, move o cambio della directory topic richiedono l'aggiornamento coerente dei campi canonici. Metadati frontmatter sconosciuti non devono essere persi durante il round-trip.
-- **SQLite:** copia interrogabile di ID, metadati e body, più informazioni di sincronizzazione come path relativo, hash del frontmatter/contenuto e generazione. La forma esatta delle tabelle e la rappresentazione dei tag sono rinviate alla #92.
-- **JSONL:** rappresentazione completa e documentata di una generazione; non log append-only e non authority. L'ordine deve essere deterministico per diff e test riproducibili.
-- **Modelli ML:** artefatti derivati, rigenerabili, associati al fingerprint/generazione del dataset da cui provengono.
+- SQLite schema migrations and a schema version must be maintained.
+- SQLite files are not suitable for Git diff or merge and must not be treated
+  as vault backups.
+- A filesystem commit and SQLite transaction cannot form one ACID transaction;
+  synchronization needs an explicit protocol.
+- WAL, timeouts, checkpoints, and `SQLITE_BUSY` handling require operational
+  decisions and tests; one writer remains the realistic limit.
+- FTS5 cannot be assumed everywhere; feature detection and fallback are
+  required.
+- DataFrame conversion becomes an explicit adapter instead of a direct
+  `pd.read_json`.
+- Two backends coexist during migration, temporarily increasing test surface.
+- JSONL-only records must be identified and reconciled before the vault becomes
+  the sole operational authority.
 
-### Aggiornamenti, cancellazioni e consistenza
+## Adoption plan
 
-Le modifiche user-facing a lesson approvate devono passare dal servizio di authoring del vault. Il projection store non è un'interfaccia di authoring. Concettualmente:
+This plan belongs to later issues. Issue #91 does not implement it.
 
-1. validare l'intera lesson;
-2. scrivere o sostituire il Markdown in modo atomico;
-3. far rilevare la nuova generazione del vault al servizio di sincronizzazione;
-4. applicare internamente al projection store un upsert/delete opzionale o una sostituzione completa; per SQLite il sync può usare una transazione;
-5. pubblicare la nuova generazione della proiezione solo a sincronizzazione conclusa;
-6. invalidare o rigenerare JSONL, statistiche e modelli derivati.
+1. In #92, introduce the storage boundary and a JSONL adapter that preserves
+   current behavior.
+2. Introduce the authoring service as the only user-facing entry point for
+   create, update, and delete of approved lessons; it validates and writes the
+   Markdown vault.
+3. Introduce a separate synchronization service that publishes projection
+   snapshots and records their generation or fingerprint. Remove knowledge of
+   JSONL paths, `pd.read_json`, and append/rewrite behavior from business rules
+   without changing the default backend yet.
+4. Add a SQLite adapter behind the same boundary with explicit schema version
+   and migrations. Its incremental and transactional capabilities remain
+   internal to synchronization.
+5. Perform a read-only inventory of vault and JSONL. Report duplicates,
+   JSONL-only records, missing IDs, and conflicts. Do not modify Markdown
+   automatically.
+6. Import the vault into a new SQLite database and compare counts, IDs, fields,
+   hashes, and query results against JSONL.
+7. Only after reconciliation, move API and CLI reads gradually to SQLite. GUI
+   and the main CLI remain API consumers, and writes still pass through vault
+   authoring.
+8. Separate export services and publish JSONL atomically from the same
+   projection snapshot for pipelines not yet migrated.
+9. Move training and similarity to a snapshot or DataFrame obtained through
+   the application boundary, recording its fingerprint or generation.
+10. Remove direct JSONL access only after parity tests, stabilization, and a
+    documented compatibility window.
 
-Una cancellazione approvata rimuove il Markdown (la storia può restare in Git) e il successivo sync elimina la voce dalla proiezione. Se la scrittura Markdown riesce ma il sync fallisce, la proiezione precedente può restare materialmente leggibile, ma la sua generazione o fingerprint non coincide più con il vault ed è quindi stale. Il mismatch deve essere rilevato ed esposto: API e CLI non possono presentarla silenziosamente come corrente. La policy concreta — sync obbligatorio, errore esplicito o modalità degradata segnalata — è rinviata; il vault prevale, il sync è ripetibile e non si tenta un rollback distruttivo del Markdown già confermato.
+## Compatibility and migration
 
-Per un rebuild completo, tutti i Markdown vanno analizzati e validati prima di aprire la transazione che sostituisce il dataset. Errori o ID duplicati impediscono la pubblicazione della nuova generazione. JSONL va esportato tramite file temporaneo e rename, non aggiornato in-place riga per riga.
+### Data model
 
-Non è ammesso un doppio write permanente Markdown + database senza questa regola di autorità. In particolare, un endpoint applicativo non deve aggiornare SQLite e “provare poi” a scrivere il vault lasciando ambiguo quale copia vinca.
+- **Vault:** approved `id`, topic, source, importance, tags, date, title, and
+  provenance in frontmatter; content in the Markdown body. `topic` equals the
+  first relative directory and `id` equals the complete relative path without
+  `.md`. Rename, move, or topic-directory changes require coherent canonical
+  metadata updates. Unknown frontmatter metadata must survive round trips.
+- **SQLite:** queryable copies of IDs, metadata, and bodies, plus
+  synchronization information such as relative path, content/frontmatter
+  hashes, and generation. Exact tables and tag representation are deferred to
+  #92.
+- **JSONL:** complete documented representation of one generation, not an
+  append-only log and not authority. Ordering must be deterministic for
+  reproducible tests and diffs.
+- **ML models:** rebuildable derived artifacts associated with the dataset
+  fingerprint or generation used to train them.
+
+### Updates, deletions, and consistency
+
+User-facing changes to approved lessons pass through the vault authoring
+service. The projection store is not an authoring interface.
+
+Conceptually:
+
+1. validate the complete lesson;
+2. write or replace Markdown atomically;
+3. let synchronization detect the new vault generation;
+4. apply an internal upsert/delete or whole replacement to the projection
+   store; SQLite synchronization may use a transaction;
+5. publish the new projection generation only after synchronization completes;
+6. invalidate or regenerate JSONL, statistics, and derived models.
+
+An approved deletion removes the Markdown file, while Git may retain history.
+The next synchronization removes the projection entry. If Markdown writing
+succeeds but synchronization fails, the previous projection may remain
+physically readable, but its generation no longer matches the vault. That
+mismatch is stale state and must be exposed. The vault wins, synchronization is
+repeatable, and the application does not attempt a destructive rollback of
+already confirmed Markdown.
+
+For a complete rebuild, all Markdown files are parsed and validated before
+opening the transaction that replaces the dataset. Errors or duplicate IDs
+prevent publication. JSONL export uses a temporary file and atomic rename,
+never line-by-line in-place updates.
+
+Permanent dual writes to Markdown and database without this authority rule are
+not allowed. In particular, an endpoint must not update SQLite and then
+"attempt" to write the vault while leaving the winning copy ambiguous.
 
 ### Rollback
 
-- Finché SQLite non è il default, il backend JSONL resta selezionabile e i test di compatibilità garantiscono il ritorno al comportamento precedente.
-- Dopo lo switch, un rollback applicativo rigenera JSONL dal vault e può usarlo temporaneamente al posto di SQLite come proiezione. Le modifiche user-facing continuano a passare dal servizio di authoring del vault: il rollback non riabilita scritture autoritative dirette su JSONL e non promuove una copia SQLite più recente del vault ad authority.
-- Ogni migrazione SQLite opera su backup coerente o database ricostruibile e deve poter fallire senza modificare il vault.
-- Nessuna fase di migrazione riscrive automaticamente frontmatter o body. Le correzioni segnalate dall'audit richiedono revisione esplicita.
+- Until SQLite is default, JSONL remains selectable and compatibility tests
+  preserve the previous behavior.
+- After cutover, an application rollback regenerates JSONL from the vault and
+  may use it temporarily as the projection. User-facing writes still pass
+  through vault authoring; rollback does not restore authoritative direct
+  JSONL writes or promote a SQLite copy newer than the vault.
+- Each SQLite migration operates on a coherent backup or a rebuildable
+  database and may fail without modifying the vault.
+- No migration phase automatically rewrites frontmatter or body. Audit findings
+  require explicit review.
 
-### Strategia di test
+### Test strategy
 
-- suite contrattuale sul minimo comune JSONL/SQLite: lettura per ID, elenco/ricerca deterministici, lettura coerente di uno snapshot, pubblicazione o sostituzione atomica dell'intero snapshot, conteggi e generazione/fingerprint;
-- test specifici SQLite per transazioni e aggiornamenti incrementali del sync, senza estendere tali promesse al backend JSONL;
-- golden dataset con record completi, campi opzionali, Unicode, tag e ID canonici contenenti `/`, verificando che `id` sia il path relativo senza `.md` e `topic` la prima directory;
-- test di rename e move come migrazioni d'identità, incluso il possibile invalidamento di riferimenti al vecchio ID;
-- parità di filtri, ordinamento e serializzazione con gli endpoint attuali;
-- test di rollback su import invalido, duplicato, transazione interrotta e migrazione fallita;
-- test concorrenti realistici con più reader, un writer, timeout e retry limitato;
-- feature test di FTS5 nel packaging supportato e test del fallback senza FTS5;
-- confronto di fingerprint fra vault, SQLite, export JSONL e input del modello;
-- smoke API/CLI/GUI senza accessi diretti al formato del backend.
+- contract suite for common JSONL/SQLite behavior: get by ID, deterministic
+  list/search, coherent snapshot read, atomic whole-snapshot publication,
+  counts, and generation/fingerprint;
+- SQLite-specific tests for synchronization transactions and incremental
+  updates, without extending those promises to JSONL;
+- golden datasets with complete records, optional fields, Unicode, tags, and
+  canonical IDs containing `/`;
+- canonical checks that `id` equals the relative path without `.md` and
+  `topic` equals the first directory;
+- rename and move tests as identity migrations, including invalidated
+  references to old IDs;
+- filter, ordering, and serialization parity with current endpoints;
+- rollback tests for invalid import, duplicates, interrupted transactions, and
+  failed migrations;
+- realistic concurrency tests with multiple readers, one writer, timeout, and
+  limited retries;
+- FTS5 feature tests in supported packaging and fallback tests without FTS5;
+- fingerprint comparison across vault, SQLite, JSONL export, and model input;
+- API, CLI, and GUI smoke tests without direct backend-format access.
 
-## Confine concettuale per la #92
+## Conceptual boundary for issue #92
 
-Il port deve offrire capacità, senza fissare firme Python definitive:
+The port offers capabilities without fixing final Python signatures:
 
-- lettura di una lesson per ID;
-- elenco e ricerca filtrata, con ordinamento e limiti deterministici;
-- lettura coerente di uno snapshot;
-- pubblicazione o sostituzione atomica dell'intero snapshot;
-- conteggi/statistiche essenziali che evitino scansioni duplicate;
-- esposizione di una generazione o fingerprint utile a cache e derivati.
+- get one lesson by ID;
+- deterministic filtered list and search with limits;
+- read one coherent snapshot;
+- atomically publish or replace a complete snapshot;
+- obtain essential counts and statistics without duplicate scans;
+- expose a generation or fingerprint useful for cache and derivatives.
 
-L'adapter SQLite può inoltre offrire al servizio di sincronizzazione upsert, delete e transazioni come capacità interne o opzionali. Non fanno parte del minimo comune e non obbligano JSONL a simulare transazioni generali o semantiche ACID.
+The SQLite adapter may additionally provide synchronization with internal or
+optional upsert, delete, and transaction capabilities. These are not part of
+the common minimum and do not force JSONL to simulate general transactions or
+ACID semantics.
 
-Restano fuori dal port:
+The port excludes:
 
-- parsing e rendering Markdown;
-- scansione e write-back del vault;
-- operazioni user-facing di create, update e delete;
-- import/export JSONL, Markdown o altri formati;
-- costruzione di DataFrame;
-- training, serializzazione e cache dei modelli;
-- dettagli SQL, path del database e tipi specifici di Pandas.
+- Markdown parsing and rendering;
+- vault scanning and write-back;
+- user-facing create, update, and delete;
+- JSONL, Markdown, or other import/export;
+- DataFrame construction;
+- model training, serialization, and cache;
+- SQL details, database paths, and Pandas-specific types.
 
-L'authoring è un servizio applicativo distinto: valida le operazioni user-facing e scrive il vault. La sincronizzazione legge il vault già autoritativo, verifica la convenzione canonica di ID/topic e pubblica una nuova proiezione con `replace-all` o, se l'adapter lo consente, con upsert/delete incrementali; le transazioni SQLite sono un dettaglio di questa implementazione. L'export è un ulteriore servizio: legge uno snapshot tramite il port e serializza JSONL o altri formati.
+Authoring is a separate application service that validates user-facing
+operations and writes the vault. Synchronization reads the already
+authoritative vault, validates canonical ID/topic conventions, and publishes a
+new projection through `replace-all` or adapter-specific incremental
+operations. SQLite transactions are an implementation detail of that sync.
+Export is another service that reads a snapshot through the port and
+serializes JSONL or other formats.
 
-## Impatto sulle issue successive
+## Impact on later issues
 
 ### #92 — Introduce storage abstraction layer
 
-La #92 deve implementare il port minimo e l'adapter JSONL di compatibilità, preservando il comportamento esterno e le semantiche JSONL correnti, inclusi temporaneamente i flussi di scrittura legacy. Deve isolare gli accessi presenti in `core.storage`, `core.vault` e `api.server` e introdurre i confini concettuali fra authoring, sincronizzazione, projection store ed export, senza imporre nella stessa issue il passaggio definitivo delle scritture user-facing al vault. Il cutover verso l'authoring vault-only avviene in una fase successiva, dopo riconciliazione e test di parità. Nello stato obiettivo endpoint e business logic non chiamano direttamente le mutazioni del projection store; upsert/delete e transazioni SQLite appartengono al sync. Import/export non va incorporato nel repository.
+Issue #92 implements the minimum port and the JSONL compatibility adapter while
+preserving external behavior and current JSONL semantics, including temporary
+legacy write flows. It isolates access currently spread across `core.storage`,
+`core.vault`, and `api.server`, and introduces conceptual boundaries among
+authoring, synchronization, projection store, and export.
+
+It does not need to force the final cutover of user-facing writes to the vault
+in the same issue. Vault-only authoring follows after reconciliation and parity
+tests. In the target state, endpoints and business logic do not call projection
+mutations directly; SQLite upsert/delete and transactions belong to sync.
+Import/export does not belong inside the repository abstraction.
 
 ### #93 — Expose lessons for external quiz and review tools
 
-La #93 può dipendere da un contratto applicativo stabile di lesson/snapshot: get per ID, ricerca/elenco deterministici, metadati, body e generazione. La stabilità del contratto non implica però che un ID sopravviva a uno spostamento: poiché l'ID canonico deriva dal path, rename e move sono migrazioni d'identità e possono invalidare riferimenti esterni. I consumer non devono presumere la permanenza dell'ID attraverso tali operazioni. Una futura strategia di alias o una chiave esterna immutabile potrà essere valutata separatamente, senza definirne ora lo schema. Il consumer esterno non deve ricevere path SQLite, righe SQL, DataFrame o promesse sul formato JSONL interno. Un export JSONL versionato o un'API paginata possono essere trasporti dello stesso contratto. I quiz restano consumer read-only e non diventano una seconda authority.
+Issue #93 may depend on a stable application lesson/snapshot contract: get by
+ID, deterministic list/search, metadata, body, and generation.
+
+Contract stability does not mean an ID survives a move. Because canonical ID is
+derived from the path, rename and move are identity migrations and may
+invalidate external references. Consumers must not assume ID permanence across
+those operations. A future alias strategy or immutable external key may be
+considered separately.
+
+External consumers receive no SQLite paths, SQL rows, DataFrames, or promises
+about internal JSONL representation. A versioned JSONL export or paginated API
+may transport the same contract. Quiz tools remain read-only consumers and do
+not become another authority.
 
 ### #94 — TritaLeLe
 
-TritaLeLe introduce sorgenti grezze, provenance, chunking, candidati e revisione umana. I candidati **non** sono lesson approvate e non devono entrare direttamente nel vault autoritativo o nel dataset ML. Il workflow deve mantenere uno staging separato; solo l'approvazione umana produce un Markdown con ID e provenance, seguito dal sync transazionale verso SQLite e dalla rigenerazione dei derivati. Lo storage abstraction può essere esteso in futuro con un port distinto per i candidati, senza sovraccaricare il repository delle lesson.
+TritaLeLe introduces raw sources, provenance, chunking, candidates, and human
+review. Candidates are not approved lessons and must not enter the
+authoritative vault or ML dataset directly.
 
-Questa separazione rende deterministico il passaggio `source material -> candidate -> approval -> vault -> storage -> export/ML` e impedisce che testo non revisionato alteri ricerca, topic o similarità.
+The workflow keeps separate staging. Only explicit human approval produces
+Markdown with canonical ID and provenance, followed by synchronization to the
+projection and regeneration of derived artifacts. A distinct candidate port
+may be introduced without overloading the approved-lesson repository.
 
-## Alternative rinviate
+This separation makes the flow deterministic:
 
-- FTS5 come requisito obbligatorio: rinviato finché packaging e tokenizer non sono verificati; SQLite resta la scelta anche con ricerca fallback.
-- DuckDB come layer analitico o export Parquet: rinviato finché non esiste un workload analitico che ne dimostri il valore.
-- Metadati interamente normalizzati rispetto a colonna JSON per campi estesi: decisione di schema della #92, purché ID e campi interrogati abbiano vincoli/indici espliciti.
-- Change log, event sourcing o tombstone permanenti: non richiesti oggi; Git del vault e generazioni di sync coprono il recupero iniziale.
-- Database server multiutente: rinviato finché non esistono requisiti di accesso remoto, replica o writer multipli.
+```text
+source material
+  -> candidate
+  -> approval
+  -> vault
+  -> storage
+  -> export / ML
+```
 
-## Condizioni che potrebbero far riesaminare la decisione
+It prevents unreviewed text from changing search, topic, or similarity results.
 
-La decisione va riesaminata se si verifica almeno una di queste condizioni:
+## Deferred alternatives
 
-- LeLe Manager diventa multiutente o richiede writer distribuiti/remoti;
-- il vault Markdown non può più rappresentare senza perdita i contenuti o la provenance approvata;
-- volume e query analitiche rendono SQLite misurabilmente inadeguato nonostante indici e query corrette;
-- una pipeline richiede scansioni colonnari/Parquet come workload dominante, rendendo DuckDB candidato primario;
-- packaging target rilevanti non forniscono in modo affidabile `sqlite3` e non è accettabile distribuire SQLite;
-- sync filesystem/database causa problemi operativi non risolvibili con generazioni, rebuild atomico e rilevamento stale;
-- emerge un requisito concreto per documenti eterogenei con query che uno schema SQLite più campi JSON non soddisfa.
+- Mandatory FTS5: deferred until packaging and tokenizer behavior are verified;
+  SQLite remains selected with fallback search.
+- DuckDB as an analytical layer or Parquet export: deferred until a workload
+  demonstrates value.
+- Fully normalized metadata versus a JSON column for extensions: deferred to
+  #92's schema decision, provided IDs and queried fields receive explicit
+  constraints and indexes.
+- Change log, event sourcing, or permanent tombstones: not currently required;
+  vault Git history and synchronization generations cover initial recovery.
+- Multi-user database server: deferred until remote access, replication, or
+  multiple-writer requirements exist.
 
-## Rischi e domande aperte
+## Conditions for reconsidering the decision
 
-- Quali record reali esistono solo in JSONL e come verranno promossi nel vault senza perdere `created_at` o altri campi?
-- Qual è la policy UX per delete: rimozione fisica versionata in Git o tombstone esplicito?
-- Quali metadati di provenance della #94 devono diventare campi interrogabili e quali restano estensioni del frontmatter?
-- Quali build Python e sistemi operativi fanno parte della matrice di packaging per `sqlite3` e FTS5?
-- Il processo API sarà l'unico writer SQLite o devono essere coordinati anche CLI/processi separati?
-- Quale strategia di rilevamento cambiamenti del vault (refresh esplicito, watcher o scan all'avvio) soddisfa l'uso reale? Questa scelta non cambia l'autorità del vault.
-- Quale UX deve accompagnare una migrazione d'identità dovuta a rename o move, dato che l'ID canonico cambia e i riferimenti esterni possono diventare invalidi?
-- Quale policy concreta deve applicare API/CLI quando la generazione della proiezione non coincide con il fingerprint del vault: sync obbligatorio, errore esplicito o modalità degradata segnalata?
-- In futuro servono alias o una chiave esterna immutabile per riferimenti durevoli? La convenzione canonica attuale resta `id = path relativo senza .md` e questa ADR non ne definisce lo schema.
+Reconsider this ADR if at least one condition becomes true:
 
-## Riferimenti
+- LeLe Manager becomes multi-user or needs distributed or remote writers;
+- Markdown can no longer represent approved content or provenance without loss;
+- measured volume and query workloads make indexed SQLite inadequate;
+- columnar scans or Parquet become the dominant workload, making DuckDB a
+  primary candidate;
+- relevant packaging targets cannot provide `sqlite3` reliably and bundling it
+  is unacceptable;
+- filesystem/database synchronization remains operationally unreliable despite
+  generations, atomic rebuilds, and stale-state detection;
+- heterogeneous document requirements cannot be met by SQLite schema plus JSON
+  extension fields.
 
-### Repository e pianificazione
+## Risks and open questions
+
+- Which real records exist only in JSONL, and how are they promoted to the
+  vault without losing `created_at` or other fields?
+- Is deletion represented by a Git-versioned physical removal or an explicit
+  tombstone?
+- Which #94 provenance fields become queryable columns, and which remain
+  frontmatter extensions?
+- Which Python builds and operating systems belong to the `sqlite3` and FTS5
+  packaging matrix?
+- Is the API process the only SQLite writer, or must separate CLI processes be
+  coordinated?
+- Which vault change-detection strategy fits real usage: explicit refresh,
+  watcher, or startup scan?
+- What user experience accompanies an identity migration caused by rename or
+  move?
+- What concrete policy applies when projection generation differs from the
+  vault fingerprint: mandatory sync, explicit error, or signaled degraded
+  mode?
+- Will aliases or an immutable external key eventually be needed for durable
+  references? The current convention remains `id = relative path without .md`;
+  this ADR does not define an alias schema.
+
+## References
+
+### Repository and planning
 
 - [Issue #82 — Epic: TritaLeLe Knowledge Ingestion Pipeline](https://github.com/gcomneno/lele-manager/issues/82)
 - [Issue #91 — Compare storage backends](https://github.com/gcomneno/lele-manager/issues/91)
 - [Issue #92 — Introduce storage abstraction layer](https://github.com/gcomneno/lele-manager/issues/92)
 - [Issue #93 — Expose lessons for external quiz and review tools](https://github.com/gcomneno/lele-manager/issues/93)
 - [Issue #94 — Add raw knowledge ingestion workflow (TritaLeLe)](https://github.com/gcomneno/lele-manager/issues/94)
-- `README.md`, sezioni “LeLe Vault”, “ML classico”, “API” e “GUI”
-- `ROADMAP.md`, sezioni sul flusso vault/JSONL/ML/API e sullo stato attuale
+- `README.md`, sections about LeLe Vault, ML, API, and GUI
+- `ROADMAP.md`, sections about the vault/JSONL/ML/API flow and current state
 - `src/lele_manager/cli/import_from_dir.py::{LeLeRecord,import_from_dir}`
 - `src/lele_manager/core/vault.py::{write_lesson_markdown,import_vault_to_jsonl,upsert_jsonl_lesson}`
 - `src/lele_manager/core/storage.py::{append_lesson,load_lessons,iter_lessons}`
@@ -324,7 +592,7 @@ La decisione va riesaminata se si verifica almeno una di queste condizioni:
 - `scripts/{lele-api-refresh.sh,e2e-prepare.py}`
 - `tests/{test_lessons_storage.py,test_add_lesson_cli.py,test_api_vault.py,test_import_from_dir.py,test_api_basic.py,test_search_api.py,test_train_topic_model_cli.py,test_similarity_service_equivalence.py}`
 
-### Documentazione tecnica ufficiale
+### Official technical documentation
 
 - [Python `sqlite3` — DB-API 2.0 interface for SQLite databases](https://docs.python.org/3/library/sqlite3.html)
 - [SQLite — FTS5 Extension](https://www.sqlite.org/fts5.html)
