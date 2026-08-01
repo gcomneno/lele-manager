@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from lele_manager.api import server as server_mod
 from lele_manager.api.server import app
+from lele_manager.core.doctor import DoctorOperationalError
 from lele_manager.core.vault import (
     build_vault_tree,
     find_markdown_by_id,
@@ -135,3 +136,75 @@ def test_api_ops_refresh(vault_env: tuple[Path, Path]) -> None:
     body = resp.json()
     assert body["import_result"]["n_lessons"] >= 1
     assert data.is_file()
+
+
+def test_api_vault_doctor_returns_read_only_report(
+    vault_env: tuple[Path, Path],
+) -> None:
+    vault, _ = vault_env
+    valid = write_lesson_markdown(
+        vault,
+        lesson_id="python/2026-07-05.valid",
+        body="Valid lesson",
+        topic="python",
+        source="note",
+        importance=3,
+        tags=["python"],
+        date="2026-07-05",
+        title="Valid",
+    )
+    broken = vault / "python" / "broken.md"
+    broken.write_text("No frontmatter\n", encoding="utf-8")
+    before = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode)
+        for path in (valid, broken)
+    }
+
+    response = TestClient(app).get("/vault/doctor")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "valid": False,
+        "files_checked": 2,
+        "checked_files": ["python/2026-07-05.valid.md", "python/broken.md"],
+        "unique_ids": 1,
+        "error_count": 1,
+        "problems": [
+            {
+                "code": "missing_frontmatter",
+                "message": "frontmatter YAML assente",
+                "path": "python/broken.md",
+                "field": None,
+                "severity": "error",
+            }
+        ],
+    }
+    assert {
+        path: (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode)
+        for path in before
+    } == before
+
+
+def test_api_vault_doctor_returns_not_found_for_missing_vault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LELE_VAULT_DIR", str(tmp_path / "missing-vault"))
+
+    response = TestClient(app).get("/vault/doctor")
+
+    assert response.status_code == 404
+    assert "Vault directory not found" in response.json()["detail"]
+
+
+def test_api_vault_doctor_returns_server_error_for_operational_failure(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_doctor(*_args: object, **_kwargs: object) -> None:
+        raise DoctorOperationalError("vault inspection failed")
+
+    monkeypatch.setattr(server_mod, "check_markdown_files", fail_doctor)
+
+    response = TestClient(app).get("/vault/doctor")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "vault inspection failed"
