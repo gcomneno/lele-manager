@@ -15,6 +15,7 @@
     { view: 'stats' as const, label: 'Stats', hash: '#/stats' },
     { view: 'editor' as const, label: 'Editor', hash: '#/editor' },
     { view: 'vault' as const, label: 'Vault', hash: '#/vault' },
+    { view: 'duplicates' as const, label: 'Duplicates', hash: '#/duplicates' },
     { view: 'ops' as const, label: 'Ops', hash: '#/ops' },
   ]
 

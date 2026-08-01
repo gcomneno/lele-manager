@@ -94,3 +94,49 @@ def test_empty_dataset_is_valid_without_model(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["lessons_analyzed"] == 0
     assert response.json()["pairs"] == []
+
+
+def test_duplicate_pairs_include_independent_read_only_lesson_snapshots(monkeypatch) -> None:
+    monkeypatch.setattr(
+        server,
+        "load_lessons_df",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "id": "repeated-id",
+                    "text": "first independently inspectable lesson",
+                    "title": "First",
+                    "tags": ["one"],
+                    "path": "first.md",
+                },
+                {
+                    "id": "repeated-id",
+                    "text": "second independently inspectable lesson",
+                    "title": "Second",
+                    "tags": ["two"],
+                    "path": "second.md",
+                },
+            ]
+        ),
+    )
+    response = TestClient(server.app).get("/duplicates", params={"exact_only": "true"})
+
+    assert response.status_code == 200
+    pair = response.json()["pairs"][0]
+    assert pair["left_position"] == 0
+    assert pair["right_position"] == 1
+    assert pair["left_lesson"] == {
+        "id": "repeated-id",
+        "text": "first independently inspectable lesson",
+        "topic": None,
+        "source": None,
+        "importance": None,
+        "tags": ["one"],
+        "date": None,
+        "title": "First",
+        "created_at": None,
+        "path": "first.md",
+    }
+    assert pair["right_lesson"]["text"] == "second independently inspectable lesson"
+    assert pair["right_lesson"]["title"] == "Second"
+    assert pair["right_lesson"]["path"] == "second.md"
