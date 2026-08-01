@@ -157,6 +157,43 @@ export interface TimelineResponse {
   buckets: TimelineBucket[]
 }
 
+export type DuplicateKind = 'exact' | 'near'
+
+export interface DuplicateLessonSnapshot extends Lesson {
+  path?: string | null
+}
+
+export interface DuplicatePair {
+  left_id: string
+  right_id: string
+  left_position: number
+  right_position: number
+  left_path?: string | null
+  right_path?: string | null
+  kind: DuplicateKind
+  score: number
+  reasons: string[]
+  shared_tags: string[]
+  left_lesson: DuplicateLessonSnapshot
+  right_lesson: DuplicateLessonSnapshot
+}
+
+export interface DuplicateReportResponse {
+  lessons_analyzed: number
+  total_pairs: number
+  exact_pairs: number
+  near_pairs: number
+  min_score: number
+  exact_only: boolean
+  pairs: DuplicatePair[]
+}
+
+export interface DuplicateQuery {
+  min_score: number
+  exact_only: boolean
+  limit?: number | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const resp = await fetch(path, init)
   const data = await resp.json().catch(() => ({}))
@@ -175,6 +212,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
+
+  duplicates: ({ min_score, exact_only, limit }: DuplicateQuery) => {
+    const params = new URLSearchParams({
+      min_score: String(min_score),
+      exact_only: String(exact_only),
+    })
+    if (limit != null) params.set('limit', String(limit))
+    return request<DuplicateReportResponse>(`/duplicates?${params.toString()}`)
+  },
 
   listLessons: (limit = 50) =>
     request<Lesson[]>(`/lessons?limit=${encodeURIComponent(limit)}`),
