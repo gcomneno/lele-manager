@@ -246,6 +246,12 @@ class SimilarBatchResponse(BaseModel):
     items: List[SimilarResponse]
 
 
+class DuplicateLessonSnapshot(Lesson):
+    """Read-only lesson data captured from the same snapshot as a duplicate pair."""
+
+    path: Optional[str] = None
+
+
 class DuplicatePairResponse(BaseModel):
     left_id: str
     right_id: str
@@ -257,6 +263,8 @@ class DuplicatePairResponse(BaseModel):
     score: float
     reasons: List[str]
     shared_tags: List[str]
+    left_lesson: DuplicateLessonSnapshot
+    right_lesson: DuplicateLessonSnapshot
 
 
 class DuplicateReportResponse(BaseModel):
@@ -651,6 +659,16 @@ def _row_to_search_result(row: dict) -> LessonSearchResult:
     )
 
 
+def _row_to_duplicate_snapshot(row: dict) -> DuplicateLessonSnapshot:
+    """Return display data for a duplicate pair without using its (non-unique) ID."""
+    lesson = _row_to_search_result(row)
+    return DuplicateLessonSnapshot(
+        **lesson.model_dump(exclude={"created_at"}),
+        created_at=_to_optional_str(row.get("created_at")),
+        path=_to_optional_str(row.get("path")),
+    )
+
+
 # -----------------------------------------------------------------------------
 # Endpoint
 # -----------------------------------------------------------------------------
@@ -753,7 +771,16 @@ def duplicates(
         exact_only=exact_only,
         limit=limit,
     )
-    return DuplicateReportResponse(**report.to_dict())
+    payload = report.to_dict()
+    payload["pairs"] = [
+        {
+            **pair.to_dict(),
+            "left_lesson": _row_to_duplicate_snapshot(df.iloc[pair.left_position].to_dict()).model_dump(),
+            "right_lesson": _row_to_duplicate_snapshot(df.iloc[pair.right_position].to_dict()).model_dump(),
+        }
+        for pair in report.pairs
+    ]
+    return DuplicateReportResponse(**payload)
 
 
 @app.get("/lessons", response_model=List[LessonSearchResult])

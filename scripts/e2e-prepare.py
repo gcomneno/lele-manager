@@ -40,6 +40,17 @@ RECORDS = [
         "created_at": "2025-02-01T10:00:00+00:00",
     },
     {
+        "id": "e2e/git-lesson-copy",
+        "text": "git branching merge rebase strategies",
+        "topic": "git",
+        "source": "note",
+        "importance": 3,
+        "tags": ["git"],
+        "date": "2025-02-01",
+        "title": "Git branching copy",
+        "created_at": "2025-02-02T10:00:00+00:00",
+    },
+    {
         "id": "e2e/linux-lesson",
         "text": "linux networking iptables basics",
         "topic": "linux",

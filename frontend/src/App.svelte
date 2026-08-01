@@ -6,6 +6,7 @@
   import Editor from './routes/Editor.svelte'
   import Vault from './routes/Vault.svelte'
   import Ops from './routes/Ops.svelte'
+  import Duplicates from './routes/Duplicates.svelte'
   import Stats from './routes/Stats.svelte'
   import Timeline from './routes/Timeline.svelte'
   import { parseRoute, type Route } from './lib/router'
@@ -33,6 +34,8 @@
     <Vault />
   {:else if route.view === 'ops'}
     <Ops />
+  {:else if route.view === 'duplicates'}
+    <Duplicates />
   {:else if route.view === 'stats'}
     <Stats />
   {:else if route.view === 'timeline'}
