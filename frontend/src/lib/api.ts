@@ -90,6 +90,23 @@ export interface VaultImportResponse {
   topics: string[]
 }
 
+export interface VaultDoctorProblem {
+  code: string
+  message: string
+  path: string
+  field?: string | null
+  severity: 'error'
+}
+
+export interface VaultDoctorReportResponse {
+  valid: boolean
+  files_checked: number
+  checked_files: string[]
+  unique_ids: number
+  error_count: number
+  problems: VaultDoctorProblem[]
+}
+
 export interface LessonVaultWrite {
   text: string
   topic: string
@@ -223,6 +240,8 @@ export const api = {
   vaultStatus: () => request<VaultStatusResponse>('/vault/status'),
 
   vaultTree: () => request<VaultTreeResponse>('/vault/tree'),
+
+  vaultDoctor: () => request<VaultDoctorReportResponse>('/vault/doctor'),
 
   vaultImport: () =>
     request<VaultImportResponse>('/vault/import', { method: 'POST' }),

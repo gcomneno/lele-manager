@@ -24,6 +24,7 @@ from lele_manager.core.projection_store import (
     ProjectionStoreError,
 )
 from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
+from lele_manager.core.doctor import DoctorOperationalError, check_markdown_files
 from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
@@ -295,6 +296,23 @@ class VaultImportResponse(BaseModel):
     n_lessons: int
     output_path: str
     topics: List[str]
+
+
+class VaultDoctorProblemResponse(BaseModel):
+    code: str
+    message: str
+    path: str
+    field: Optional[str] = None
+    severity: Literal["error"]
+
+
+class VaultDoctorReportResponse(BaseModel):
+    valid: bool
+    files_checked: int
+    checked_files: List[str]
+    unique_ids: int
+    error_count: int
+    problems: List[VaultDoctorProblemResponse]
 
 
 class LessonVaultWrite(BaseModel):
@@ -1182,6 +1200,19 @@ def vault_tree() -> VaultTreeResponse:
     vault_dir = require_vault_dir()
     tree = build_vault_tree(vault_dir)
     return VaultTreeResponse(vault_dir=str(vault_dir), tree=tree.to_dict())
+
+
+@app.get("/vault/doctor", response_model=VaultDoctorReportResponse)
+def vault_doctor() -> VaultDoctorReportResponse:
+    """Inspect the configured vault without modifying it."""
+    try:
+        vault_dir = require_vault_dir()
+        report = check_markdown_files([], vault_dir=vault_dir)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except DoctorOperationalError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return VaultDoctorReportResponse(**report.to_dict())
 
 
 @app.post("/vault/import", response_model=VaultImportResponse)
