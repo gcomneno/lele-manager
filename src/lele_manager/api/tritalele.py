@@ -32,6 +32,7 @@ from lele_manager.application.candidate_approval import (
     PartialApprovalError,
     PartialRefreshError,
     StaleApprovalRevisionError,
+    canonical_lesson_for,
 )
 from lele_manager.application.candidate_review import (
     CandidateReviewConflictError,
@@ -137,6 +138,11 @@ class CandidateReviewEventResponse(BaseModel):
     reason: str | None
 
 
+class ApprovalDestinationResponse(BaseModel):
+    lesson_id: str
+    relative_vault_path: str
+
+
 class CandidateResponse(BaseModel):
     candidate_id: str
     state: str
@@ -145,6 +151,7 @@ class CandidateResponse(BaseModel):
     proposed_text: str | None
     effective_text: str
     proposed_metadata: dict[str, Any] | None
+    approval_destination: ApprovalDestinationResponse | None
     provenance: CandidateProvenanceResponse
     review_history: list[CandidateReviewEventResponse]
 
@@ -312,6 +319,15 @@ def _candidate_response(candidate: LessonCandidate) -> CandidateResponse:
     assert proposed_metadata is None or isinstance(proposed_metadata, dict)
     assert isinstance(run_metadata, dict)
     assert isinstance(transformations, list)
+    try:
+        canonical = canonical_lesson_for(candidate)
+    except InvalidApprovalMetadataError:
+        approval_destination = None
+    else:
+        approval_destination = ApprovalDestinationResponse(
+            lesson_id=canonical.lesson_id,
+            relative_vault_path=canonical.relative_path,
+        )
     return CandidateResponse(
         candidate_id=candidate.candidate_id,
         state=candidate.state.value,
@@ -320,6 +336,7 @@ def _candidate_response(candidate: LessonCandidate) -> CandidateResponse:
         proposed_text=candidate.proposed_text,
         effective_text=candidate.effective_text,
         proposed_metadata=proposed_metadata,
+        approval_destination=approval_destination,
         provenance=CandidateProvenanceResponse(
             source_kind=provenance.source_kind.value,
             source_logical_name=provenance.source_logical_name,

@@ -194,21 +194,153 @@ export interface DuplicateQuery {
   limit?: number | null
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, init)
-  const data = await resp.json().catch(() => ({}))
-  if (!resp.ok) {
-    const detail = (data as { detail?: unknown }).detail
-    const msg =
+export type CandidateState = 'staged' | 'in_review' | 'rejected' | 'approved'
+export type SourceKind = 'markdown' | 'plain_text' | 'stdin' | 'in_memory'
+
+export interface ApprovalDestination {
+  lesson_id: string
+  relative_vault_path: string
+}
+
+export interface CandidateProvenance {
+  source_kind: SourceKind
+  source_logical_name: string
+  source_fingerprint: string
+  ingested_at: string
+  chunk_index: number | null
+  source_span: { start: number; end: number } | null
+  run_metadata: Record<string, unknown>
+  transformations: Record<string, unknown>[]
+}
+
+export interface CandidateReviewEvent {
+  revision: number
+  action: 'revised' | 'accepted' | 'rejected' | 'approved'
+  occurred_at: string
+  previous_state: CandidateState
+  resulting_state: CandidateState
+  reason: string | null
+}
+
+export interface CanonicalMetadata {
+  topic: string
+  source: string
+  importance: number
+  tags: string[]
+  date: string
+  title: string
+}
+
+export interface Candidate {
+  candidate_id: string
+  state: CandidateState
+  revision: number
+  original_text: string
+  proposed_text: string | null
+  effective_text: string
+  proposed_metadata: CanonicalMetadata | null
+  approval_destination: ApprovalDestination | null
+  provenance: CandidateProvenance
+  review_history: CandidateReviewEvent[]
+}
+
+export interface RawSourceInput {
+  content: string
+  source_kind: SourceKind
+  logical_name: string
+  max_characters: number
+}
+
+export interface IngestionResult {
+  preview: boolean
+  source: { kind: SourceKind; logical_name: string; fingerprint: string }
+  chunking: { max_characters: number }
+  candidate_ids: string[]
+  created_candidate_ids: string[]
+  skipped_candidate_ids: string[]
+  pending_candidate_ids: string[]
+  counts: { planned: number; created: number; skipped: number; pending: number }
+  candidates: Candidate[]
+}
+
+export interface CandidateFilters {
+  state?: CandidateState | ''
+  source_kind?: SourceKind | ''
+  source_fingerprint?: string
+  source_logical_name?: string
+  chunk_index?: number | null
+}
+
+export interface CandidateListResponse {
+  count: number
+  candidates: Candidate[]
+}
+
+export interface CandidateRevisionInput {
+  expected_revision: number
+  proposed_text?: string
+  proposed_metadata?: CanonicalMetadata
+  reason?: string
+}
+
+export interface ApprovalResult {
+  candidate_id: string
+  candidate_revision: number
+  lesson_id: string
+  relative_vault_path: string
+  vault_write_outcome: 'created' | 'identical'
+  candidate_state_changed: boolean
+  refresh_outcome: { refreshed: boolean }
+}
+
+export interface ApiErrorDetail {
+  code: string
+  message: string
+  recovery?: Record<string, unknown> | null
+}
+
+function isApiErrorDetail(value: unknown): value is ApiErrorDetail {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Record<string, unknown>
+  return typeof candidate.code === 'string' && typeof candidate.message === 'string'
+}
+
+export class ApiError extends Error {
+  readonly status: number
+  readonly detail: unknown
+  readonly code: string | null
+  readonly recovery: Record<string, unknown> | null
+
+  constructor(status: number, detail: unknown) {
+    const message =
       typeof detail === 'string'
         ? detail
         : detail != null
           ? JSON.stringify(detail)
-          : `HTTP ${resp.status}`
-    throw new Error(msg)
+          : `HTTP ${status}`
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.detail = detail
+    this.code = isApiErrorDetail(detail) ? detail.code : null
+    this.recovery = isApiErrorDetail(detail) ? (detail.recovery ?? null) : null
+  }
+}
+
+async function responseError(resp: Response): Promise<ApiError> {
+  const data = (await resp.json().catch(() => ({}))) as { detail?: unknown }
+  return new ApiError(resp.status, data.detail)
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const resp = await fetch(path, init)
+  const data = await resp.json().catch(() => ({}))
+  if (!resp.ok) {
+    throw new ApiError(resp.status, (data as { detail?: unknown }).detail)
   }
   return data as T
 }
+
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
@@ -242,15 +374,7 @@ export const api = {
       body: JSON.stringify(body),
     })
     if (!resp.ok) {
-      const data = await resp.json().catch(() => ({}))
-      const detail = (data as { detail?: unknown }).detail
-      const msg =
-        typeof detail === 'string'
-          ? detail
-          : detail != null
-            ? JSON.stringify(detail)
-            : `HTTP ${resp.status}`
-      throw new Error(msg)
+      throw await responseError(resp)
     }
     if (format === 'json') {
       return (await resp.json()) as ExportSearchResponse
@@ -315,4 +439,79 @@ export const api = {
 
   statsTimeline: (groupBy: 'year' | 'month' | 'topic' = 'month') =>
     request<TimelineResponse>(`/stats/timeline?group_by=${encodeURIComponent(groupBy)}`),
+
+  previewIngestion: (body: RawSourceInput) =>
+    request<IngestionResult>('/api/v1/tritalele/ingestion/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  stageIngestion: (body: RawSourceInput) =>
+    request<IngestionResult>('/api/v1/tritalele/ingestion/stage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  listCandidates: (filters: CandidateFilters = {}) => {
+    const query = new URLSearchParams()
+    if (filters.state) query.set('state', filters.state)
+    if (filters.source_kind) query.set('source_kind', filters.source_kind)
+    if (filters.source_fingerprint?.trim()) {
+      query.set('source_fingerprint', filters.source_fingerprint.trim())
+    }
+    if (filters.source_logical_name?.trim()) {
+      query.set('source_logical_name', filters.source_logical_name.trim())
+    }
+    if (filters.chunk_index != null) query.set('chunk_index', String(filters.chunk_index))
+    const suffix = query.size ? `?${query.toString()}` : ''
+    return request<CandidateListResponse>(`/api/v1/tritalele/candidates${suffix}`)
+  },
+
+  getCandidate: (candidateId: string) =>
+    request<Candidate>(`/api/v1/tritalele/candidates/${encodeURIComponent(candidateId)}`),
+
+  reviseCandidate: (candidateId: string, body: CandidateRevisionInput) =>
+    request<Candidate>(`/api/v1/tritalele/candidates/${encodeURIComponent(candidateId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  acceptCandidate: (candidateId: string, expectedRevision: number, reason?: string) =>
+    request<Candidate>(
+      `/api/v1/tritalele/candidates/${encodeURIComponent(candidateId)}/accept`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_revision: expectedRevision,
+          ...(reason?.trim() ? { reason: reason.trim() } : {}),
+        }),
+      },
+    ),
+
+  rejectCandidate: (candidateId: string, expectedRevision: number, reason?: string) =>
+    request<Candidate>(
+      `/api/v1/tritalele/candidates/${encodeURIComponent(candidateId)}/reject`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_revision: expectedRevision,
+          ...(reason?.trim() ? { reason: reason.trim() } : {}),
+        }),
+      },
+    ),
+
+  approveCandidate: (candidateId: string, expectedRevision: number) =>
+    request<ApprovalResult>(
+      `/api/v1/tritalele/candidates/${encodeURIComponent(candidateId)}/approve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expected_revision: expectedRevision }),
+      },
+    ),
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare isolated data, model, and vault fixtures for Playwright E2E tests."""
+"""Prepare isolated data, model, staging, and vault fixtures for Playwright."""
 
 from __future__ import annotations
 
@@ -12,9 +12,11 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_DIR = ROOT / ".e2e-fixture"
-DATA_PATH = FIXTURE_DIR / "lessons.jsonl"
-MODEL_PATH = FIXTURE_DIR / "topic_model.joblib"
+DATA_DIR = FIXTURE_DIR / "data"
+CACHE_DIR = FIXTURE_DIR / "cache"
 VAULT_DIR = FIXTURE_DIR / "vault"
+DATA_PATH = DATA_DIR / "lessons.jsonl"
+MODEL_PATH = CACHE_DIR / "topic_model.joblib"
 
 RECORDS = [
     {
@@ -64,9 +66,20 @@ RECORDS = [
 ]
 
 
+def reset_fixture() -> None:
+    """Reset only the dedicated E2E root, never personal runtime paths."""
+    if FIXTURE_DIR.is_symlink() or FIXTURE_DIR.is_file():
+        FIXTURE_DIR.unlink()
+    else:
+        shutil.rmtree(FIXTURE_DIR, ignore_errors=True)
+
+    DATA_DIR.mkdir(parents=True)
+    CACHE_DIR.mkdir(parents=True)
+    VAULT_DIR.mkdir(parents=True)
+
+
 def prepare_vault() -> None:
-    """Reset only the dedicated E2E vault to a known healthy state."""
-    shutil.rmtree(VAULT_DIR, ignore_errors=True)
+    """Create one healthy canonical lesson in the isolated E2E vault."""
     topic_dir = VAULT_DIR / "python"
     topic_dir.mkdir(parents=True)
     (topic_dir / "2025-01-01.e2e.md").write_text(
@@ -88,21 +101,30 @@ Healthy E2E vault lesson.
 
 def main() -> int:
     sys.path.insert(0, str(ROOT / "src"))
+
     from lele_manager.ml.features import TextFeatureConfig
-    from lele_manager.ml.topic_model import TopicModelConfig, save_topic_model, train_topic_model
+    from lele_manager.ml.topic_model import (
+        TopicModelConfig,
+        save_topic_model,
+        train_topic_model,
+    )
 
-    FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+    reset_fixture()
     prepare_vault()
-    with DATA_PATH.open("w", encoding="utf-8") as f:
-        for rec in RECORDS:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-    df = pd.read_json(DATA_PATH, lines=True)
-    cfg = TopicModelConfig(text_features=TextFeatureConfig(min_df=1))
-    pipeline = train_topic_model(df, config=cfg)
+    with DATA_PATH.open("w", encoding="utf-8") as stream:
+        for record in RECORDS:
+            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    dataframe = pd.read_json(DATA_PATH, lines=True)
+    config = TopicModelConfig(text_features=TextFeatureConfig(min_df=1))
+    pipeline = train_topic_model(dataframe, config=config)
     save_topic_model(pipeline, MODEL_PATH)
+
     print(
-        f"E2E fixture ready: {DATA_PATH} ({len(RECORDS)} lessons), {MODEL_PATH}, {VAULT_DIR}"
+        "E2E fixture ready: "
+        f"data={DATA_DIR}, cache={CACHE_DIR}, vault={VAULT_DIR} "
+        f"({len(RECORDS)} lessons)"
     )
     return 0
 

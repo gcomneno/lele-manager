@@ -483,6 +483,8 @@ Available views:
 | **Browse** | Advanced search, filters, and Markdown export |
 | **Detail** | Full lesson content and explained similarity |
 | **Editor** | Markdown authoring with live suggestions |
+| **TritaLeLe** | Controlled candidate ingestion, review, rejection, and approval |
+| **Duplicates** | Read-only review of exact and near-duplicate pairs |
 | **Timeline** | Knowledge-acquisition timeline and bucket export |
 | **Stats** | Counts, tags, topics, and averages |
 | **Vault** | Real filesystem tree and import |
@@ -492,6 +494,29 @@ Saving from the Editor writes the Markdown file into the vault and refreshes
 the JSONL projection through `PUT` or `POST /vault/lessons`.
 
 The GUI requires `LELE_VAULT_DIR`; the default is `~/LeLeVault`.
+
+### TritaLeLe workflow
+
+Open `#/tritalele` to ingest pasted text or a Markdown/plain-text file through
+the deterministic candidate workflow:
+
+1. **Preview** computes chunks and candidate identities without writing staging,
+   the canonical vault, or the JSONL projection.
+2. **Stage** persists only missing candidates. Any source change invalidates the
+   previous preview.
+3. **Review** allows explicit text and metadata revisions using optimistic
+   `expected_revision` checks. Accept moves a candidate into review; reject
+   keeps it traceable in staging with its reason and history.
+4. **Approve** requires a separate confirmation dialog showing the candidate,
+   revision, canonical lesson ID, and destination path. Those destination values
+   are calculated by the backend using the same canonicalization used during
+   publication.
+5. **Read-back** reports vault-write and projection-refresh outcomes separately,
+   including controlled partial-success cases.
+
+Preview, staging, revision, acceptance, and rejection never publish a lesson.
+Only explicit approval may write one canonical Markdown lesson and refresh the
+derived projection.
 
 The completed design record remains available in Italian at
 [`docs/gui-design.md`](docs/gui-design.md). It is classified as a historical
@@ -519,9 +544,11 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-`scripts/e2e-serve.sh` starts Uvicorn on port `8765` with data under
-`.e2e-fixture/`. CI runs the same smoke flows after building the GUI and running
-the Python tests.
+`scripts/e2e-serve.sh` rebuilds the current frontend, resets only
+`.e2e-fixture/`, and starts Uvicorn on port `8765`. The isolated runtime uses
+`.e2e-fixture/data`, `.e2e-fixture/cache`, and `.e2e-fixture/vault`, so the E2E
+suite cannot inspect or mutate personal candidate staging, datasets, caches, or
+vault files. CI runs the same flows after the Python checks.
 
 ## Versioning and releases
 
