@@ -46,6 +46,8 @@ pytest tests/test_documentation.py
 - Contratto projection store:
   [docs/it/projection-store.md](docs/it/projection-store.md)
 
+- Manuale della GUI: [docs/it/gui-user-guide.md](docs/it/gui-user-guide.md)
+
 ## Obiettivi principali
 
 - Raccolta veloce delle lesson tramite CLI e API.
@@ -475,6 +477,10 @@ Oppure soltanto l'API con:
 
 ## GUI web
 
+Per il percorso completo di avvio, uso quotidiano, backup, ripristino e
+troubleshooting vedere il
+[manuale della GUI](docs/it/gui-user-guide.md).
+
 Costruire il frontend Svelte e avviare l'API:
 
 ```bash
@@ -490,6 +496,8 @@ Viste disponibili:
 | **Browse** | Ricerca avanzata, filtri ed export Markdown |
 | **Detail** | Contenuto completo e similarità spiegata |
 | **Editor** | Authoring Markdown con suggerimenti live |
+| **TritaLeLe** | Ingestione controllata, review, rifiuto e approvazione dei candidati |
+| **Duplicates** | Revisione read-only di duplicati esatti e near-duplicate |
 | **Timeline** | Timeline di acquisizione e export per bucket |
 | **Stats** | Conteggi, tag, topic e medie |
 | **Vault** | Albero filesystem reale e import |
