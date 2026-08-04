@@ -105,16 +105,13 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Build GUI
-        run: ./scripts/build-gui.sh
-
       - name: Install build tooling
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade build
+          python -m pip install --upgrade build twine
 
       - name: Build sdist and wheel
-        run: python -m build
+        run: ./scripts/build-release-artifacts.sh
 
       - name: Install wheel in clean venv
         run: |
@@ -126,23 +123,21 @@ jobs:
         run: |
           /tmp/venv/bin/lele --help
 
-      - name: Smoke UI asset present + content check
+      - name: Smoke installed wheel
+        run: /tmp/venv/bin/python scripts/smoke-installed-package.py
+
+      - name: Rebuild and install wheel from sdist
         run: |
-          /tmp/venv/bin/python - <<'PY'
-          from pathlib import Path
-          import lele_manager.api.server as s
+          python -m pip wheel \
+            --no-deps \
+            --wheel-dir /tmp/sdist-wheel \
+            dist/*.tar.gz
+          python -m venv /tmp/sdist-venv
+          /tmp/sdist-venv/bin/pip install --upgrade pip
+          /tmp/sdist-venv/bin/pip install /tmp/sdist-wheel/*.whl
 
-          ui_path = Path(s.__file__).with_name("ui.html")
-          assert ui_path.exists(), f"ui.html missing at {ui_path}"
-
-          data = ui_path.read_text(encoding="utf-8")
-          must = ["textarea", "btnFreeSimilar"]
-          missing = [x for x in must if x not in data]
-          assert not missing, f"ui.html content check failed; missing: {missing}"
-
-          gui_index = Path(s.__file__).resolve().parent.parent / "gui" / "static" / "index.html"
-          assert gui_index.exists(), f"GUI index missing at {gui_index}"
-          gui_data = gui_index.read_text(encoding="utf-8")
-          assert "LeLe Manager" in gui_data
-          print("OK: ui.html + GUI static present")
-          PY
+      - name: Smoke sdist-rebuilt wheel
+        run: |
+          /tmp/sdist-venv/bin/lele --help
+          /tmp/sdist-venv/bin/python \
+            scripts/smoke-installed-package.py
