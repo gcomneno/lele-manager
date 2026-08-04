@@ -41,6 +41,7 @@ pytest tests/test_documentation.py
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Documentation policy: [docs/documentation-policy.md](docs/documentation-policy.md)
+- GUI user guide: [docs/gui-user-guide.md](docs/gui-user-guide.md)
 - Projection-store contract:
   [docs/projection-store.md](docs/projection-store.md)
 
@@ -467,6 +468,9 @@ Or start only the API with:
 ```
 
 ## Web GUI
+
+For the complete startup, daily-use, backup, restore and troubleshooting
+workflow, see the [GUI user guide](docs/gui-user-guide.md).
 
 Build the Svelte frontend and start the API:
 
