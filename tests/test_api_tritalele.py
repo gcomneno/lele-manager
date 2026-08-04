@@ -159,6 +159,7 @@ def test_openapi_exposes_exact_versioned_surface_and_schemas() -> None:
         "RawSourceRequest",
         "CanonicalMetadataRequest",
         "CandidateRevisionRequest",
+        "ApprovalDestinationResponse",
         "CandidateResponse",
         "CandidateListResponse",
         "IngestionResultResponse",
@@ -317,6 +318,46 @@ def test_stage_creates_only_candidates_and_replay_is_idempotent(
     assert not (tmp_path / "data" / "lessons.jsonl").exists()
 
 
+def test_preview_stage_revise_and_accept_never_publish(
+    client: TestClient, tmp_path: Path
+) -> None:
+    payload = raw_payload(
+        "A candidate must remain outside the canonical vault until approval.",
+        logical_name="not-published.txt",
+        max_characters=2_000,
+    )
+    vault = tmp_path / "vault"
+    projection = tmp_path / "data" / "lessons.jsonl"
+
+    preview = client.post(f"{API}/ingestion/preview", json=payload)
+    stage = client.post(f"{API}/ingestion/stage", json=payload)
+    item_id = candidate_id(stage.json())
+    revised = client.patch(
+        f"{API}/candidates/{item_id}",
+        json={
+            "expected_revision": 0,
+            "proposed_text": "A reviewed candidate still must not be published.",
+            "proposed_metadata": metadata(title="Not published yet"),
+            "reason": "complete review",
+        },
+    )
+    accepted = client.post(
+        f"{API}/candidates/{item_id}/accept",
+        json={"expected_revision": 1, "reason": "ready for approval"},
+    )
+
+    assert preview.status_code == stage.status_code == 200
+    assert revised.status_code == accepted.status_code == 200
+    assert accepted.json()["state"] == "in_review"
+    assert accepted.json()["approval_destination"] is not None
+    assert not vault.exists()
+    assert not projection.exists()
+
+    listed = client.get(f"{API}/candidates").json()["candidates"]
+    assert [item["candidate_id"] for item in listed] == [item_id]
+    assert listed[0]["state"] == "in_review"
+
+
 def test_missing_candidate_staging_lists_as_empty(client: TestClient) -> None:
     response = client.get(f"{API}/candidates")
 
@@ -410,10 +451,12 @@ def test_candidate_retrieval_has_stable_transport_only_representation(
         "proposed_text",
         "effective_text",
         "proposed_metadata",
+        "approval_destination",
         "provenance",
         "review_history",
     }
     assert body["candidate_id"] == item_id
+    assert body["approval_destination"] is None
     assert body["original_text"] == body["effective_text"]
     assert body["provenance"]["ingested_at"].endswith("+00:00")
     assert set(body["provenance"]) == {
@@ -429,6 +472,41 @@ def test_candidate_retrieval_has_stable_transport_only_representation(
     assert str(tmp_path) not in response.text
     assert "JsonCandidateRepository" not in response.text
     assert "MappingProxyType" not in response.text
+
+
+def test_approval_destination_is_backend_computed_and_additive(
+    client: TestClient,
+) -> None:
+    item_id = candidate_id(stage_one(client, logical_name="destination.txt"))
+
+    revised = client.patch(
+        f"{API}/candidates/{item_id}",
+        json={
+            "expected_revision": 0,
+            "proposed_metadata": metadata(
+                topic="python", title="Déstination canonica"
+            ),
+        },
+    )
+
+    assert revised.status_code == 200, revised.text
+    body = revised.json()
+    authoritative = canonical_lesson_for(
+        tritalele.get_candidate_repository().get(item_id)
+    )
+    assert body["approval_destination"] == {
+        "lesson_id": authoritative.lesson_id,
+        "relative_vault_path": authoritative.relative_path,
+    }
+    assert body["approval_destination"]["lesson_id"].startswith("python/")
+    assert body["approval_destination"]["relative_vault_path"].endswith(".md")
+
+    schema = app.openapi()["components"]["schemas"]["CandidateResponse"]
+    assert "approval_destination" in schema["properties"]
+    destination_schema = schema["properties"]["approval_destination"]
+    assert {item.get("$ref") for item in destination_schema["anyOf"]} >= {
+        "#/components/schemas/ApprovalDestinationResponse"
+    }
 
 
 def test_missing_candidate_returns_structured_404(client: TestClient) -> None:
@@ -578,6 +656,11 @@ def test_accept_and_reject_enforce_lifecycle_and_expected_revision(
     assert repeated_accept.json()["detail"]["code"] == "invalid_candidate_transition"
     assert stale.status_code == 409
     assert stale.json()["detail"]["code"] == "stale_candidate_revision"
+    visible = client.get(f"{API}/candidates").json()["candidates"]
+    assert any(
+        item["candidate_id"] == rejected_id and item["state"] == "rejected"
+        for item in visible
+    )
 
 
 def test_approval_is_ordered_and_idempotent(client: TestClient, tmp_path: Path) -> None:

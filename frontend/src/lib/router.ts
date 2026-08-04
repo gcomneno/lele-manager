@@ -7,6 +7,7 @@ export type Route =
   | { view: 'duplicates' }
   | { view: 'stats' }
   | { view: 'timeline' }
+  | { view: 'tritalele' }
 
 export function parseRoute(hash = location.hash): Route {
   const path = hash.replace(/^#/, '') || '/'
@@ -17,6 +18,7 @@ export function parseRoute(hash = location.hash): Route {
   if (path === '/vault') return { view: 'vault' }
   if (path === '/stats') return { view: 'stats' }
   if (path === '/timeline') return { view: 'timeline' }
+  if (path === '/tritalele') return { view: 'tritalele' }
   if (path === '/editor') return { view: 'editor' }
 
   const editorMatch = path.match(/^\/editor\/(.+)$/)
@@ -42,6 +44,8 @@ export function routeToHash(route: Route): string {
       return '#/stats'
     case 'timeline':
       return '#/timeline'
+    case 'tritalele':
+      return '#/tritalele'
     case 'editor':
       return route.id ? `#/editor/${encodeURIComponent(route.id)}` : '#/editor'
     case 'detail':

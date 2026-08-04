@@ -40,4 +40,14 @@ test.describe('GUI smoke', () => {
     await expect(page.locator('.timeline .error')).toHaveCount(0, { timeout: 15_000 })
     await expect(page.locator('.bucket').first()).toBeVisible()
   })
+
+  test('Ops e Vault caricano sulla fixture isolata', async ({ page }) => {
+    await page.goto('/app/#/ops')
+    await expect(page.getByRole('heading', { name: 'Ops / Admin' })).toBeVisible()
+    await expect(page.locator('.ops .error')).toHaveCount(0, { timeout: 15_000 })
+
+    await page.getByRole('link', { name: 'Vault' }).click()
+    await expect(page.getByRole('heading', { name: 'Vault' })).toBeVisible()
+    await expect(page.locator('section.card > .error')).toHaveCount(0, { timeout: 15_000 })
+  })
 })
