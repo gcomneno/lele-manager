@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
-const modelPath = join(repositoryRoot, '.e2e-fixture', 'topic_model.joblib')
+const modelPath = join(repositoryRoot, '.e2e-fixture', 'cache', 'topic_model.joblib')
 
 const repeatedIdReport = {
   lessons_analyzed: 2,

@@ -14,6 +14,7 @@
     { view: 'timeline' as const, label: 'Timeline', hash: '#/timeline' },
     { view: 'stats' as const, label: 'Stats', hash: '#/stats' },
     { view: 'editor' as const, label: 'Editor', hash: '#/editor' },
+    { view: 'tritalele' as const, label: 'TritaLeLe', hash: '#/tritalele' },
     { view: 'vault' as const, label: 'Vault', hash: '#/vault' },
     { view: 'duplicates' as const, label: 'Duplicates', hash: '#/duplicates' },
     { view: 'ops' as const, label: 'Ops', hash: '#/ops' },

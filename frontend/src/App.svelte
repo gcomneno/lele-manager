@@ -9,6 +9,7 @@
   import Duplicates from './routes/Duplicates.svelte'
   import Stats from './routes/Stats.svelte'
   import Timeline from './routes/Timeline.svelte'
+  import TritaLeLe from './routes/TritaLeLe.svelte'
   import { parseRoute, type Route } from './lib/router'
 
   let route = $state<Route>({ view: 'browse' })
@@ -40,5 +41,7 @@
     <Stats />
   {:else if route.view === 'timeline'}
     <Timeline />
+  {:else if route.view === 'tritalele'}
+    <TritaLeLe />
   {/if}
 </Shell>

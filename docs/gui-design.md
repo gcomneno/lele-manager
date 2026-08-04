@@ -54,6 +54,7 @@ La GUI è **client dell'API FastAPI**. CLI (`lele`) e script shell restano il pe
 | Ops | `/ops` | Import, train, refresh, log |
 | Timeline | `/timeline` | Fase 3 — #89 |
 | Stats | `/stats` | Fase 3 — #88 |
+| TritaLeLe | `/tritalele` | Ingestione e revisione umana dei candidati |
 
 ### Cosa resta solo CLI
 
@@ -435,3 +436,63 @@ lele similar <id> --explain
 lele suggest --text "..." --explain
 lele export --search "pytest" --topic python -o results.md
 ```
+
+---
+
+## 12. TritaLeLe — ingestione e review (#126)
+
+La route SPA `#/tritalele` usa il boundary versionato
+`/api/v1/tritalele`. Il candidato è un’entità di staging, non una `Lesson`:
+per questo la lista usa `CandidateCard` e non deriva il componente da
+`LessonCard`.
+
+```mermaid
+flowchart LR
+    I[File o testo incollato] --> P[Preview read-only]
+    P --> S[Stage]
+    S --> R[Revisione ottimistica]
+    R --> A[Accept: in_review]
+    R --> X[Reject tracciato]
+    A --> C[Dialog canonico]
+    C --> V[Approve: vault + refresh]
+    V --> L[Read-back lesson]
+    V --> F[Read-back vault]
+```
+
+Regole UI:
+
+- ogni modifica all’input invalida preview e possibilità di staging;
+- la lista rispetta l’ordinamento deterministico del backend, offre filtri e
+  non seleziona automaticamente alcun candidato;
+- dettaglio, provenance e history restano visibili anche per i rejected;
+- revise, accept e reject inviano sempre la revisione osservata;
+- accept non approva e non scrive nel vault;
+- il dialog di approve mostra candidato, revisione e
+  `approval_destination` (`lesson_id`, `relative_vault_path`) restituita dal
+  backend. La GUI non contiene logica di slug, digest o path;
+- una sola conferma esplicita produce una request approve; cancel non invia
+  richieste;
+- `created`, `identical`, `partial_refresh` e gli altri recuperi parziali sono
+  presentati separatamente dai read-back della proiezione e del vault;
+- le risposte asincrone diventate obsolete dopo cambio input, filtro o
+  selezione non possono sostituire lo stato corrente.
+
+Il client HTTP espone `ApiError extends Error`: i consumer esistenti che usano
+`message` continuano a funzionare, mentre TritaLeLe può leggere `status`,
+`code`, `detail` e `recovery` per gestire 409, 422 e 503 in modo controllato.
+
+I campi metadati restano locali alla route TritaLeLe. Un componente condiviso
+con Editor imporrebbe in questa fase adapter e default applicativi diversi; il
+refactor non sarebbe puramente presentazionale e aumenterebbe lo scope.
+
+### Isolamento Playwright
+
+Prima dell’avvio E2E, `scripts/e2e-prepare.py` resetta esclusivamente
+`.e2e-fixture/`. Il server riceve tre directory dedicate:
+
+- `LELE_DATA_DIR=.e2e-fixture/data` (JSONL e staging candidati);
+- `LELE_CACHE_DIR=.e2e-fixture/cache` (topic model);
+- `LELE_VAULT_DIR=.e2e-fixture/vault` (Markdown canonici).
+
+Nessun test Playwright può quindi usare fallback XDG o vault personali. Il
+percorso E2E non invoca LLM: chunking, identità e metadata sono deterministici.
