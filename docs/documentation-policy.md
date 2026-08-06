@@ -46,6 +46,8 @@ paths, filenames, and code snippets are never translated.
 | `docs/it/documentation-policy.md` | Not present | Bilingual and maintained; Italian mirror | Official Italian policy |
 | `docs/projection-store.md` | English | Bilingual and maintained; English canonical | Current contributor-facing storage contract |
 | `docs/it/projection-store.md` | Not present | Bilingual and maintained; Italian mirror | Official Italian storage-contract translation |
+| `docs/brand-design-system.md` | Not present | Bilingual and maintained; English canonical | Maintained product brand and design-system contract |
+| `docs/it/brand-design-system.md` | Not present | Bilingual and maintained; Italian mirror | Official Italian brand and design-system translation |
 | `docs/adr/0001-storage-backend.md` | Predominantly Italian | English-only technical source | ADRs are canonical technical records maintained in English |
 | `docs/gui-design.md` | Predominantly Italian | Historical/archive document | Completed GUI design record; retained in its original language |
 | `docs/phase-4-issue.md` | Predominantly Italian | Historical/archive document | Completed local tracking document; no ongoing translation obligation |

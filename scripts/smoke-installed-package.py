@@ -50,6 +50,15 @@ if not frontend_assets:
         "ERRORE: asset CSS/JS compilati assenti."
     )
 
+for asset_name in (
+    "brand/lele-manager-mark.svg",
+    "brand/lele-manager-lockup.svg",
+    "brand/giadaware-monkey.svg",
+    "favicon.svg",
+):
+    if not (static_root / asset_name).is_file():
+        raise SystemExit(f"ERRORE: asset brand GUI assente: {asset_name}.")
+
 index_text = gui_index.read_text(encoding="utf-8")
 if "LeLe Manager" not in index_text:
     raise SystemExit(

@@ -61,7 +61,7 @@
 
 <section class="card timeline">
   <div class="head">
-    <h2>Timeline</h2>
+    <h2>Cronologia</h2>
     <div class="tabs">
       <button class:active={groupBy === 'month'} onclick={() => (groupBy = 'month')}>Mese</button>
       <button class:active={groupBy === 'year'} onclick={() => (groupBy = 'year')}>Anno</button>

@@ -46,6 +46,8 @@ percorsi, nomi di file e snippet di codice non vengono mai tradotti.
 | `docs/it/documentation-policy.md` | Assente | Bilingue e mantenuto; mirror italiano | Politica italiana ufficiale |
 | `docs/projection-store.md` | Inglese | Bilingue e mantenuto; inglese canonico | Contratto storage corrente per i contributor |
 | `docs/it/projection-store.md` | Assente | Bilingue e mantenuto; mirror italiano | Traduzione italiana ufficiale del contratto storage |
+| `docs/brand-design-system.md` | Assente | Bilingue e mantenuto; inglese canonico | Contratto mantenuto di brand e design system del prodotto |
+| `docs/it/brand-design-system.md` | Assente | Bilingue e mantenuto; mirror italiano | Traduzione ufficiale italiana di brand e design system |
 | `docs/adr/0001-storage-backend.md` | Prevalentemente italiano | Fonte tecnica solo inglese | Gli ADR sono record tecnici canonici mantenuti in inglese |
 | `docs/gui-design.md` | Prevalentemente italiano | Documento storico/archivio | Record di design GUI completato, conservato nella lingua originale |
 | `docs/phase-4-issue.md` | Prevalentemente italiano | Documento storico/archivio | Documento locale di tracking completato, senza obbligo di traduzione |
