@@ -1,24 +1,35 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { FormStatus } from 'giadaware-ui-components'
+  import type { FormStatusTone } from 'giadaware-ui-components'
+  import {
+    Button,
+    FormActions,
+    Panel,
+  } from 'giadaware-ui-components/studio'
   import { api, type VaultTreeResponse } from '../lib/api'
-  import VaultTree from '../components/VaultTree.svelte'
   import { navigate } from '../lib/router'
+  import VaultTree from '../components/VaultTree.svelte'
 
   let treeData = $state<VaultTreeResponse | null>(null)
   let loading = $state(true)
   let error = $state('')
   let importMsg = $state('')
+  let importTone = $state<FormStatusTone>('info')
 
   async function load() {
     loading = true
     error = ''
+
     try {
       const status = await api.vaultStatus()
+
       if (!status.exists) {
         error = `Vault non trovato: ${status.vault_dir}`
         treeData = null
         return
       }
+
       treeData = await api.vaultTree()
     } catch (e) {
       treeData = null
@@ -30,27 +41,53 @@
 
   async function doImport() {
     importMsg = 'Import…'
+    importTone = 'info'
+
     try {
       const res = await api.vaultImport()
       importMsg = res.message
+      importTone = 'success'
       await load()
     } catch (e) {
       importMsg = e instanceof Error ? e.message : String(e)
+      importTone = 'error'
     }
   }
 
   onMount(load)
 </script>
 
-<section class="card">
-  <div class="head">
-    <h2>Vault</h2>
-    <div class="actions">
-      <button class="btn" onclick={load} disabled={loading}>Refresh</button>
-      <button class="btn btn-primary" onclick={doImport}>Import → JSONL</button>
-      <button class="btn" onclick={() => navigate({ view: 'editor' })}>+ Nuova</button>
-    </div>
-  </div>
+<Panel title="Vault">
+  <FormActions
+    class="vault-actions"
+    style="margin-bottom: var(--space-2)"
+  >
+    <Button
+      variant="secondary"
+      size="compact"
+      class="lele-secondary-button"
+      onclick={load}
+      disabled={loading}
+    >
+      Refresh
+    </Button>
+
+    <Button
+      size="compact"
+      onclick={doImport}
+    >
+      Import → JSONL
+    </Button>
+
+    <Button
+      variant="secondary"
+      size="compact"
+      class="lele-secondary-button"
+      onclick={() => navigate({ view: 'editor' })}
+    >
+      + Nuova
+    </Button>
+  </FormActions>
 
   {#if treeData}
     <p class="meta">{treeData.vault_dir}</p>
@@ -59,33 +96,20 @@
   {#if loading}
     <p class="meta">Caricamento…</p>
   {:else if error}
-    <p class="error">{error}</p>
+    <FormStatus
+      message={error}
+      tone="error"
+      style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+    />
   {:else if treeData}
     <VaultTree node={treeData.tree} />
   {/if}
 
   {#if importMsg}
-    <p class="ok">{importMsg}</p>
+    <FormStatus
+      message={importMsg}
+      tone={importTone}
+      style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+    />
   {/if}
-</section>
-
-<style>
-  .head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-  }
-
-  h2 {
-    margin: 0;
-  }
-
-  .actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-</style>
+</Panel>
