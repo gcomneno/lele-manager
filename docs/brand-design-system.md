@@ -91,3 +91,19 @@ The primary creation action keeps the accessible name “Nuova LeLe”. Its
 visible presentation uses “+ Nuova” followed by the GiadaWare monkey and a
 small speech balloon containing “LeLe”. The mascot remains subordinate to the
 LeLe Manager product mark.
+
+## Giada UI consumption
+
+Giada UI is the authority for reusable presentation, accessibility behavior,
+and generic interaction contracts. LeLe Manager owns product identity, routes,
+domain workflows, wording, composition, and theme values.
+
+The frontend consumes the immutable vendored artifact
+`giadaware-ui-components-0.0.0.tgz`, generated from Giada UI commit
+`b088653cba3c940ff6b4baf3b396a109cb04e8b7`, with SHA-256
+`88b5cc12417fa911f5a885b9e554abd198f29a4322f0ac8d1fad823da16e2c7d`.
+
+The dependency uses a local `file:` reference and requires no registry or
+runtime network access. Product colors and spacing are mapped through documented
+`--giu-*` customization properties. Missing reusable primitives must be
+implemented and validated upstream in Giada UI before consumer adoption.

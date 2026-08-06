@@ -83,3 +83,20 @@ colonna stretta del marchio.
 L’azione primaria conserva il nome accessibile “Nuova LeLe”. Visivamente
 mostra “+ Nuova”, seguito dalla scimmietta GiadaWare e da un piccolo fumetto
 con la scritta “LeLe”. La mascotte resta subordinata al mark di LeLe Manager.
+
+## Consumo di Giada UI
+
+Giada UI è l’autorità per presentazione riusabile, comportamento accessibile e
+contratti d’interazione generici. LeLe Manager mantiene la responsabilità di
+identità del prodotto, route, workflow di dominio, testi, composizione e valori
+del tema.
+
+Il frontend consuma l’artefatto immutabile vendorizzato
+`giadaware-ui-components-0.0.0.tgz`, generato dal commit Giada UI
+`b088653cba3c940ff6b4baf3b396a109cb04e8b7`, con SHA-256
+`88b5cc12417fa911f5a885b9e554abd198f29a4322f0ac8d1fad823da16e2c7d`.
+
+La dipendenza usa un riferimento locale `file:` e non richiede registry né
+accesso di rete a runtime. Colori e spaziature del prodotto sono collegati
+attraverso le proprietà pubbliche `--giu-*`. I primitivi riusabili mancanti
+devono essere implementati e validati prima in Giada UI.

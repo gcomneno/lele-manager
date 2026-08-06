@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "dompurify": "^3.4.13",
-    "marked": "^18.0.5"
+    "marked": "^18.0.5",
+    "giadaware-ui-components": "file:vendor/giadaware-ui-components/b088653/giadaware-ui-components-0.0.0.tgz"
   }
 }

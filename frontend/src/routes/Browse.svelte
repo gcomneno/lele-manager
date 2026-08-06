@@ -3,6 +3,13 @@
   import { api, type ExportSearchRequest, type Lesson } from '../lib/api'
   import { navigate } from '../lib/router'
   import LessonCard from '../components/LessonCard.svelte'
+  import { FormStatus } from 'giadaware-ui-components'
+  import {
+    Button,
+    FieldLabel,
+    FormActions,
+    Panel,
+  } from 'giadaware-ui-components/studio'
 
   let q = $state('')
   let topic = $state('')
@@ -100,45 +107,89 @@
 </script>
 
 <div class="browse">
-  <section class="card filters">
-    <h2>Esplora</h2>
+  <Panel title="Esplora" class="filters">
     <div class="grid browse-filter-grid" data-testid="browse-filter-grid">
       <label>
-        Query
+        <FieldLabel label="Query" />
         <input bind:value={q} placeholder="pytest, git, pandas…" onkeydown={(e) => e.key === 'Enter' && runSearch()} />
       </label>
       <label>
-        Topic
+        <FieldLabel label="Topic" />
         <input bind:value={topic} placeholder="python" />
       </label>
       <label>
-        Source
+        <FieldLabel label="Source" />
         <input bind:value={source} placeholder="note" />
       </label>
       <label>
-        Importance ≥
+        <FieldLabel label="Importance ≥" />
         <input type="number" min="1" max="5" bind:value={importanceGte} />
       </label>
       <label>
-        Importance ≤
+        <FieldLabel label="Importance ≤" />
         <input type="number" min="1" max="5" bind:value={importanceLte} />
       </label>
       <label>
-        Limit
+        <FieldLabel label="Limit" />
         <input type="number" min="1" max="500" bind:value={limit} />
       </label>
     </div>
-    <div class="actions">
-      <button class="btn btn-primary" onclick={runSearch} disabled={loading}>Cerca</button>
-      <button class="btn" onclick={listAll} disabled={loading}>Lista tutte</button>
-      <button class="btn" onclick={exportResults} disabled={loading || exporting || lessons.length === 0}>
+    <FormActions
+      class="browse-actions"
+      style="--giu-form-actions-gap: var(--space-2); margin-top: var(--space-3)"
+    >
+      <Button
+        size="compact"
+        onclick={runSearch}
+        disabled={loading}
+      >
+        Cerca
+      </Button>
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={listAll}
+        disabled={loading}
+        class="lele-secondary-button"
+      >
+        Lista tutte
+      </Button>
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={exportResults}
+        disabled={loading || exporting || lessons.length === 0}
+        class="lele-secondary-button"
+      >
         {exporting ? 'Esporto…' : 'Esporta .md'}
-      </button>
-      <button class="btn" onclick={reset}>Reset</button>
-    </div>
-    {#if status}<p class="ok">{status}</p>{/if}
-    {#if error}<p class="error">{error}</p>{/if}
-  </section>
+      </Button>
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={reset}
+        class="lele-secondary-button"
+      >
+        Reset
+      </Button>
+    </FormActions>
+
+    {#if status}
+      <FormStatus
+        message={status}
+        tone="info"
+        class="browse-result-status"
+        style="--giu-form-status-padding: 0; --giu-form-status-border-width: 0; --giu-form-status-info-background: transparent; --giu-form-status-info-color: var(--color-success)"
+      />
+    {/if}
+
+    {#if error}
+      <FormStatus
+        message={error}
+        tone="error"
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+    {/if}
+  </Panel>
 
   <section class="results">
     {#if loading}
@@ -162,10 +213,6 @@
     gap: 16px;
   }
 
-  h2 {
-    margin: 0 0 12px;
-  }
-
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -185,13 +232,6 @@
     border-radius: 8px;
     background: white;
     color: var(--text);
-  }
-
-  .actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 12px;
   }
 
   .results {

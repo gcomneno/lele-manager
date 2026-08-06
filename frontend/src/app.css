@@ -75,6 +75,62 @@
   --radius: var(--radius-md);
   --shadow: var(--elevation-1);
 
+  /* Giada UI product-theme bridge. */
+  --giu-button-padding: var(--space-2) var(--space-4);
+  --giu-button-border-width: 1px;
+  --giu-button-border-radius: var(--radius-sm);
+  --giu-button-color: var(--color-text-inverse);
+  --giu-button-background: var(--color-brand-600);
+  --giu-button-border-color: var(--color-brand-600);
+  --giu-button-hover-color: var(--color-text-inverse);
+  --giu-button-hover-background: var(--color-brand-700);
+  --giu-button-hover-border-color: var(--color-brand-700);
+  --giu-button-active-background: var(--color-brand-800);
+  --giu-button-active-border-color: var(--color-brand-800);
+  --giu-button-focus-color: var(--color-focus);
+  --giu-button-focus-width: 3px;
+  --giu-button-focus-offset: 2px;
+  --giu-button-disabled-opacity: 0.58;
+
+  --giu-panel-gap: var(--space-4);
+  --giu-panel-padding: var(--space-4);
+  --giu-panel-border-width: 1px;
+  --giu-panel-border-color: var(--color-border);
+  --giu-panel-border-radius: var(--radius-lg);
+  --giu-panel-color: var(--color-text);
+  --giu-panel-background: var(--color-surface);
+  --giu-panel-title-size: var(--font-size-xl);
+  --giu-panel-description-color: var(--color-text-muted);
+
+  --giu-surface-padding: var(--space-3);
+  --giu-surface-border-width: 1px;
+  --giu-surface-border-color: var(--color-border);
+  --giu-surface-border-radius: var(--radius-md);
+  --giu-surface-color: var(--color-text);
+  --giu-surface-background: var(--color-surface-raised);
+
+  --giu-field-label-color: var(--color-text-muted);
+  --giu-field-label-weight: var(--font-weight-medium);
+  --giu-field-label-line-height: 1.4;
+  --giu-field-label-hint-color: var(--color-text-muted);
+
+  --giu-form-actions-gap: var(--space-3);
+
+  --giu-form-status-border-radius: var(--radius-md);
+  --giu-form-status-line-height: var(--line-height-base);
+  --giu-form-status-info-border: var(--color-info);
+  --giu-form-status-info-background: var(--color-info-surface);
+  --giu-form-status-info-color: var(--color-info);
+  --giu-form-status-error-border: var(--color-danger);
+  --giu-form-status-error-background: var(--color-danger-surface);
+  --giu-form-status-error-color: var(--color-danger);
+  --giu-form-status-success-border: var(--color-success);
+  --giu-form-status-success-background: var(--color-success-surface);
+  --giu-form-status-success-color: var(--color-success);
+  --giu-form-status-warning-border: var(--color-warning);
+  --giu-form-status-warning-background: var(--color-warning-surface);
+  --giu-form-status-warning-color: var(--color-warning);
+
   font-family: var(--font-sans);
   color: var(--color-text);
   background: var(--color-canvas);
@@ -148,6 +204,18 @@ input[aria-invalid='true'], select[aria-invalid='true'], textarea[aria-invalid='
 .btn-ghost { border-color: transparent; background: transparent; color: var(--color-brand-700); }
 .btn-destructive { background: var(--color-danger); border-color: var(--color-danger); color: var(--color-text-inverse); }
 .btn-destructive:hover { background: var(--color-danger-hover); border-color: var(--color-danger-hover); color: var(--color-text-inverse); }
+
+.giu-button.lele-secondary-button[data-giu-variant='secondary'] {
+  --giu-button-color: var(--color-text);
+  --giu-button-background: var(--color-surface);
+  --giu-button-border-color: var(--color-border);
+  --giu-button-hover-color: var(--color-text);
+  --giu-button-hover-background: var(--color-surface-subtle);
+  --giu-button-hover-border-color: var(--color-brand-700);
+  --giu-button-active-color: var(--color-text);
+  --giu-button-active-background: var(--color-brand-100);
+  --giu-button-active-border-color: var(--color-brand-700);
+}
 
 .meta { color: var(--color-text-muted); font-size: var(--font-size-sm); }
 .error, .feedback-error { color: var(--color-danger); font-size: var(--font-size-sm); }

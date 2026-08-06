@@ -7,9 +7,27 @@ test.describe('brand foundation', () => {
     const brand = page.getByRole('link', { name: 'LeLe Manager, browse' })
     await expect(brand).toBeVisible()
     await expect(brand.locator('img')).toHaveAttribute('src', '/app/brand/lele-manager-mark.svg')
-    await expect(page.getByRole('button', { name: 'Cerca' })).toHaveClass(/btn-primary/)
-    await expect(page.getByPlaceholder('pytest, git, pandas…')).toBeVisible()
-    await expect(page.locator('.filters.card')).toBeVisible()
+    const browsePanel = page.getByRole('region', {
+      name: 'Esplora',
+      exact: true,
+    })
+    const searchButton = browsePanel.getByRole('button', {
+      name: 'Cerca',
+      exact: true,
+    })
+
+    await expect(searchButton).toHaveAttribute(
+      'data-giu-variant',
+      'primary',
+    )
+    await expect(searchButton).toHaveAttribute(
+      'data-giu-size',
+      'compact',
+    )
+    await expect(
+      page.getByPlaceholder('pytest, git, pandas…'),
+    ).toBeVisible()
+    await expect(browsePanel).toBeVisible()
   })
 
   test('uses Italian product labels while preserving navigation hashes', async ({ page }) => {
