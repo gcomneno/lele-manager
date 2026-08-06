@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from lele_manager.cli import tritalele
+from lele_manager.cli import pkps
 from lele_manager.core.doctor import (
     DoctorOperationalError,
     DoctorProblem,
@@ -344,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     tritalele.register_commands(subparsers)
+    pkps.register_commands(subparsers)
 
     return parser
 
@@ -849,6 +851,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     try:
         if hasattr(args, "tritalele_command"):
             code = tritalele.run_command(args)
+        elif hasattr(args, "pkps_command"):
+            code = pkps.run_command(args)
         elif args.command == "search":
             code = cmd_search(base_url, args)
         elif args.command == "export":

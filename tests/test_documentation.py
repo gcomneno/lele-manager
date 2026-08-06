@@ -16,6 +16,7 @@ DOCUMENT_PAIRS = (
         Path("docs/it/documentation-policy.md"),
     ),
     (Path("docs/projection-store.md"), Path("docs/it/projection-store.md")),
+    (Path("docs/pkps-package.md"), Path("docs/it/pkps-package.md")),
     (
         Path("docs/gui-user-guide.md"),
         Path("docs/it/gui-user-guide.md"),

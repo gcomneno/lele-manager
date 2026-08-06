@@ -46,6 +46,8 @@ pytest tests/test_documentation.py
 - Contratto projection store:
   [docs/it/projection-store.md](docs/it/projection-store.md)
 
+- Contratto package PKPS: [docs/it/pkps-package.md](docs/it/pkps-package.md)
+
 - Manuale della GUI: [docs/it/gui-user-guide.md](docs/it/gui-user-guide.md)
 
 ## Obiettivi principali
@@ -507,6 +509,24 @@ Il salvataggio dall'Editor scrive il file Markdown nel vault e aggiorna la
 proiezione JSONL tramite `PUT` o `POST /vault/lessons`.
 
 La GUI richiede `LELE_VAULT_DIR`; il default è `~/LeLeVault`.
+
+### Personal Knowledge Publishing System (PKPS)
+
+GYTE Study Tools può consegnare una lesson revisionata all'esistente confine
+TritaLeLe senza esporre il proprio workspace:
+
+```bash
+lele pkps import PACKAGE_PATH
+lele pkps import PACKAGE_PATH --json
+```
+
+L'import v1 accetta una directory package o uno ZIP con root singola, valida
+manifest, confinamento dei path, lesson UTF-8, conteggio byte e SHA-256, poi
+mette in staging un candidato. Reimportare `package_id` e hash invariati è
+idempotente; un package ID riutilizzato con hash differente viene rifiutato.
+Nessuna scrittura nel vault, nelle proiezioni o nel ML avviene prima
+dell'esistente approvazione esplicita. Consultare il [contratto package
+PKPS](docs/it/pkps-package.md).
 
 Il record di design completato resta disponibile in italiano in
 [`docs/gui-design.md`](docs/gui-design.md). È classificato come documento
