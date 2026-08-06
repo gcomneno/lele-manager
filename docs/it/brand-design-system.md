@@ -42,7 +42,11 @@ Gli alias esistenti (`--bg`, `--surface`, `--border`, `--text`, `--muted`, `--ac
 
 ## Componenti e feedback
 
-Usare `.btn` con `btn-primary`, `btn-secondary`, `btn-ghost` o `btn-destructive`; tutti hanno comportamento hover, active, focus-visible, disabled e busy. Input, select e textarea nativi condividono stati border, hover e focus; lo stile invalid è esplicito tramite `aria-invalid="true"` o `.is-invalid`, così i controlli required non ancora usati non sembrano errati. `.card`/`.panel`, `.tag`/`.badge`, `.status`, `.empty-state` e le classi feedback (`feedback-success`, `feedback-warning`, `feedback-info`, `feedback-error`) sono primitive riusabili. Le etichette runtime esistenti restano in italiano; questo sistema non introduce i18n runtime.
+Giada UI è l’autorità riusabile per pulsanti, pannelli, superfici, presentazione dei campi, gruppi di azioni e feedback di stato generici. I consumer usano gli entry point pubblici documentati e gli hook di tema `--giu-*`, senza copiare gli internals dei componenti.
+
+Input, select e textarea nativi restano responsabilità del prodotto finché non esiste un contratto Giada UI corrispondente; colori, bordi, focus e stato invalid esplicito usano i token semantici di LeLe Manager. Le etichette runtime esistenti restano in italiano; la localizzazione runtime inglese/italiano viene realizzata separatamente dalla #154.
+
+I selettori legacy come `.btn`, `.card`, `.actions`, `.status`, `.empty-state` e le classi feedback restano codice temporaneo di compatibilità soltanto per superfici di dominio complesse o non ancora migrate, in particolare Cronologia, Sistema, TritaLeLe, la CTA di creazione della shell e le card o gli alberi di dominio. Non costituiscono un secondo design system riusabile e non devono essere usati per nuova presentazione generica.
 
 Usare una parola o un messaggio di stato conciso accanto a ogni colore di stato. I controlli busy devono mantenere visibile lo scopo e usare un'etichetta di progresso come “Saving…”. Le azioni distruttive richiedono il trattamento distruttivo e una superficie di conferma esistente quando il flusso la offre; questa issue non aggiunge nuovi dialog.
 
@@ -95,6 +99,12 @@ Il frontend consuma l’artefatto immutabile vendorizzato
 `giadaware-ui-components-0.0.0.tgz`, generato dal commit Giada UI
 `b088653cba3c940ff6b4baf3b396a109cb04e8b7`, con SHA-256
 `88b5cc12417fa911f5a885b9e554abd198f29a4322f0ac8d1fad823da16e2c7d`.
+
+L’adozione diretta copre Esplora, Statistiche, Vault, Dettaglio, Editor e la
+superficie generica di controllo e feedback dei Duplicati. Le card delle LeLe,
+le righe di similarità, i record di confronto dei duplicati, l’albero del Vault
+e l’orchestrazione dei workflow restano locali perché i relativi contratti
+appartengono a LeLe Manager e non a Giada UI.
 
 La dipendenza usa un riferimento locale `file:` e non richiede registry né
 accesso di rete a runtime. Colori e spaziature del prodotto sono collegati

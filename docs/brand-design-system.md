@@ -50,7 +50,11 @@ Existing aliases (`--bg`, `--surface`, `--border`, `--text`, `--muted`, `--accen
 
 ## Components and feedback
 
-Use `.btn` with `btn-primary`, `btn-secondary`, `btn-ghost`, or `btn-destructive`; all have hover, active, focus-visible, disabled, and busy behavior. Native inputs, selects, and textareas share border, hover, and focus states; invalid styling is opt-in through `aria-invalid="true"` or `.is-invalid`, so untouched required controls do not appear erroneous. `.card`/`.panel`, `.tag`/`.badge`, `.status`, `.empty-state`, and feedback classes (`feedback-success`, `feedback-warning`, `feedback-info`, `feedback-error`) are reusable primitives. Existing runtime labels remain Italian; this system does not add runtime internationalization.
+Giada UI is the reusable authority for generic buttons, panels, surfaces, field presentation, action groups, and status feedback. Consumers use its documented public entry points and `--giu-*` theme hooks rather than copying component internals.
+
+Native inputs, selects, and textareas remain product-owned until a matching Giada UI input contract exists; their colors, borders, focus, and opt-in invalid state use LeLe Manager semantic tokens. Existing runtime labels remain Italian; runtime English/Italian localization is delivered separately by #154.
+
+Legacy selectors such as `.btn`, `.card`, `.actions`, `.status`, `.empty-state`, and the feedback classes remain temporary compatibility code only for domain-heavy or not-yet-migrated surfaces, notably Timeline, System, TritaLeLe, the shell creation CTA, and domain cards or trees. They are not a second reusable design system and must not be used for new generic presentation.
 
 Use a concise status word or message beside every status color. Busy controls must keep their purpose visible and use a progress label such as “Saving…”. Destructive actions need the destructive treatment and an existing confirmation surface where the flow already provides one; this issue does not add new dialogs.
 
@@ -102,6 +106,12 @@ The frontend consumes the immutable vendored artifact
 `giadaware-ui-components-0.0.0.tgz`, generated from Giada UI commit
 `b088653cba3c940ff6b4baf3b396a109cb04e8b7`, with SHA-256
 `88b5cc12417fa911f5a885b9e554abd198f29a4322f0ac8d1fad823da16e2c7d`.
+
+Direct adoption covers Browse, Statistics, Vault, Detail, Editor, and the
+generic control and feedback surface of Duplicates. Domain-specific lesson
+cards, similarity rows, duplicate-comparison records, the Vault tree, and
+workflow orchestration remain local because their contracts belong to
+LeLe Manager rather than Giada UI.
 
 The dependency uses a local `file:` reference and requires no registry or
 runtime network access. Product colors and spacing are mapped through documented
