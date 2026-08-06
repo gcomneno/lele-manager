@@ -553,8 +553,8 @@
   <section class="card ingestion" aria-labelledby="ingestion-title">
     <div class="section-head">
       <div>
-        <h2 id="ingestion-title">TritaLeLe</h2>
-        <p class="meta">Prepara candidati deterministici da Markdown o testo; la preview non scrive nello staging.</p>
+        <h2 id="ingestion-title">Raccogli nuove LeLe</h2>
+        <p class="meta">Trasforma appunti e documenti in nuove LeLe da revisionare.</p>
       </div>
       {#if loadedFileName}<span class="tag">file: {loadedFileName}</span>{/if}
     </div>
@@ -565,18 +565,18 @@
         <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onchange={loadFile} />
       </label>
       <label>
-        Tipo sorgente
+        Formato del contenuto
         <select bind:value={sourceKind} onchange={sourceSettingsChanged}>
           <option value="plain_text">plain_text</option>
           <option value="markdown">markdown</option>
         </select>
       </label>
       <label>
-        Nome logico
+        Nome della fonte
         <input bind:value={logicalName} oninput={sourceSettingsChanged} />
       </label>
       <label>
-        Caratteri massimi per chunk
+        Dimensione massima delle sezioni
         <input type="number" min="1" bind:value={maxCharacters} oninput={sourceSettingsChanged} />
       </label>
     </div>
@@ -591,14 +591,14 @@
     </label>
     <div class="actions">
       <button class="btn" onclick={runPreview} disabled={previewLoading || staging}>
-        {previewLoading ? 'Anteprima…' : 'Genera anteprima'}
+        {previewLoading ? 'Anteprima…' : 'Crea anteprima'}
       </button>
       <button
         class="btn btn-primary"
         onclick={runStage}
         disabled={!preview || previewVersion !== inputVersion || previewLoading || staging}
       >
-        {staging ? 'Creazione staging…' : 'Crea staging'}
+        {staging ? 'Aggiunta alla raccolta…' : 'Aggiungi alla raccolta'}
       </button>
     </div>
     {#if ingestionError}<p class="error" role="alert">{ingestionError}</p>{/if}
@@ -631,7 +631,7 @@
     <div class="candidate-column">
       <section class="card filters" aria-labelledby="candidate-list-title">
         <div class="section-head">
-          <h2 id="candidate-list-title">Candidati in staging</h2>
+          <h2 id="candidate-list-title">LeLe da revisionare</h2>
           <button class="btn" onclick={() => loadCandidates()} disabled={candidatesLoading}>Aggiorna</button>
         </div>
         <div class="filter-grid">
@@ -686,7 +686,7 @@
     <div class="detail-column">
       {#if !selectedId}
         <section class="card empty detail-empty">
-          <h2>Dettaglio candidato</h2>
+          <h2>Dettaglio della LeLe</h2>
           <p class="meta">Nessuna selezione. Scegli esplicitamente un candidato dalla lista.</p>
         </section>
       {:else if detailLoading}
@@ -700,7 +700,7 @@
         <section class="card candidate-detail" aria-labelledby="candidate-detail-title">
           <div class="section-head">
             <div>
-              <h2 id="candidate-detail-title">Dettaglio candidato</h2>
+              <h2 id="candidate-detail-title">Dettaglio della LeLe</h2>
               <code>{candidate.candidate_id}</code>
             </div>
             <span class={`state state-${candidate.state}`}>{candidate.state} · rev {candidate.revision}</span>

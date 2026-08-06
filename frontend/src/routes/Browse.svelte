@@ -101,8 +101,8 @@
 
 <div class="browse">
   <section class="card filters">
-    <h2>Browse</h2>
-    <div class="grid">
+    <h2>Esplora</h2>
+    <div class="grid browse-filter-grid" data-testid="browse-filter-grid">
       <label>
         Query
         <input bind:value={q} placeholder="pytest, git, pandas…" onkeydown={(e) => e.key === 'Enter' && runSearch()} />
@@ -198,4 +198,26 @@
     display: grid;
     gap: 10px;
   }
+  /* Browse filter grid breathing room */
+  .browse-filter-grid {
+    box-sizing: border-box;
+    width: calc(100% - 18px);
+  }
+
+  .browse-filter-grid > * {
+    min-width: 0;
+  }
+
+  .browse-filter-grid input {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  @media (max-width: 800px) {
+    .browse-filter-grid {
+      width: 100%;
+    }
+  }
+
 </style>

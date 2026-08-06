@@ -20,6 +20,10 @@ DOCUMENT_PAIRS = (
         Path("docs/gui-user-guide.md"),
         Path("docs/it/gui-user-guide.md"),
     ),
+    (
+        Path("docs/brand-design-system.md"),
+        Path("docs/it/brand-design-system.md"),
+    ),
 )
 
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^]]+]\(([^)]+)\)")

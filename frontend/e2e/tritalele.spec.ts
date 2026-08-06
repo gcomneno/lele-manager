@@ -63,29 +63,29 @@ async function stageAccepted(
 test.describe.serial('TritaLeLe GUI', () => {
   test('plain text: preview, stage, revise, accept and one explicit approval', async ({ page }) => {
     await page.goto('/app/#/tritalele')
-    await expect(page.getByRole('heading', { name: 'TritaLeLe' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Raccogli nuove LeLe' })).toBeVisible()
     await expect(page.getByText('Nessuna selezione.')).toBeVisible()
 
     const initialVaultFiles = await countVaultFiles(page)
 
-    await page.getByLabel('Nome logico').fill('pasted-happy-path.txt')
+    await page.getByLabel('Nome della fonte').fill('pasted-happy-path.txt')
     const source = page.getByLabel('Testo sorgente')
     await source.fill('Plain text incollato per il workflow TritaLeLe deterministico.')
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
     await expect(page.getByTestId('ingestion-preview')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Crea staging' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Aggiungi alla raccolta' })).toBeEnabled()
 
     await source.fill('Plain text incollato modificato: la preview precedente non è più valida.')
     await expect(page.getByTestId('ingestion-preview')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Crea staging' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Aggiungi alla raccolta' })).toBeDisabled()
 
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
-    await page.getByRole('button', { name: 'Crea staging' }).click()
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
+    await page.getByRole('button', { name: 'Aggiungi alla raccolta' }).click()
     await expect(page.getByText(/Staging completato: 1 created/)).toBeVisible()
     expect(await countVaultFiles(page)).toBe(initialVaultFiles)
 
     await page.locator('.candidate-card').filter({ hasText: 'pasted-happy-path.txt' }).click()
-    await expect(page.getByRole('heading', { name: 'Dettaglio candidato' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Dettaglio della LeLe' })).toBeVisible()
     await page.getByLabel('Testo proposto').fill(
       'Testo rivisto in Markdown con **contenuto canonico** e provenienza intatta.',
     )
@@ -144,11 +144,11 @@ test.describe.serial('TritaLeLe GUI', () => {
       mimeType: 'text/markdown',
       buffer: Buffer.from('# File input\n\nCandidate rejected but retained.'),
     })
-    await expect(page.getByLabel('Tipo sorgente')).toHaveValue('markdown')
-    await expect(page.getByLabel('Nome logico')).toHaveValue('file-input.md')
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
+    await expect(page.getByLabel('Formato del contenuto')).toHaveValue('markdown')
+    await expect(page.getByLabel('Nome della fonte')).toHaveValue('file-input.md')
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
     await expect(page.getByTestId('ingestion-preview')).toBeVisible()
-    await page.getByRole('button', { name: 'Crea staging' }).click()
+    await page.getByRole('button', { name: 'Aggiungi alla raccolta' }).click()
     await expect(page.getByText(/Staging completato: 1 created/)).toBeVisible()
 
     await page.locator('.candidate-card').filter({ hasText: 'file-input.md' }).click()
@@ -164,7 +164,7 @@ test.describe.serial('TritaLeLe GUI', () => {
 
   test('409, 422, 503 and obsolete preview responses are controlled', async ({ page }) => {
     await page.goto('/app/#/tritalele')
-    await page.getByLabel('Nome logico').fill('controlled-errors.txt')
+    await page.getByLabel('Nome della fonte').fill('controlled-errors.txt')
     await page.getByLabel('Testo sorgente').fill('Valid input used to exercise controlled HTTP errors.')
 
     const previewUrl = '**/api/v1/tritalele/ingestion/preview'
@@ -175,7 +175,7 @@ test.describe.serial('TritaLeLe GUI', () => {
         body: JSON.stringify({ detail: { code: 'ingestion_conflict', message: 'Conflict.' } }),
       }),
     )
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
     await expect(page.getByText(/Conflitto \(409 · ingestion_conflict\)/)).toBeVisible()
     await page.unroute(previewUrl)
 
@@ -186,7 +186,7 @@ test.describe.serial('TritaLeLe GUI', () => {
         body: JSON.stringify({ detail: [{ loc: ['body'], msg: 'invalid', type: 'value_error' }] }),
       }),
     )
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
     await expect(page.getByText(/Dati non validi \(422\)/)).toBeVisible()
     await page.unroute(previewUrl)
 
@@ -199,7 +199,7 @@ test.describe.serial('TritaLeLe GUI', () => {
         }),
       }),
     )
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
     await expect(page.getByText(/Errore operativo \(503 · candidate_storage_unavailable\)/)).toBeVisible()
     await page.unroute(previewUrl)
 
@@ -207,11 +207,11 @@ test.describe.serial('TritaLeLe GUI', () => {
       await new Promise((resolve) => setTimeout(resolve, 300))
       await route.continue()
     })
-    await page.getByRole('button', { name: 'Genera anteprima' }).click()
+    await page.getByRole('button', { name: 'Crea anteprima' }).click()
     await page.getByLabel('Testo sorgente').fill('Changed while the preview request is still running.')
     await page.waitForTimeout(500)
     await expect(page.getByTestId('ingestion-preview')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Crea staging' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Aggiungi alla raccolta' })).toBeDisabled()
     await page.unroute(previewUrl)
   })
 
