@@ -31,9 +31,15 @@ test.describe('GUI smoke', () => {
 
   test('stats e timeline caricano senza errori', async ({ page }) => {
     await page.goto('/app/#/stats')
-    await expect(page.getByRole('heading', { name: 'Statistiche' })).toBeVisible()
-    await expect(page.locator('.stats .error')).toHaveCount(0, { timeout: 15_000 })
-    await expect(page.locator('.kpi').first()).toBeVisible()
+    const statsPanel = page.getByRole('region', {
+      name: 'Statistiche',
+      exact: true,
+    })
+    await expect(statsPanel).toBeVisible()
+    await expect(statsPanel.getByRole('alert')).toHaveCount(0, {
+      timeout: 15_000,
+    })
+    await expect(statsPanel.locator('.kpi').first()).toBeVisible()
 
     await page.getByRole('link', { name: 'Cronologia' }).click()
     await expect(page.getByRole('heading', { name: 'Cronologia' })).toBeVisible()
@@ -51,7 +57,15 @@ test.describe('GUI smoke', () => {
     await expect(page.locator('.ops .error')).toHaveCount(0, { timeout: 15_000 })
 
     await page.getByRole('link', { name: 'Vault' }).click()
-    await expect(page.getByRole('heading', { name: 'Vault' })).toBeVisible()
-    await expect(page.locator('section.card > .error')).toHaveCount(0, { timeout: 15_000 })
+
+    const vaultPanel = page.getByRole('region', {
+      name: 'Vault',
+      exact: true,
+    })
+
+    await expect(vaultPanel).toBeVisible()
+    await expect(vaultPanel.getByRole('alert')).toHaveCount(0, {
+      timeout: 15_000,
+    })
   })
 })

@@ -30,8 +30,10 @@ async function prepareDocumentationScreenshot(
     const vaultHeading = Array.from(
       document.querySelectorAll('h2'),
     ).find((heading) => heading.textContent?.trim() === 'Vault')
-    const vaultCard = vaultHeading?.closest('section.card')
-    const vaultPath = vaultCard?.querySelector(':scope > p.meta')
+    const vaultPanel = vaultHeading?.closest('.giu-panel')
+    const vaultPath = vaultPanel?.querySelector(
+      '.giu-panel__body > p.meta',
+    )
 
     if (vaultPath instanceof HTMLElement) {
       vaultPath.textContent = '/vault'
