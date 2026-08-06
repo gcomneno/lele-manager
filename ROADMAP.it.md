@@ -111,8 +111,8 @@ LeLe Manager fornisce oggi:
 - una GUI Svelte;
 - flussi TritaLeLe per ingestione fonti grezze, revisione candidati e
   approvazione;
-- validazione package PKPS v1 e staging tramite il confine candidati TritaLeLe,
-  senza scritture di vault o proiezioni prima dell'approvazione;
+- confine consumer locale per package PKPS v1 e staging tramite i candidati
+  TritaLeLe, senza scritture di vault o proiezioni prima dell'approvazione;
 - test deterministici sui confini domain, storage, API, CLI e GUI.
 
 Il progetto è utilizzabile come strumento personale in produzione, mentre la
@@ -203,13 +203,17 @@ source material
 I candidati non sono lesson approvate. Restano isolati dal vault canonico e
 dal dataset ML fino al completamento di un'approvazione esplicita.
 
-### 5.3 Personal Knowledge Publishing System (PKPS)
+### 5.3 Consumer locale PKPS di LeLe Manager
 
-PKPS v1 è un confine locale package completato: GYTE esporta un package lesson
-versionato, mentre LeLe lo valida e mette in staging un ordinario candidato
-TritaLeLe. La provenienza del package è immutabile e fluisce nell'approvazione;
-identità canonica, gestione duplicati e pubblicazione restano decisioni di
-LeLe. Consultare il [contratto package PKPS](docs/it/pkps-package.md).
+LeLe Manager completa il proprio confine consumer locale per package PKPS v1:
+GYTE esporta un package lesson versionato, mentre LeLe lo valida e mette in
+staging un ordinario candidato TritaLeLe. La provenienza del package è
+immutabile e fluisce nell'approvazione; identità canonica, gestione duplicati e
+pubblicazione restano decisioni di LeLe.
+
+Questo verticale non costituisce il progetto PKPS autonomo, la sua
+orchestrazione cross-repository o il contratto canonico futuro. Consultare il
+[contratto consumer PKPS](docs/it/pkps-package.md).
 
 ### 5.4 Documentazione
 

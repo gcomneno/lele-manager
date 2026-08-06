@@ -1,11 +1,15 @@
-# Contratto package PKPS v1
+# Contratto consumer locale PKPS v1 di LeLe Manager
 
 [English](../pkps-package.md) | [Italiano](pkps-package.md)
 
-Il **Personal Knowledge Publishing System (PKPS)** definisce un piccolo confine
-di consegna tra GYTE Study Tools e LeLe Manager. GYTE possiede il proprio
-workspace privato e i materiali sorgente; LeLe Manager possiede revisione dei
-candidati, approvazione esplicita, Markdown canonico e dati derivati.
+Questo documento descrive esclusivamente il **consumer locale PKPS
+implementato da LeLe Manager**. Non descrive il progetto PKPS completo, la sua
+orchestrazione cross-repository o il futuro contratto canonico del protocollo.
+
+Il confine consente la consegna tra GYTE Study Tools e LeLe Manager. GYTE
+possiede il proprio workspace privato e i materiali sorgente; LeLe Manager
+possiede revisione dei candidati, approvazione esplicita, Markdown canonico e
+dati derivati.
 
 ## Package
 

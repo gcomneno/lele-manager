@@ -44,7 +44,8 @@ pytest tests/test_documentation.py
 - GUI user guide: [docs/gui-user-guide.md](docs/gui-user-guide.md)
 - Projection-store contract:
   [docs/projection-store.md](docs/projection-store.md)
-- PKPS package contract: [docs/pkps-package.md](docs/pkps-package.md)
+- LeLe Manager PKPS consumer contract:
+  [docs/pkps-package.md](docs/pkps-package.md)
 
 ## Main goals
 
@@ -523,8 +524,9 @@ Preview, staging, revision, acceptance, and rejection never publish a lesson.
 Only explicit approval may write one canonical Markdown lesson and refresh the
 derived projection.
 
-### Personal Knowledge Publishing System (PKPS)
+### LeLe Manager PKPS package consumer
 
+LeLe Manager implements only the local consumer side of the PKPS protocol.
 GYTE Study Tools can hand a reviewed lesson to the existing TritaLeLe boundary
 without exposing its workspace:
 
@@ -537,8 +539,9 @@ The v1 import accepts a package directory or a single-root ZIP, validates its
 manifest, path confinement, UTF-8 lesson, byte count, and SHA-256, then stages
 one candidate. Re-importing an unchanged `package_id` and hash is idempotent;
 a reused package ID with another hash is rejected. No vault, projection, or ML
-write happens before the existing explicit approval. See the full
-[PKPS package contract](docs/pkps-package.md).
+write happens before the existing explicit approval. This boundary is
+not the complete PKPS project or a cross-repository orchestrator. See the
+[PKPS consumer contract](docs/pkps-package.md).
 
 The completed design record remains available in Italian at
 [`docs/gui-design.md`](docs/gui-design.md). It is classified as a historical
