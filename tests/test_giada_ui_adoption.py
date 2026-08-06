@@ -106,3 +106,45 @@ def test_stats_and_vault_use_public_giada_ui_components() -> None:
     assert "<FormStatus" in vault
     assert '<section class="card">' not in vault
     assert 'class="btn' not in vault
+
+
+def test_detail_editor_and_duplicate_controls_use_giada_ui() -> None:
+    detail = (
+        FRONTEND / "src" / "routes" / "Detail.svelte"
+    ).read_text(encoding="utf-8")
+    editor = (
+        FRONTEND / "src" / "routes" / "Editor.svelte"
+    ).read_text(encoding="utf-8")
+    duplicates = (
+        FRONTEND / "src" / "routes" / "Duplicates.svelte"
+    ).read_text(encoding="utf-8")
+
+    assert "from 'giadaware-ui-components'" in detail
+    assert "from 'giadaware-ui-components/studio'" in detail
+    assert "<Panel" in detail
+    assert detail.count("<Button") == 1
+    assert "<FormStatus" in detail
+    assert '<section class="card main-pane">' not in detail
+    assert '<button class="btn' not in detail
+
+    assert "from 'giadaware-ui-components'" in editor
+    assert "from 'giadaware-ui-components/studio'" in editor
+    assert "<Panel" in editor
+    assert editor.count("<Button") == 1
+    assert editor.count("<FieldLabel") == 10
+    assert "<FormStatus" in editor
+    assert '<section class="card editor-pane">' not in editor
+    assert '<button class="btn' not in editor
+
+    assert "from 'giadaware-ui-components'" in duplicates
+    assert "from 'giadaware-ui-components/studio'" in duplicates
+    assert '<Panel title="Revisione duplicati"' in duplicates
+    assert duplicates.count("<FieldLabel") == 3
+    assert "<FormActions" in duplicates
+    assert duplicates.count("<Button") == 1
+    assert "<FormStatus" in duplicates
+    assert '<section class="card controls">' not in duplicates
+    assert '<button class="btn btn-primary"' not in duplicates
+
+    # Domain-specific comparison cards intentionally remain local.
+    assert '<article class="card duplicate-pair">' in duplicates

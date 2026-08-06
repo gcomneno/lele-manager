@@ -1,4 +1,11 @@
 <script lang="ts">
+  import { FormStatus } from 'giadaware-ui-components'
+  import {
+    Button,
+    FieldLabel,
+    FormActions,
+    Panel,
+  } from 'giadaware-ui-components/studio'
   import { api, type DuplicateLessonSnapshot, type DuplicatePair, type DuplicateReportResponse } from '../lib/api'
 
   const reasonLabels: Record<string, string> = {
@@ -122,44 +129,97 @@
 </script>
 
 <section class="duplicates">
-  <section class="card controls">
-    <h2>Revisione duplicati</h2>
-    <p class="meta">Controlla duplicati esatti e possibili somiglianze senza modificare l’archivio.</p>
+  <Panel title="Revisione duplicati" class="controls">
+    <p class="meta controls-description">
+      Controlla duplicati esatti e possibili somiglianze
+      senza modificare l’archivio.
+    </p>
+
     <div class="control-grid">
       <label>
-        Soglia minima
-        <input aria-label="Soglia minima" type="number" min="0" max="1" step="0.01" bind:value={minScore} />
+        <FieldLabel label="Soglia minima" />
+        <input
+          aria-label="Soglia minima"
+          type="number"
+          min="0"
+          max="1"
+          step="0.01"
+          bind:value={minScore}
+        />
       </label>
+
       <label class="checkbox-label">
-        <input aria-label="Solo duplicati esatti" type="checkbox" bind:checked={exactOnly} />
-        Solo duplicati esatti
+        <input
+          aria-label="Solo duplicati esatti"
+          type="checkbox"
+          bind:checked={exactOnly}
+        />
+        <FieldLabel label="Solo duplicati esatti" />
       </label>
+
       <label>
-        Numero massimo
-        <input aria-label="Numero massimo" type="number" min="1" step="1" bind:value={limit} />
+        <FieldLabel label="Numero massimo" />
+        <input
+          aria-label="Numero massimo"
+          type="number"
+          min="1"
+          step="1"
+          bind:value={limit}
+        />
       </label>
     </div>
-    <div class="actions">
-      <button class="btn btn-primary" onclick={runReview} disabled={loading}>
-        {loading ? 'Controllo in corso…' : report ? 'Aggiorna controllo' : 'Avvia controllo'}
-      </button>
-    </div>
-  </section>
+
+    <FormActions
+      style="--giu-form-actions-gap: var(--space-2); margin-top: var(--space-3)"
+    >
+      <Button
+        size="compact"
+        onclick={runReview}
+        disabled={loading}
+      >
+        {loading
+          ? 'Controllo in corso…'
+          : report
+            ? 'Aggiorna controllo'
+            : 'Avvia controllo'}
+      </Button>
+    </FormActions>
+  </Panel>
 
   {#if loading}
-    <p class="meta" role="status">Controllo duplicati in corso…</p>
+    <FormStatus
+      message="Controllo duplicati in corso…"
+      tone="info"
+      style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+    />
   {:else if error}
-    <section class="card error-state" role="alert">
-      <h3>{isModelError(error) ? 'Modello di somiglianza non disponibile' : 'Controllo duplicati non riuscito'}</h3>
-      <p class="error">{error}</p>
+    <Panel
+      title={isModelError(error)
+        ? 'Modello di somiglianza non disponibile'
+        : 'Controllo duplicati non riuscito'}
+      headingLevel={3}
+      class="error-state"
+    >
+      <FormStatus
+        message={error}
+        tone="error"
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+
       {#if isModelError(error)}
-        <p class="meta">Controlla solo i duplicati esatti oppure aggiorna il topic model prima di cercare somiglianze.</p>
+        <p class="meta">
+          Controlla solo i duplicati esatti oppure aggiorna
+          il topic model prima di cercare somiglianze.
+        </p>
       {/if}
-    </section>
+    </Panel>
   {:else if report && appliedQuery}
-    <section class="card summary" aria-label="Riepilogo del controllo duplicati">
-      <h3>Riepilogo del controllo</h3>
-      <dl>
+    <Panel
+      title="Riepilogo del controllo"
+      headingLevel={3}
+      class="summary"
+    >
+      <dl class="summary-grid">
         <div><dt>LeLe analizzate</dt><dd>{report.lessons_analyzed}</dd></div>
         <div><dt>Coppie totali prima del limite</dt><dd>{report.total_pairs}</dd></div>
         <div><dt>Coppie esatte prima del limite</dt><dd>{report.exact_pairs}</dd></div>
@@ -169,7 +229,7 @@
         <div><dt>Solo duplicati esatti</dt><dd>{appliedQuery.exactOnly ? 'Sì' : 'No'}</dd></div>
         <div><dt>Coppie mostrate</dt><dd>{report.pairs.length}</dd></div>
       </dl>
-    </section>
+    </Panel>
 
     {#if report.pairs.length === 0}
       <section class="card empty-state">
@@ -233,16 +293,14 @@
 
 <style>
   .duplicates, .pair-list { display: grid; gap: 16px; }
-  h2, h3, h4, h5 { margin: 0; }
-  .controls > .meta { margin: 8px 0 16px; }
+  h3, h4, h5 { margin: 0; }
+  .controls-description { margin: 0 0 16px; }
   .control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
   label { display: grid; gap: 5px; color: var(--muted); font-size: .85rem; }
   input[type='number'] { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--text); }
   .checkbox-label { display: flex; align-items: center; gap: 8px; padding-top: 25px; }
-  .actions { margin-top: 14px; }
-  .summary h3 { margin-bottom: 12px; }
-  .summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0; }
-  .summary dl div, .identity div, .metadata div { border: 1px solid var(--border); border-radius: 7px; padding: 8px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0; }
+  .summary-grid div, .identity div, .metadata div { border: 1px solid var(--border); border-radius: 7px; padding: 8px; }
   dt { color: var(--muted); font-size: .76rem; }
   dd { margin: 3px 0 0; overflow-wrap: anywhere; }
   .pair-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

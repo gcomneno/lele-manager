@@ -80,3 +80,93 @@ test('renders Stats and Vault with Giada UI primitives', async ({
     ),
   ).toHaveCount(2)
 })
+
+test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
+  page,
+}) => {
+  await page.goto('/app/#/')
+
+  const firstCard = page.locator('.lesson-card').first()
+  await expect(firstCard).toBeVisible({
+    timeout: 15_000,
+  })
+  await firstCard.click()
+
+  const detailPanel = page.locator(
+    '.detail-layout > .giu-panel',
+  )
+
+  await expect(detailPanel).toBeVisible()
+
+  const editButton = detailPanel.getByRole('button', {
+    name: 'Modifica',
+    exact: true,
+  })
+
+  await expect(editButton).toHaveAttribute(
+    'data-giu-variant',
+    'secondary',
+  )
+  await expect(editButton).toHaveAttribute(
+    'data-giu-size',
+    'compact',
+  )
+
+  await editButton.click()
+
+  const editorPanel = page.getByRole('region', {
+    name: 'Modifica LeLe',
+    exact: true,
+  })
+
+  await expect(editorPanel).toBeVisible()
+  await expect(
+    editorPanel.locator('.giu-field-label'),
+  ).toHaveCount(10)
+
+  const saveButton = editorPanel.getByRole('button', {
+    name: 'Salva nel vault',
+    exact: true,
+  })
+
+  await expect(saveButton).toHaveAttribute(
+    'data-giu-variant',
+    'primary',
+  )
+  await expect(saveButton).toHaveAttribute(
+    'data-giu-size',
+    'compact',
+  )
+
+  await page.goto('/app/#/duplicates')
+
+  const duplicatesPanel = page.getByRole('region', {
+    name: 'Revisione duplicati',
+    exact: true,
+  })
+
+  await expect(duplicatesPanel).toBeVisible()
+  await expect(
+    duplicatesPanel.locator('.giu-field-label'),
+  ).toHaveCount(3)
+  await expect(
+    duplicatesPanel.locator('.giu-form-actions'),
+  ).toBeVisible()
+
+  const reviewButton = duplicatesPanel.getByRole(
+    'button',
+    {
+      name: 'Avvia controllo',
+      exact: true,
+    },
+  )
+
+  await expect(reviewButton).toHaveAttribute(
+    'data-giu-variant',
+    'primary',
+  )
+  await expect(reviewButton).toHaveAttribute(
+    'data-giu-size',
+    'compact',
+  )
+})

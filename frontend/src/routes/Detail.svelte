@@ -1,5 +1,15 @@
 <script lang="ts">
-  import { api, type Lesson, type SimilarItem, type SimilarMeta } from '../lib/api'
+  import { FormStatus } from 'giadaware-ui-components'
+  import {
+    Button,
+    Panel,
+  } from 'giadaware-ui-components/studio'
+  import {
+    api,
+    type Lesson,
+    type SimilarItem,
+    type SimilarMeta,
+  } from '../lib/api'
   import { navigate } from '../lib/router'
   import { renderMarkdown } from '../lib/markdown'
   import SimilarPanel from '../components/SimilarPanel.svelte'
@@ -21,6 +31,7 @@
   async function load() {
     loading = true
     error = ''
+
     try {
       lesson = await api.getLesson(id)
     } catch (e) {
@@ -34,13 +45,21 @@
   async function loadSimilar() {
     similarLoading = true
     similarError = ''
+
     try {
-      const resp = await api.similarById(id, 8, 0.05, true)
+      const resp = await api.similarById(
+        id,
+        8,
+        0.05,
+        true,
+      )
       similar = resp.results
       similarMeta = resp.meta ?? null
     } catch (e) {
       similar = []
-      similarError = e instanceof Error ? e.message : String(e)
+      similarError = e instanceof Error
+        ? e.message
+        : String(e)
     } finally {
       similarLoading = false
     }
@@ -56,31 +75,42 @@
 {#if loading}
   <p class="meta">Caricamento…</p>
 {:else if error}
-  <p class="error">{error}</p>
+  <FormStatus
+    message={error}
+    tone="error"
+    style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+  />
 {:else if lesson}
   <div class="detail-layout">
-    <section class="card main-pane">
-      <div class="head">
-        <div>
-          <h2>{lesson.id}</h2>
-          <div class="meta row">
-            <span>topic: {lesson.topic ?? '—'}</span>
-            <span>source: {lesson.source ?? '—'}</span>
-            <span>importance: {lesson.importance ?? '?'}</span>
-            <span>date: {lesson.date ?? '—'}</span>
-          </div>
-          {#if lesson.tags?.length}
-            <div class="tags">
-              {#each lesson.tags as tag}
-                <span class="tag">{tag}</span>
-              {/each}
-            </div>
-          {/if}
-        </div>
-        <button class="btn" onclick={() => navigate({ view: 'editor', id: lesson!.id })}>
+    <Panel title={lesson.id} class="main-pane">
+      {#snippet actions()}
+        <Button
+          variant="secondary"
+          size="compact"
+          class="lele-secondary-button"
+          onclick={() => navigate({
+            view: 'editor',
+            id: lesson!.id,
+          })}
+        >
           Modifica
-        </button>
+        </Button>
+      {/snippet}
+
+      <div class="meta row">
+        <span>topic: {lesson.topic ?? '—'}</span>
+        <span>source: {lesson.source ?? '—'}</span>
+        <span>importance: {lesson.importance ?? '?'}</span>
+        <span>date: {lesson.date ?? '—'}</span>
       </div>
+
+      {#if lesson.tags?.length}
+        <div class="tags">
+          {#each lesson.tags as tag}
+            <span class="tag">{tag}</span>
+          {/each}
+        </div>
+      {/if}
 
       {#if lesson.title}
         <h3>{lesson.title}</h3>
@@ -89,7 +119,7 @@
       <article class="markdown-body">
         {@html renderMarkdown(lesson.text ?? '')}
       </article>
-    </section>
+    </Panel>
 
     <SimilarPanel
       title="LeLe simili"
@@ -110,20 +140,12 @@
     align-items: start;
   }
 
-  .head {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-
-  h2 {
-    margin: 0 0 8px;
-    word-break: break-word;
+  :global(.main-pane .giu-panel__title) {
+    overflow-wrap: anywhere;
   }
 
   h3 {
-    margin-top: 0;
+    margin-top: 16px;
   }
 
   .row {
