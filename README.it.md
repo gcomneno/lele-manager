@@ -46,7 +46,8 @@ pytest tests/test_documentation.py
 - Contratto projection store:
   [docs/it/projection-store.md](docs/it/projection-store.md)
 
-- Contratto package PKPS: [docs/it/pkps-package.md](docs/it/pkps-package.md)
+- Contratto consumer PKPS di LeLe Manager:
+  [docs/it/pkps-package.md](docs/it/pkps-package.md)
 
 - Manuale della GUI: [docs/it/gui-user-guide.md](docs/it/gui-user-guide.md)
 
@@ -510,10 +511,11 @@ proiezione JSONL tramite `PUT` o `POST /vault/lessons`.
 
 La GUI richiede `LELE_VAULT_DIR`; il default è `~/LeLeVault`.
 
-### Personal Knowledge Publishing System (PKPS)
+### Consumer package PKPS di LeLe Manager
 
-GYTE Study Tools può consegnare una lesson revisionata all'esistente confine
-TritaLeLe senza esporre il proprio workspace:
+LeLe Manager implementa esclusivamente il lato consumer locale del protocollo
+PKPS. GYTE Study Tools può consegnare una lesson revisionata all'esistente
+confine TritaLeLe senza esporre il proprio workspace:
 
 ```bash
 lele pkps import PACKAGE_PATH
@@ -525,8 +527,9 @@ manifest, confinamento dei path, lesson UTF-8, conteggio byte e SHA-256, poi
 mette in staging un candidato. Reimportare `package_id` e hash invariati è
 idempotente; un package ID riutilizzato con hash differente viene rifiutato.
 Nessuna scrittura nel vault, nelle proiezioni o nel ML avviene prima
-dell'esistente approvazione esplicita. Consultare il [contratto package
-PKPS](docs/it/pkps-package.md).
+dell'esistente approvazione esplicita. Questo confine non costituisce il
+progetto PKPS completo né un orchestratore cross-repository. Consultare il
+[contratto consumer PKPS](docs/it/pkps-package.md).
 
 Il record di design completato resta disponibile in italiano in
 [`docs/gui-design.md`](docs/gui-design.md). È classificato come documento
