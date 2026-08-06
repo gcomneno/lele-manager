@@ -108,6 +108,8 @@ LeLe Manager currently provides:
 - an API-oriented `lele` CLI client;
 - a Svelte GUI;
 - TritaLeLe raw-source ingestion, candidate review, and approval workflows;
+- a local PKPS v1 package consumer boundary and staging through TritaLeLe
+  candidates, without pre-approval vault or projection writes;
 - deterministic tests across domain, storage, API, CLI, and GUI boundaries.
 
 The project is usable as a personal production tool, while storage migration
@@ -146,6 +148,7 @@ Coverage includes:
 - `lele duplicates`;
 - `lele doctor`;
 - TritaLeLe candidate commands;
+- `lele pkps import PACKAGE_PATH` for versioned GYTE lesson packages;
 - `LELE_API_URL` configuration where applicable.
 
 ### 4.4 Documentation and release hygiene
@@ -195,7 +198,19 @@ source material
 Candidates are not approved lessons. They remain isolated from the canonical
 vault and ML dataset until explicit approval succeeds.
 
-### 5.3 Documentation
+### 5.3 LeLe Manager local PKPS consumer
+
+LeLe Manager completes its local consumer boundary for PKPS v1 packages: GYTE
+exports a versioned lesson package, while LeLe validates it and stages an
+ordinary TritaLeLe candidate. Package provenance is immutable and flows into
+approval; canonical identity, duplicate handling, and publication remain LeLe
+decisions.
+
+This vertical slice is not the independent PKPS project, its cross-repository
+orchestration, or the future canonical protocol. See the
+[PKPS consumer contract](docs/pkps-package.md).
+
+### 5.4 Documentation
 
 English is canonical and default. Italian is officially maintained for the
 document pairs listed in

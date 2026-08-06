@@ -11,6 +11,13 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+### Added
+- **LeLe Manager PKPS consumer boundary:** local v1 GYTE lesson-package
+  import through the existing TritaLeLe candidate staging boundary. Directory
+  and single-root ZIP packages are strictly validated, retain immutable
+  provenance, are idempotent by package ID/content hash, and never write the
+  vault or derived artifacts before explicit approval.
+
 ## [1.10.0] - 2026-08-04
 
 ### Added
