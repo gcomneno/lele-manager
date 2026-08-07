@@ -141,7 +141,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   await page.goto('/app/#/duplicates')
 
   const duplicatesPanel = page.getByRole('region', {
-    name: 'Revisione duplicati',
+    name: 'Duplicate review',
     exact: true,
   })
 
@@ -156,7 +156,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   const reviewButton = duplicatesPanel.getByRole(
     'button',
     {
-      name: 'Avvia controllo',
+      name: 'Run review',
       exact: true,
     },
   )

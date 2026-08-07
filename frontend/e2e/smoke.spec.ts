@@ -57,11 +57,11 @@ test.describe('GUI smoke', () => {
 
   test('Sistema e Vault caricano sulla fixture isolata', async ({ page }) => {
     await page.goto('/app/#/ops')
-    await expect(page.getByRole('heading', { name: 'Stato e manutenzione' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Aggiorna dal vault' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Aggiorna il modello di ricerca' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Aggiorna tutto' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Esegui controllo' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Status and maintenance' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Refresh from vault' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Update search model' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Refresh all' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Run check' })).toBeVisible()
     await expect(page.locator('.ops .error')).toHaveCount(0, { timeout: 15_000 })
 
     await page.getByRole('link', { name: 'Vault' }).click()

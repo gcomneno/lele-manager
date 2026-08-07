@@ -415,4 +415,94 @@ test.describe('GUI localization', () => {
     ).toBeVisible()
   })
 
+
+  test('localizes Duplicates and System immediately', async ({
+    page,
+  }) => {
+    await resetLocale(page)
+
+    const navigation = page.getByRole('navigation')
+
+    await navigation
+      .getByRole('link', {
+        name: 'Duplicates',
+        exact: true,
+      })
+      .click()
+
+    const duplicatesPanel = page.getByRole('region', {
+      name: 'Duplicate review',
+      exact: true,
+    })
+
+    await expect(duplicatesPanel).toBeVisible()
+
+    await expect(
+      duplicatesPanel.getByRole('button', {
+        name: 'Run review',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'System',
+        exact: true,
+      })
+      .click()
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Status and maintenance',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Update search model',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await page
+      .getByLabel('Language')
+      .selectOption('it')
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Stato e manutenzione',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Aggiorna il modello di ricerca',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Duplicati',
+        exact: true,
+      })
+      .click()
+
+    const italianDuplicates = page.getByRole('region', {
+      name: 'Revisione duplicati',
+      exact: true,
+    })
+
+    await expect(italianDuplicates).toBeVisible()
+
+    await expect(
+      italianDuplicates.getByRole('button', {
+        name: 'Avvia controllo',
+        exact: true,
+      }),
+    ).toBeVisible()
+  })
+
 })
