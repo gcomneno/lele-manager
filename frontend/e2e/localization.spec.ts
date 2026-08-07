@@ -199,4 +199,220 @@ test.describe('GUI localization', () => {
       ).toHaveAttribute('href', hash)
     }
   })
+
+  test('localizes the first route tranche in both maintained languages', async ({
+    page,
+  }) => {
+    await resetLocale(page)
+
+    const navigation = page.getByRole('navigation')
+
+    const browsePanel = page.getByRole('region', {
+      name: 'Browse',
+      exact: true,
+    })
+
+    await expect(browsePanel).toBeVisible()
+    await expect(
+      browsePanel.getByRole('button', {
+        name: 'Search',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Statistics',
+        exact: true,
+      })
+      .click()
+
+    await expect(
+      page.getByRole('region', {
+        name: 'Statistics',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Timeline',
+        exact: true,
+      })
+      .click()
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Timeline',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Month',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Vault',
+        exact: true,
+      })
+      .click()
+
+    const vaultPanel = page.getByRole('region', {
+      name: 'Vault',
+      exact: true,
+    })
+
+    await expect(vaultPanel).toBeVisible()
+    await expect(
+      vaultPanel.getByRole('button', {
+        name: 'Refresh',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'New LeLe',
+        exact: true,
+      })
+      .click()
+
+    const editorPanel = page.getByRole('region', {
+      name: 'New LeLe',
+      exact: true,
+    })
+
+    await expect(editorPanel).toBeVisible()
+    await expect(
+      editorPanel.getByRole('button', {
+        name: 'Save to vault',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await page
+      .getByLabel('Language')
+      .selectOption('it')
+
+    await expect(
+      page.getByRole('region', {
+        name: 'Nuova LeLe',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Salva nel vault',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Statistiche',
+        exact: true,
+      })
+      .click()
+
+    await expect(
+      page.getByRole('region', {
+        name: 'Statistiche',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Cronologia',
+        exact: true,
+      })
+      .click()
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Cronologia',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Mese',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await navigation
+      .getByRole('link', {
+        name: 'Esplora',
+        exact: true,
+      })
+      .click()
+
+    const italianBrowse = page.getByRole('region', {
+      name: 'Esplora',
+      exact: true,
+    })
+
+    await expect(italianBrowse).toBeVisible()
+    await expect(
+      italianBrowse.getByRole('button', {
+        name: 'Cerca',
+        exact: true,
+      }),
+    ).toBeVisible()
+  })
+
+  test('localizes Detail and shared similarity presentation immediately', async ({
+    page,
+  }) => {
+    await resetLocale(page)
+
+    const firstCard = page.locator('.lesson-card').first()
+
+    await expect(firstCard).toBeVisible({
+      timeout: 15_000,
+    })
+
+    await firstCard.click()
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Edit',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Why similar?',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await page
+      .getByLabel('Language')
+      .selectOption('it')
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Modifica',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Perché simile?',
+        exact: true,
+      }),
+    ).toBeVisible()
+  })
+
 })

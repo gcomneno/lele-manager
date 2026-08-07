@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type TimelineResponse } from '../lib/api'
   import { navigate } from '../lib/router'
+  import { formatMessage, messages } from '../lib/i18n'
 
   let groupBy = $state<'year' | 'month' | 'topic'>('month')
   let timeline = $state<TimelineResponse | null>(null)
@@ -61,21 +62,21 @@
 
 <section class="card timeline">
   <div class="head">
-    <h2>Cronologia</h2>
+    <h2>{$messages.timelineTitle}</h2>
     <div class="tabs">
-      <button class:active={groupBy === 'month'} onclick={() => (groupBy = 'month')}>Mese</button>
-      <button class:active={groupBy === 'year'} onclick={() => (groupBy = 'year')}>Anno</button>
+      <button class:active={groupBy === 'month'} onclick={() => (groupBy = 'month')}>{$messages.timelineMonth}</button>
+      <button class:active={groupBy === 'year'} onclick={() => (groupBy = 'year')}>{$messages.timelineYear}</button>
       <button class:active={groupBy === 'topic'} onclick={() => (groupBy = 'topic')}>Topic</button>
     </div>
   </div>
 
   {#if loading}
-    <p class="meta">Caricamento…</p>
+    <p class="meta">{$messages.commonLoading}</p>
   {:else if error}
     <p class="error">{error}</p>
   {:else if timeline}
     {#if timeline.buckets.length === 0}
-      <p class="meta">Nessuna LeLe nel dataset.</p>
+      <p class="meta">{$messages.timelineEmpty}</p>
     {:else}
       <ul class="buckets">
         {#each timeline.buckets as bucket}
@@ -89,7 +90,9 @@
                 disabled={!!exportingKey}
                 onclick={() => exportBucket(bucket.key, bucket.lesson_ids)}
               >
-                {exportingKey === bucket.key ? '…' : 'Esporta'}
+                {exportingKey === bucket.key
+                  ? '…'
+                  : $messages.timelineExport}
               </button>
             </div>
             <div class="bar-wrap">
@@ -103,7 +106,12 @@
                 <button type="button" onclick={() => navigate({ view: 'detail', id: lid })}>{lid}</button>
               {/each}
               {#if bucket.lesson_ids.length > 5}
-                <span class="meta">+{bucket.lesson_ids.length - 5} altre</span>
+                <span class="meta">
+                  {formatMessage(
+                    $messages.timelineMore,
+                    { count: bucket.lesson_ids.length - 5 },
+                  )}
+                </span>
               {/if}
             </div>
           </li>

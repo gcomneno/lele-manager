@@ -8,11 +8,11 @@ test.describe('brand foundation', () => {
     await expect(brand).toBeVisible()
     await expect(brand.locator('img')).toHaveAttribute('src', '/app/brand/lele-manager-mark.svg')
     const browsePanel = page.getByRole('region', {
-      name: 'Esplora',
+      name: 'Browse',
       exact: true,
     })
     const searchButton = browsePanel.getByRole('button', {
-      name: 'Cerca',
+      name: 'Search',
       exact: true,
     })
 
@@ -128,7 +128,7 @@ test('pins the maker signature to the desktop viewport across routes', async ({ 
 
   await page.getByRole('link', { name: 'Timeline' }).click()
   await expect(
-    page.getByRole('heading', { name: 'Cronologia' }),
+    page.getByRole('heading', { name: 'Timeline' }),
   ).toBeVisible()
   await expect(signature).toBeVisible()
   await expectSignatureInsideViewport()
@@ -138,7 +138,7 @@ test('pins the maker signature to the desktop viewport across routes', async ({ 
     exact: true,
   }).click()
   await expect(
-    page.getByRole('heading', { name: 'Esplora' }),
+    page.getByRole('heading', { name: 'Browse' }),
   ).toBeVisible()
   await expect(signature).toBeVisible()
   await expectSignatureInsideViewport()

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { api, type ExportSearchRequest, type Lesson } from '../lib/api'
   import { navigate } from '../lib/router'
+  import { formatMessage, messages } from '../lib/i18n'
   import LessonCard from '../components/LessonCard.svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
@@ -53,7 +54,10 @@
       const markdown = (await api.exportSearch(buildSearchBody(), 'markdown')) as string
       const slug = q.trim().replace(/\s+/g, '-').slice(0, 40) || 'browse'
       downloadMarkdown(markdown, `lele-export-${slug}.md`)
-      status = `Esportate ${lessons.length} LeLe → Markdown`
+      status = formatMessage(
+        $messages.browseExported,
+        { count: lessons.length },
+      )
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
     } finally {
@@ -64,10 +68,13 @@
   async function runSearch() {
     loading = true
     error = ''
-    status = 'Ricerca…'
+    status = $messages.browseSearching
     try {
       lessons = await api.searchLessons(buildSearchBody())
-      status = `${lessons.length} risultati`
+      status = formatMessage(
+        $messages.browseResults,
+        { count: lessons.length },
+      )
     } catch (e) {
       lessons = []
       status = ''
@@ -80,10 +87,13 @@
   async function listAll() {
     loading = true
     error = ''
-    status = 'Caricamento…'
+    status = $messages.commonLoading
     try {
       lessons = await api.listLessons(Number(limit) || 50)
-      status = `${lessons.length} lezioni`
+      status = formatMessage(
+        $messages.browseLessons,
+        { count: lessons.length },
+      )
     } catch (e) {
       lessons = []
       status = ''
@@ -107,30 +117,30 @@
 </script>
 
 <div class="browse">
-  <Panel title="Esplora" class="filters">
+  <Panel title={$messages.routeBrowseTitle} class="filters">
     <div class="grid browse-filter-grid" data-testid="browse-filter-grid">
       <label>
-        <FieldLabel label="Query" />
+        <FieldLabel label={$messages.fieldQuery} />
         <input bind:value={q} placeholder="pytest, git, pandas…" onkeydown={(e) => e.key === 'Enter' && runSearch()} />
       </label>
       <label>
-        <FieldLabel label="Topic" />
+        <FieldLabel label={$messages.fieldTopic} />
         <input bind:value={topic} placeholder="python" />
       </label>
       <label>
-        <FieldLabel label="Source" />
+        <FieldLabel label={$messages.fieldSource} />
         <input bind:value={source} placeholder="note" />
       </label>
       <label>
-        <FieldLabel label="Importance ≥" />
+        <FieldLabel label={$messages.browseImportanceMin} />
         <input type="number" min="1" max="5" bind:value={importanceGte} />
       </label>
       <label>
-        <FieldLabel label="Importance ≤" />
+        <FieldLabel label={$messages.browseImportanceMax} />
         <input type="number" min="1" max="5" bind:value={importanceLte} />
       </label>
       <label>
-        <FieldLabel label="Limit" />
+        <FieldLabel label={$messages.browseLimit} />
         <input type="number" min="1" max="500" bind:value={limit} />
       </label>
     </div>
@@ -143,7 +153,7 @@
         onclick={runSearch}
         disabled={loading}
       >
-        Cerca
+        {$messages.browseSearch}
       </Button>
       <Button
         variant="secondary"
@@ -152,7 +162,7 @@
         disabled={loading}
         class="lele-secondary-button"
       >
-        Lista tutte
+        {$messages.browseListAll}
       </Button>
       <Button
         variant="secondary"
@@ -161,7 +171,9 @@
         disabled={loading || exporting || lessons.length === 0}
         class="lele-secondary-button"
       >
-        {exporting ? 'Esporto…' : 'Esporta .md'}
+        {exporting
+          ? $messages.browseExporting
+          : $messages.browseExportMarkdown}
       </Button>
       <Button
         variant="secondary"
@@ -169,7 +181,7 @@
         onclick={reset}
         class="lele-secondary-button"
       >
-        Reset
+        {$messages.browseReset}
       </Button>
     </FormActions>
 
@@ -193,9 +205,9 @@
 
   <section class="results">
     {#if loading}
-      <p class="meta">Caricamento…</p>
+      <p class="meta">{$messages.commonLoading}</p>
     {:else if lessons.length === 0}
-      <p class="meta">Nessuna LeLe trovata.</p>
+      <p class="meta">{$messages.browseEmpty}</p>
     {:else}
       {#each lessons as lesson}
         <LessonCard

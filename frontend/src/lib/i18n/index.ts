@@ -44,6 +44,19 @@ export const messages = derived(
   ($locale) => dictionaries[$locale],
 )
 
+export function formatMessage(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (message, [key, value]) =>
+      message
+        .split(`{${key}}`)
+        .join(String(value)),
+    template,
+  )
+}
+
 export function setLocale(value: string): Locale {
   const nextLocale = isLocale(value)
     ? value

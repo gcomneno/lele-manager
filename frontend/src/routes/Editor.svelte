@@ -13,6 +13,7 @@
   } from '../lib/api'
   import { stripFrontmatter } from '../lib/markdown'
   import { navigate } from '../lib/router'
+  import { formatMessage, messages } from '../lib/i18n'
   import SimilarPanel from '../components/SimilarPanel.svelte'
 
   interface Props {
@@ -37,6 +38,7 @@
   let loadError = $state('')
   let saving = $state(false)
   let saveMsg = $state('')
+  let saveSucceeded = $state(false)
 
   let topK = $state(5)
   let minScore = $state(0.1)
@@ -153,16 +155,19 @@
 
   async function save() {
     if (!body.trim()) {
-      saveMsg = 'Il body non può essere vuoto.'
+      saveSucceeded = false
+      saveMsg = $messages.editorBodyRequired
       return
     }
 
     if (!topic.trim()) {
-      saveMsg = 'Topic obbligatorio.'
+      saveSucceeded = false
+      saveMsg = $messages.editorTopicRequired
       return
     }
 
     saving = true
+    saveSucceeded = false
     saveMsg = ''
 
     try {
@@ -183,12 +188,17 @@
         })
       }
 
-      saveMsg = `Salvato nel vault: ${lesson.id}`
+      saveSucceeded = true
+      saveMsg = formatMessage(
+        $messages.editorSaved,
+        { id: lesson.id },
+      )
       navigate({
         view: 'detail',
         id: lesson.id,
       })
     } catch (e) {
+      saveSucceeded = false
       saveMsg = e instanceof Error
         ? e.message
         : String(e)
@@ -208,7 +218,9 @@
 
 <div class="editor-layout">
   <Panel
-    title={id ? 'Modifica LeLe' : 'Nuova LeLe'}
+    title={id
+      ? $messages.editorEditTitle
+      : $messages.editorNewTitle}
     class="editor-pane"
   >
     {#snippet actions()}
@@ -217,7 +229,9 @@
         onclick={save}
         disabled={saving}
       >
-        {saving ? 'Salvataggio…' : 'Salva nel vault'}
+        {saving
+          ? $messages.editorSaving
+          : $messages.editorSaveVault}
       </Button>
     {/snippet}
 
@@ -232,9 +246,7 @@
     {#if saveMsg}
       <FormStatus
         message={saveMsg}
-        tone={saveMsg.startsWith('Salvato')
-          ? 'success'
-          : 'error'}
+        tone={saveSucceeded ? 'success' : 'error'}
         style="--giu-form-status-padding: var(--space-2) var(--space-3)"
       />
     {/if}
@@ -244,13 +256,13 @@
         <FieldLabel label="ID" />
         <input
           bind:value={lessonId}
-          placeholder="auto (topic/data.slug)"
+          placeholder={$messages.editorIdPlaceholder}
           readonly={!!id}
         />
       </label>
 
       <label>
-        <FieldLabel label="Topic" />
+        <FieldLabel label={$messages.fieldTopic} />
         <input
           bind:value={topic}
           oninput={scheduleSuggest}
@@ -258,7 +270,7 @@
       </label>
 
       <label>
-        <FieldLabel label="Source" />
+        <FieldLabel label={$messages.fieldSource} />
         <input
           bind:value={source}
           oninput={scheduleSuggest}
@@ -266,7 +278,7 @@
       </label>
 
       <label>
-        <FieldLabel label="Importance" />
+        <FieldLabel label={$messages.fieldImportance} />
         <input
           type="number"
           min="1"
@@ -277,7 +289,7 @@
       </label>
 
       <label>
-        <FieldLabel label="Date" />
+        <FieldLabel label={$messages.fieldDate} />
         <input
           bind:value={date}
           oninput={scheduleSuggest}
@@ -285,7 +297,7 @@
       </label>
 
       <label>
-        <FieldLabel label="Tags" />
+        <FieldLabel label={$messages.fieldTags} />
         <input
           bind:value={tags}
           placeholder="python, pytest"
@@ -294,7 +306,7 @@
       </label>
 
       <label class="wide">
-        <FieldLabel label="Title" />
+        <FieldLabel label={$messages.fieldTitle} />
         <input
           bind:value={title}
           oninput={scheduleSuggest}
@@ -303,12 +315,12 @@
     </div>
 
     <label class="body-label">
-      <FieldLabel label="Body (Markdown)" />
+      <FieldLabel label={$messages.editorBodyLabel} />
       <textarea
         rows="16"
         bind:value={body}
         oninput={scheduleSuggest}
-        placeholder="Scrivi la lesson learned…"
+        placeholder={$messages.editorBodyPlaceholder}
       ></textarea>
     </label>
 
@@ -339,7 +351,7 @@
   </Panel>
 
   <SimilarPanel
-    title="Simili live"
+    title={$messages.editorLiveSimilar}
     items={similar}
     meta={similarMeta}
     explain={true}

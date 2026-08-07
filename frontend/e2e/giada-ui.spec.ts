@@ -6,7 +6,7 @@ test('renders Browse with direct Giada UI primitives', async ({ page }) => {
   const panel = page.locator('.giu-panel')
   await expect(panel).toHaveCount(1)
   await expect(
-    panel.getByRole('heading', { name: 'Esplora', exact: true }),
+    panel.getByRole('heading', { name: 'Browse', exact: true }),
   ).toBeVisible()
 
   const buttons = panel.locator('button[data-giu-variant]')
@@ -32,7 +32,7 @@ test('renders Browse with direct Giada UI primitives', async ({ page }) => {
 
   const resultStatus = panel.getByRole('status')
   await expect(resultStatus).toBeVisible()
-  await expect(resultStatus).toHaveText('4 risultati')
+  await expect(resultStatus).toHaveText('4 results')
   await expect(resultStatus).toHaveCSS(
     'background-color',
     'rgba(0, 0, 0, 0)',
@@ -45,7 +45,7 @@ test('renders Stats and Vault with Giada UI primitives', async ({
   await page.goto('/app/#/stats')
 
   const statsPanel = page.getByRole('region', {
-    name: 'Statistiche',
+    name: 'Statistics',
     exact: true,
   })
 
@@ -99,7 +99,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   await expect(detailPanel).toBeVisible()
 
   const editButton = detailPanel.getByRole('button', {
-    name: 'Modifica',
+    name: 'Edit',
     exact: true,
   })
 
@@ -115,7 +115,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   await editButton.click()
 
   const editorPanel = page.getByRole('region', {
-    name: 'Modifica LeLe',
+    name: 'Edit LeLe',
     exact: true,
   })
 
@@ -125,7 +125,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   ).toHaveCount(10)
 
   const saveButton = editorPanel.getByRole('button', {
-    name: 'Salva nel vault',
+    name: 'Save to vault',
     exact: true,
   })
 
