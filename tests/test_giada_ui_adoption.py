@@ -138,7 +138,7 @@ def test_detail_editor_and_duplicate_controls_use_giada_ui() -> None:
 
     assert "from 'giadaware-ui-components'" in duplicates
     assert "from 'giadaware-ui-components/studio'" in duplicates
-    assert '<Panel title="Revisione duplicati"' in duplicates
+    assert '<Panel title={$messages.duplicatesTitle}' in duplicates
     assert duplicates.count("<FieldLabel") == 3
     assert "<FormActions" in duplicates
     assert duplicates.count("<Button") == 1
