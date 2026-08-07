@@ -34,28 +34,28 @@ const repeatedIdReport = {
 test.describe('duplicate review', () => {
   test('reviews an exact duplicate with both lessons visible', async ({ page }) => {
     await page.goto('/app/#/duplicates')
-    await expect(page.getByRole('heading', { name: 'Revisione duplicati' })).toBeVisible()
-    await page.getByRole('button', { name: 'Avvia controllo' }).click()
+    await expect(page.getByRole('heading', { name: 'Duplicate review' })).toBeVisible()
+    await page.getByRole('button', { name: 'Run review' }).click()
 
-    const exactPair = page.locator('.duplicate-pair').filter({ hasText: 'duplicato esatto' }).first()
+    const exactPair = page.locator('.duplicate-pair').filter({ hasText: 'exact duplicate' }).first()
     await expect(exactPair).toBeVisible({ timeout: 15_000 })
     await expect(exactPair.getByText('exact_text', { exact: false })).toBeVisible()
     await expect(exactPair.getByText('git branching merge rebase strategies')).toHaveCount(2)
-    await expect(page.getByText('Coppie totali prima del limite')).toBeVisible()
-    await expect(page.getByText('Coppie esatte prima del limite')).toBeVisible()
-    await expect(page.getByText('Somiglianze prima del limite')).toBeVisible()
-    await expect(page.getByText('Numero massimo impostato')).toBeVisible()
+    await expect(page.getByText('Total pairs before limit')).toBeVisible()
+    await expect(page.getByText('Exact pairs before limit')).toBeVisible()
+    await expect(page.getByText('Similarities before limit')).toBeVisible()
+    await expect(page.getByText('Applied maximum count')).toBeVisible()
     await expect(page.locator('.summary').getByText('100', { exact: true })).toBeVisible()
   })
 
   test('reviews near duplicates from the real fixture API', async ({ page }) => {
     await page.goto('/app/#/duplicates')
-    await page.getByLabel('Soglia minima').fill('0')
-    await page.getByRole('button', { name: 'Avvia controllo' }).click()
+    await page.getByLabel('Minimum score').fill('0')
+    await page.getByRole('button', { name: 'Run review' }).click()
 
-    const nearPair = page.locator('.duplicate-pair').filter({ hasText: 'possibile somiglianza' }).first()
+    const nearPair = page.locator('.duplicate-pair').filter({ hasText: 'possible similarity' }).first()
     await expect(nearPair).toBeVisible({ timeout: 15_000 })
-    await expect(nearPair.getByText(/Punteggio 0\./)).toBeVisible()
+    await expect(nearPair.getByText(/Score 0\./)).toBeVisible()
   })
 
   test('keeps records with a repeated ID independently inspectable by position', async ({ page }) => {
@@ -63,7 +63,7 @@ test.describe('duplicate review', () => {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(repeatedIdReport) })
     })
     await page.goto('/app/#/duplicates')
-    await page.getByRole('button', { name: 'Avvia controllo' }).click()
+    await page.getByRole('button', { name: 'Run review' }).click()
 
     const pair = page.locator('.duplicate-pair')
     await expect(pair.getByText('First record with the repeated ID.')).toBeVisible()
@@ -78,11 +78,11 @@ test.describe('duplicate review', () => {
     await rm(modelPath)
     try {
       await page.goto('/app/#/duplicates')
-      await page.getByLabel('Solo duplicati esatti').check()
-      await page.getByRole('button', { name: 'Avvia controllo' }).click()
+      await page.getByLabel('Exact duplicates only').check()
+      await page.getByRole('button', { name: 'Run review' }).click()
 
-      await expect(page.getByText('Riepilogo del controllo')).toBeVisible({ timeout: 15_000 })
-      await expect(page.locator('.summary').getByText('Sì', { exact: true })).toBeVisible()
+      await expect(page.getByText('Review summary')).toBeVisible({ timeout: 15_000 })
+      await expect(page.locator('.summary').getByText('Yes', { exact: true })).toBeVisible()
       await expect(page.locator('.error-state')).toHaveCount(0)
     } finally {
       await writeFile(modelPath, model)
@@ -105,10 +105,10 @@ test.describe('duplicate review', () => {
       })
     })
     await page.goto('/app/#/duplicates')
-    await page.getByRole('button', { name: 'Avvia controllo' }).click()
+    await page.getByRole('button', { name: 'Run review' }).click()
 
-    await expect(page.getByRole('heading', { name: 'Nessun duplicato trovato' })).toBeVisible()
-    await expect(page.getByText('Coppie mostrate')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'No duplicates found' })).toBeVisible()
+    await expect(page.getByText('Pairs shown')).toBeVisible()
   })
 
   test('rejects an invalid minimum score without requesting duplicates or keeping a stale report', async ({ page }) => {
@@ -118,15 +118,15 @@ test.describe('duplicate review', () => {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(repeatedIdReport) })
     })
     await page.goto('/app/#/duplicates')
-    await page.getByRole('button', { name: 'Avvia controllo' }).click()
-    await expect(page.getByText('Riepilogo del controllo')).toBeVisible()
+    await page.getByRole('button', { name: 'Run review' }).click()
+    await expect(page.getByText('Review summary')).toBeVisible()
 
-    await page.getByLabel('Soglia minima').fill('1.1')
-    await page.getByRole('button', { name: 'Aggiorna controllo' }).click()
+    await page.getByLabel('Minimum score').fill('1.1')
+    await page.getByRole('button', { name: 'Refresh review' }).click()
 
-    await expect(page.getByText('La soglia minima deve essere un numero compreso tra 0 e 1.')).toBeVisible()
-    await expect(page.getByText('Riepilogo del controllo')).toHaveCount(0)
-    await expect(page.getByText('Numero massimo impostato')).toHaveCount(0)
+    await expect(page.getByText('Minimum score must be a number between 0 and 1.')).toBeVisible()
+    await expect(page.getByText('Review summary')).toHaveCount(0)
+    await expect(page.getByText('Applied maximum count')).toHaveCount(0)
     expect(duplicateRequests).toBe(1)
   })
 
@@ -135,10 +135,10 @@ test.describe('duplicate review', () => {
     await rm(modelPath)
     try {
       await page.goto('/app/#/duplicates')
-      await page.getByRole('button', { name: 'Avvia controllo' }).click()
+      await page.getByRole('button', { name: 'Run review' }).click()
 
-      await expect(page.getByRole('heading', { name: 'Modello di somiglianza non disponibile' })).toBeVisible({ timeout: 15_000 })
-      await expect(page.getByText('Controlla solo i duplicati esatti', { exact: false })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Similarity model unavailable' })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText('Check exact duplicates only', { exact: false })).toBeVisible()
     } finally {
       await writeFile(modelPath, model)
     }

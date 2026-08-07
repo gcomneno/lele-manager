@@ -68,6 +68,13 @@ test.describe('GUI documentation screenshots', () => {
   test('capture released views from the isolated fixture', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
 
+    // Documentation screenshots intentionally use the maintained Italian GUI.
+    // Product default remains English; this fixture makes its locale explicit
+    // so screenshots do not depend on browser state or default-locale policy.
+    await page.addInitScript(() => {
+      window.localStorage.setItem('lele-manager.locale', 'it')
+    })
+
     await page.goto('/app/#/')
     await expect(page.getByRole('heading', { name: 'Esplora' })).toBeVisible()
     await expect(page.locator('.lesson-card').first()).toBeVisible()
@@ -81,7 +88,7 @@ test.describe('GUI documentation screenshots', () => {
 
     await page.locator('.lesson-card').first().click()
     await expect(
-      page.getByRole('heading', { name: 'Perché simile?' }),
+      page.getByRole('heading', { name: 'Perché è simile?' }),
     ).toBeVisible()
     await prepareDocumentationScreenshot(page)
     await page.screenshot({
@@ -98,12 +105,17 @@ test.describe('GUI documentation screenshots', () => {
     await page.getByPlaceholder('Scrivi la lesson learned…').fill(
       'python pytest fixtures and deterministic tests',
     )
-    await page.waitForTimeout(800)
+    await page
+      .getByRole('button', {
+        name: 'Verifica similarità',
+        exact: true,
+      })
+      .click()
 
     const editorSimilarPanel = page.locator('.similar-panel')
     await expect(editorSimilarPanel).toBeVisible()
     await expect(
-      editorSimilarPanel.getByRole('heading', { name: 'Perché simile?' }),
+      editorSimilarPanel.getByRole('heading', { name: 'Perché è simile?' }),
     ).toBeVisible()
     await expect(editorSimilarPanel.locator('.error')).toHaveCount(0)
     await expect(
@@ -148,7 +160,7 @@ test.describe('GUI documentation screenshots', () => {
       page.getByRole('heading', { name: 'Vault' }),
     ).toBeVisible()
     await expect(
-      page.getByRole('button', { name: 'Refresh' }),
+      page.getByRole('button', { name: 'Aggiorna' }),
     ).toBeEnabled()
     await expect(
       page.getByText('Caricamento…'),
@@ -186,7 +198,7 @@ test.describe('GUI documentation screenshots', () => {
       page.getByRole('button', { name: 'Aggiorna stato' }),
     ).toBeEnabled()
     await page.getByRole('button', { name: 'Esegui controllo' }).click()
-    await expect(page.getByText('Vault healthy')).toBeVisible()
+    await expect(page.getByText('Vault integro')).toBeVisible()
     await expect(
       page.getByRole('button', { name: 'Esegui controllo' }),
     ).toBeEnabled()
@@ -199,19 +211,26 @@ test.describe('GUI documentation screenshots', () => {
     })
 
     await page.goto('/app/#/tritalele')
-    await expect(
-      page.getByRole('heading', { name: 'Raccogli nuove LeLe' }),
-    ).toBeVisible()
-    await page
+
+    const tritaAuthoring = page.getByRole('region', {
+      name: 'Raccogli nuove LeLe',
+      exact: true,
+    })
+
+    await expect(tritaAuthoring).toBeVisible()
+    await tritaAuthoring
       .getByLabel('Nome della fonte')
       .fill('documentation-example.txt')
-    await page
+    await tritaAuthoring
       .getByLabel('Testo sorgente')
       .fill(
         'Deterministic documentation example for the TritaLeLe preview.',
       )
-    await page
-      .getByRole('button', { name: 'Crea anteprima' })
+    await tritaAuthoring
+      .getByRole('button', {
+        name: 'Crea anteprima',
+        exact: true,
+      })
       .click()
     await expect(
       page.getByTestId('ingestion-preview'),

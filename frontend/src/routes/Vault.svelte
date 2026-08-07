@@ -9,6 +9,7 @@
   } from 'giadaware-ui-components/studio'
   import { api, type VaultTreeResponse } from '../lib/api'
   import { navigate } from '../lib/router'
+  import { formatMessage, messages } from '../lib/i18n'
   import VaultTree from '../components/VaultTree.svelte'
 
   let treeData = $state<VaultTreeResponse | null>(null)
@@ -25,7 +26,10 @@
       const status = await api.vaultStatus()
 
       if (!status.exists) {
-        error = `Vault non trovato: ${status.vault_dir}`
+        error = formatMessage(
+          $messages.vaultNotFound,
+          { path: status.vault_dir },
+        )
         treeData = null
         return
       }
@@ -40,7 +44,7 @@
   }
 
   async function doImport() {
-    importMsg = 'Import…'
+    importMsg = $messages.vaultImporting
     importTone = 'info'
 
     try {
@@ -57,7 +61,7 @@
   onMount(load)
 </script>
 
-<Panel title="Vault">
+<Panel title={$messages.navVault}>
   <FormActions
     class="vault-actions"
     style="margin-bottom: var(--space-2)"
@@ -69,14 +73,14 @@
       onclick={load}
       disabled={loading}
     >
-      Refresh
+      {$messages.vaultRefresh}
     </Button>
 
     <Button
       size="compact"
       onclick={doImport}
     >
-      Import → JSONL
+      {$messages.vaultImportJsonl}
     </Button>
 
     <Button
@@ -85,7 +89,7 @@
       class="lele-secondary-button"
       onclick={() => navigate({ view: 'editor' })}
     >
-      + Nuova
+      {$messages.vaultNew}
     </Button>
   </FormActions>
 
@@ -94,7 +98,7 @@
   {/if}
 
   {#if loading}
-    <p class="meta">Caricamento…</p>
+    <p class="meta">{$messages.commonLoading}</p>
   {:else if error}
     <FormStatus
       message={error}

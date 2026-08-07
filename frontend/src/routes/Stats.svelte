@@ -6,6 +6,7 @@
     Surface,
   } from 'giadaware-ui-components/studio'
   import { api, type StatsSummaryResponse } from '../lib/api'
+  import { messages } from '../lib/i18n'
 
   let stats = $state<StatsSummaryResponse | null>(null)
   let loading = $state(true)
@@ -22,9 +23,9 @@
   })
 </script>
 
-<Panel title="Statistiche" class="stats">
+<Panel title={$messages.statsTitle} class="stats">
   {#if loading}
-    <p class="meta">Caricamento…</p>
+    <p class="meta">{$messages.commonLoading}</p>
   {:else if error}
     <FormStatus
       message={error}
@@ -44,27 +45,27 @@
       </Surface>
 
       <Surface class="kpi">
-        <span class="label">Tag unici</span>
+        <span class="label">{$messages.statsUniqueTags}</span>
         <strong>{stats.n_unique_tags}</strong>
       </Surface>
 
       <Surface class="kpi">
-        <span class="label">Lunghezza media</span>
-        <strong>{stats.avg_text_length} ch</strong>
+        <span class="label">{$messages.statsAverageLength}</span>
+        <strong>{stats.avg_text_length} {$messages.statsCharacters}</strong>
       </Surface>
 
       <Surface class="kpi">
-        <span class="label">Importance media</span>
+        <span class="label">{$messages.statsAverageImportance}</span>
         <strong>{stats.avg_importance ?? '—'}</strong>
       </Surface>
     </div>
 
     <div class="grid">
       <div>
-        <h3>Per topic</h3>
+        <h3>{$messages.statsByTopic}</h3>
 
         {#if stats.by_topic.length === 0}
-          <p class="meta">Nessun dato.</p>
+          <p class="meta">{$messages.statsNoData}</p>
         {:else}
           <ul class="bars">
             {#each stats.by_topic as row}
@@ -84,10 +85,10 @@
       </div>
 
       <div>
-        <h3>Tag più comuni</h3>
+        <h3>{$messages.statsTopTags}</h3>
 
         {#if stats.top_tags.length === 0}
-          <p class="meta">Nessun tag.</p>
+          <p class="meta">{$messages.statsNoTags}</p>
         {:else}
           <ul class="tags">
             {#each stats.top_tags as row}

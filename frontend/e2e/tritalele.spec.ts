@@ -2,6 +2,13 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 
 const API = '/api/v1/tritalele'
 
+function ingestionRegion(page: Page) {
+  return page.getByRole('region', {
+    name: 'Collect new LeLe',
+    exact: true,
+  })
+}
+
 async function countVaultFiles(page: Page): Promise<number> {
   const response = await page.request.get('/vault/tree')
   expect(response.ok()).toBeTruthy()
@@ -63,30 +70,30 @@ async function stageAccepted(
 test.describe.serial('TritaLeLe GUI', () => {
   test('plain text: preview, stage, revise, accept and one explicit approval', async ({ page }) => {
     await page.goto('/app/#/tritalele')
-    await expect(page.getByRole('heading', { name: 'Raccogli nuove LeLe' })).toBeVisible()
-    await expect(page.getByText('Nessuna selezione.')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Collect new LeLe' })).toBeVisible()
+    await expect(page.getByText('No selection.')).toBeVisible()
 
     const initialVaultFiles = await countVaultFiles(page)
 
-    await page.getByLabel('Nome della fonte').fill('pasted-happy-path.txt')
-    const source = page.getByLabel('Testo sorgente')
+    await ingestionRegion(page).getByLabel('Source name').fill('pasted-happy-path.txt')
+    const source = ingestionRegion(page).getByLabel('Source text')
     await source.fill('Plain text incollato per il workflow TritaLeLe deterministico.')
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
+    await page.getByRole('button', { name: 'Create preview' }).click()
     await expect(page.getByTestId('ingestion-preview')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Aggiungi alla raccolta' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Add to collection' })).toBeEnabled()
 
     await source.fill('Plain text incollato modificato: la preview precedente non è più valida.')
     await expect(page.getByTestId('ingestion-preview')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Aggiungi alla raccolta' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Add to collection' })).toBeDisabled()
 
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
-    await page.getByRole('button', { name: 'Aggiungi alla raccolta' }).click()
-    await expect(page.getByText(/Staging completato: 1 created/)).toBeVisible()
+    await page.getByRole('button', { name: 'Create preview' }).click()
+    await page.getByRole('button', { name: 'Add to collection' }).click()
+    await expect(page.getByText(/Staging completed/)).toBeVisible()
     expect(await countVaultFiles(page)).toBe(initialVaultFiles)
 
     await page.locator('.candidate-card').filter({ hasText: 'pasted-happy-path.txt' }).click()
-    await expect(page.getByRole('heading', { name: 'Dettaglio della LeLe' })).toBeVisible()
-    await page.getByLabel('Testo proposto').fill(
+    await expect(page.getByRole('heading', { name: 'LeLe details' })).toBeVisible()
+    await page.getByLabel('Proposed text').fill(
       'Testo rivisto in Markdown con **contenuto canonico** e provenienza intatta.',
     )
     await page.getByLabel('Topic', { exact: true }).fill('e2e')
@@ -95,15 +102,15 @@ test.describe.serial('TritaLeLe GUI', () => {
     await page.getByLabel('Date', { exact: true }).fill('2026-07-22')
     await page.getByLabel('Tags', { exact: true }).fill('e2e, tritalele')
     await page.getByLabel('Title', { exact: true }).fill('TritaLeLe approval')
-    await page.getByLabel('Motivo revisione (opzionale)').fill('editorial pass')
-    await page.getByRole('button', { name: 'Salva revisione' }).click()
-    await expect(page.getByText(/Revisione 1 salvata/)).toBeVisible()
+    await page.getByLabel('Revision reason (optional)').fill('editorial pass')
+    await page.getByRole('button', { name: 'Save revision' }).click()
+    await expect(page.getByText(/Revision 1 saved/)).toBeVisible()
     await expect(page.getByTestId('approval-destination')).toContainText('e2e/')
     expect(await countVaultFiles(page)).toBe(initialVaultFiles)
 
-    await page.getByLabel(/Motivo transizione/).fill('ready')
-    await page.getByRole('button', { name: 'Accetta per revisione' }).click()
-    await expect(page.getByText(/non è ancora pubblicato/)).toBeVisible()
+    await page.getByLabel(/Transition reason/).fill('ready')
+    await page.getByRole('button', { name: 'Accept for review' }).click()
+    await expect(page.getByText(/is not published yet/)).toBeVisible()
     expect(await countVaultFiles(page)).toBe(initialVaultFiles)
 
     let approvalRequests = 0
@@ -112,21 +119,21 @@ test.describe.serial('TritaLeLe GUI', () => {
         approvalRequests += 1
       }
     })
-    await page.getByRole('button', { name: 'Approva nel vault' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Conferma approvazione canonica' })
-    await expect(dialog).toContainText('Candidato')
-    await expect(dialog).toContainText('Revisione')
+    await page.getByRole('button', { name: 'Approve to vault' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Confirm canonical approval' })
+    await expect(dialog).toContainText('Candidate')
+    await expect(dialog).toContainText('Revision')
     await expect(dialog).toContainText('Lesson ID')
-    await expect(dialog).toContainText('Path canonico')
-    await dialog.getByRole('button', { name: 'Annulla' }).click()
+    await expect(dialog).toContainText('Canonical path')
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
     expect(approvalRequests).toBe(0)
 
-    await page.getByRole('button', { name: 'Approva nel vault' }).click()
-    await page.getByRole('button', { name: 'Conferma approvazione' }).click()
+    await page.getByRole('button', { name: 'Approve to vault' }).click()
+    await page.getByRole('button', { name: 'Confirm approval' }).click()
     await expect(page.getByTestId('approval-result')).toContainText('created')
-    await expect(page.getByText(/Lesson riletta:/)).toBeVisible()
-    await expect(page.getByText(/File vault riletto:/)).toBeVisible()
+    await expect(page.getByText(/Lesson read back:/)).toBeVisible()
+    await expect(page.getByText(/Vault file read back:/)).toBeVisible()
     expect(approvalRequests).toBe(1)
     expect(await countVaultFiles(page)).toBe(initialVaultFiles + 1)
 
@@ -139,33 +146,33 @@ test.describe.serial('TritaLeLe GUI', () => {
     await page.goto('/app/#/tritalele')
     const initialVaultFiles = await countVaultFiles(page)
 
-    await page.getByLabel('File Markdown o testo').setInputFiles({
+    await ingestionRegion(page).getByLabel('Markdown or text file').setInputFiles({
       name: 'file-input.md',
       mimeType: 'text/markdown',
       buffer: Buffer.from('# File input\n\nCandidate rejected but retained.'),
     })
-    await expect(page.getByLabel('Formato del contenuto')).toHaveValue('markdown')
-    await expect(page.getByLabel('Nome della fonte')).toHaveValue('file-input.md')
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
+    await expect(ingestionRegion(page).getByLabel('Content format')).toHaveValue('markdown')
+    await expect(ingestionRegion(page).getByLabel('Source name')).toHaveValue('file-input.md')
+    await page.getByRole('button', { name: 'Create preview' }).click()
     await expect(page.getByTestId('ingestion-preview')).toBeVisible()
-    await page.getByRole('button', { name: 'Aggiungi alla raccolta' }).click()
-    await expect(page.getByText(/Staging completato: 1 created/)).toBeVisible()
+    await page.getByRole('button', { name: 'Add to collection' }).click()
+    await expect(page.getByText(/Staging completed/)).toBeVisible()
 
     await page.locator('.candidate-card').filter({ hasText: 'file-input.md' }).click()
-    await page.getByLabel(/Motivo transizione/).fill('not useful for the vault')
-    await page.getByRole('button', { name: 'Rifiuta candidato' }).click()
-    await expect(page.getByText(/resta nello staging/)).toBeVisible()
+    await page.getByLabel(/Transition reason/).fill('not useful for the vault')
+    await page.getByRole('button', { name: 'Reject candidate' }).click()
+    await expect(page.getByText(/remains in staging/)).toBeVisible()
     await expect(page.locator('.candidate-card').filter({ hasText: 'file-input.md' })).toBeVisible()
-    await expect(page.getByText('rejected → rejected')).toHaveCount(0)
-    await expect(page.getByText('staged → rejected')).toBeVisible()
+    await expect(page.getByText('Rejected → Rejected')).toHaveCount(0)
+    await expect(page.getByText('Staged → Rejected')).toBeVisible()
     await expect(page.getByText('not useful for the vault')).toBeVisible()
     expect(await countVaultFiles(page)).toBe(initialVaultFiles)
   })
 
   test('409, 422, 503 and obsolete preview responses are controlled', async ({ page }) => {
     await page.goto('/app/#/tritalele')
-    await page.getByLabel('Nome della fonte').fill('controlled-errors.txt')
-    await page.getByLabel('Testo sorgente').fill('Valid input used to exercise controlled HTTP errors.')
+    await ingestionRegion(page).getByLabel('Source name').fill('controlled-errors.txt')
+    await ingestionRegion(page).getByLabel('Source text').fill('Valid input used to exercise controlled HTTP errors.')
 
     const previewUrl = '**/api/v1/tritalele/ingestion/preview'
     await page.route(previewUrl, (route) =>
@@ -175,8 +182,8 @@ test.describe.serial('TritaLeLe GUI', () => {
         body: JSON.stringify({ detail: { code: 'ingestion_conflict', message: 'Conflict.' } }),
       }),
     )
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
-    await expect(page.getByText(/Conflitto \(409 · ingestion_conflict\)/)).toBeVisible()
+    await page.getByRole('button', { name: 'Create preview' }).click()
+    await expect(page.getByText(/Conflict \(409 · ingestion_conflict\)/)).toBeVisible()
     await page.unroute(previewUrl)
 
     await page.route(previewUrl, (route) =>
@@ -186,8 +193,8 @@ test.describe.serial('TritaLeLe GUI', () => {
         body: JSON.stringify({ detail: [{ loc: ['body'], msg: 'invalid', type: 'value_error' }] }),
       }),
     )
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
-    await expect(page.getByText(/Dati non validi \(422\)/)).toBeVisible()
+    await page.getByRole('button', { name: 'Create preview' }).click()
+    await expect(page.getByText(/Invalid data \(422\)/)).toBeVisible()
     await page.unroute(previewUrl)
 
     await page.route(previewUrl, (route) =>
@@ -199,19 +206,19 @@ test.describe.serial('TritaLeLe GUI', () => {
         }),
       }),
     )
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
-    await expect(page.getByText(/Errore operativo \(503 · candidate_storage_unavailable\)/)).toBeVisible()
+    await page.getByRole('button', { name: 'Create preview' }).click()
+    await expect(page.getByText(/Operational error \(503 · candidate_storage_unavailable\)/)).toBeVisible()
     await page.unroute(previewUrl)
 
     await page.route(previewUrl, async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 300))
       await route.continue()
     })
-    await page.getByRole('button', { name: 'Crea anteprima' }).click()
-    await page.getByLabel('Testo sorgente').fill('Changed while the preview request is still running.')
+    await page.getByRole('button', { name: 'Create preview' }).click()
+    await ingestionRegion(page).getByLabel('Source text').fill('Changed while the preview request is still running.')
     await page.waitForTimeout(500)
     await expect(page.getByTestId('ingestion-preview')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Aggiungi alla raccolta' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Add to collection' })).toBeDisabled()
     await page.unroute(previewUrl)
   })
 
@@ -246,10 +253,10 @@ test.describe.serial('TritaLeLe GUI', () => {
 
     await page.goto('/app/#/tritalele')
     await page.locator('.candidate-card').filter({ hasText: 'partial-refresh.txt' }).click()
-    await page.getByRole('button', { name: 'Approva nel vault' }).click()
-    await page.getByRole('button', { name: 'Conferma approvazione' }).click()
+    await page.getByRole('button', { name: 'Approve to vault' }).click()
+    await page.getByRole('button', { name: 'Confirm approval' }).click()
     await expect(page.getByText(/partial_refresh/).first()).toBeVisible()
-    await expect(page.getByText('Dettagli di recupero')).toBeVisible()
-    await expect(page.getByLabel('Read-back approvazione')).toBeVisible()
+    await expect(page.getByText('Recovery details')).toBeVisible()
+    await expect(page.getByLabel('Approval read-back')).toBeVisible()
   })
 })

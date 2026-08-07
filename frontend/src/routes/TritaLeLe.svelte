@@ -14,9 +14,66 @@
     type VaultTreeNode,
   } from '../lib/api'
   import { renderMarkdown } from '../lib/markdown'
+  import { formatMessage, messages } from '../lib/i18n'
   import CandidateCard from '../components/CandidateCard.svelte'
 
   type ReadBackState = 'idle' | 'loading' | 'ok' | 'error'
+
+  function candidateStateLabel(state: CandidateState): string {
+    switch (state) {
+      case 'staged':
+        return $messages.tritaleleStateStaged
+      case 'in_review':
+        return $messages.tritaleleStateInReview
+      case 'rejected':
+        return $messages.tritaleleStateRejected
+      case 'approved':
+        return $messages.tritaleleStateApproved
+      default:
+        return state
+    }
+  }
+
+  function sourceKindLabel(kind: SourceKind): string {
+    switch (kind) {
+      case 'plain_text':
+        return $messages.tritaleleSourceKindPlainText
+      case 'markdown':
+        return $messages.tritaleleSourceKindMarkdown
+      case 'stdin':
+        return $messages.tritaleleSourceKindStdin
+      case 'in_memory':
+        return $messages.tritaleleSourceKindMemory
+      default:
+        return kind
+    }
+  }
+
+  function reviewActionLabel(action: string): string {
+    switch (action) {
+      case 'revise':
+        return $messages.tritaleleActionRevise
+      case 'accept':
+        return $messages.tritaleleActionAccept
+      case 'reject':
+        return $messages.tritaleleActionReject
+      case 'approve':
+        return $messages.tritaleleActionApprove
+      default:
+        return action
+    }
+  }
+
+  function approvalOutcomeLabel(outcome: string): string {
+    switch (outcome) {
+      case 'created':
+        return $messages.tritaleleOutcomeCreated
+      case 'identical':
+        return $messages.tritaleleOutcomeIdentical
+      default:
+        return outcome
+    }
+  }
 
   let sourceContent = $state('')
   let sourceKind = $state<SourceKind>('plain_text')
@@ -128,32 +185,67 @@
       invalidatePreview()
     } catch {
       if (request !== fileRequest) return
-      ingestionError = 'Impossibile leggere il file selezionato.'
+      ingestionError = $messages.tritaleleFileReadError
     }
   }
 
   function displayError(error: unknown, context: string): string {
     if (!(error instanceof ApiError)) {
-      return `${context}: ${error instanceof Error ? error.message : String(error)}`
+      return formatMessage(
+        $messages.tritaleleContextError,
+        {
+          context,
+          error:
+            error instanceof Error
+              ? error.message
+              : String(error),
+        },
+      )
     }
+
     if (error.status === 409) {
-      return `Conflitto (409${error.code ? ` · ${error.code}` : ''}). Ricarica il candidato e riprova.`
+      return formatMessage(
+        $messages.tritaleleConflict,
+        {
+          code: error.code ? ` · ${error.code}` : '',
+        },
+      )
     }
+
     if (error.status === 422) {
-      return 'Dati non validi (422). Controlla i campi della richiesta.'
+      return $messages.tritaleleInvalidData
     }
+
     if (error.status === 503) {
-      return `Errore operativo (503${error.code ? ` · ${error.code}` : ''}). I dati già persistiti non vengono nascosti.`
+      return formatMessage(
+        $messages.tritaleleOperationalError,
+        {
+          code: error.code ? ` · ${error.code}` : '',
+        },
+      )
     }
+
     if (error.status === 400) {
-      return `Richiesta non valida${error.code ? ` (${error.code})` : ''}.`
+      return formatMessage(
+        $messages.tritaleleInvalidRequest,
+        {
+          code: error.code ? ` (${error.code})` : '',
+        },
+      )
     }
-    return `${context}: ${error.message}`
+
+    return formatMessage(
+      $messages.tritaleleContextError,
+      {
+        context,
+        error: error.message,
+      },
+    )
   }
 
   async function runPreview() {
     if (!sourceContent.trim() || !logicalName.trim()) {
-      ingestionError = 'Testo sorgente e nome logico sono obbligatori.'
+      ingestionError = $messages.tritaleleSourceRequired
       return
     }
     const request = ++previewRequest
@@ -170,7 +262,10 @@
       if (request !== previewRequest || version !== inputVersion) return
       preview = null
       previewVersion = -1
-      ingestionError = displayError(error, 'Anteprima non riuscita')
+      ingestionError = displayError(
+        error,
+        $messages.tritalelePreviewFailed,
+      )
     } finally {
       if (request === previewRequest && version === inputVersion) previewLoading = false
     }
@@ -178,7 +273,7 @@
 
   async function runStage() {
     if (!preview || previewVersion !== inputVersion) {
-      ingestionError = 'Genera una nuova anteprima prima di creare lo staging.'
+      ingestionError = $messages.tritalelePreviewRequired
       return
     }
     const request = ++stageRequest
@@ -192,7 +287,10 @@
       await loadCandidates()
     } catch (error) {
       if (request !== stageRequest || version !== inputVersion) return
-      ingestionError = displayError(error, 'Staging non riuscito')
+      ingestionError = displayError(
+        error,
+        $messages.tritaleleStageFailed,
+      )
       if (error instanceof ApiError) recoveryDetails = error.recovery
     } finally {
       if (request === stageRequest && version === inputVersion) staging = false
@@ -224,7 +322,10 @@
     } catch (error) {
       if (request !== listRequest) return
       candidates = []
-      candidatesError = displayError(error, 'Lista candidati non disponibile')
+      candidatesError = displayError(
+        error,
+        $messages.tritaleleCandidateListUnavailable,
+      )
     } finally {
       if (request === listRequest) candidatesLoading = false
     }
@@ -281,7 +382,10 @@
       populateReviewForm(result)
     } catch (error) {
       if (request !== detailRequest || selectedId !== item.candidate_id) return
-      detailError = displayError(error, 'Dettaglio non disponibile')
+      detailError = displayError(
+        error,
+        $messages.tritaleleDetailUnavailable,
+      )
     } finally {
       if (request === detailRequest && selectedId === item.candidate_id) detailLoading = false
     }
@@ -337,13 +441,13 @@
     if (!candidate || candidate.state !== 'staged') return
     const metadata = reviewMetadata()
     if (!proposedText.trim() || !metadata) {
-      actionError = 'Testo e metadati completi sono obbligatori; inserisci almeno un tag.'
+      actionError = $messages.tritaleleReviewFieldsRequired
       return
     }
     const textChanged = proposedText !== candidate.effective_text
     const metadataChanged = JSON.stringify(metadata) !== JSON.stringify(candidate.proposed_metadata)
     if (!textChanged && !metadataChanged) {
-      actionError = 'Nessuna modifica da salvare.'
+      actionError = $messages.tritaleleNoChanges
       return
     }
     const captured = candidate
@@ -360,10 +464,16 @@
       })
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
       replaceCandidate(updated)
-      actionMessage = `Revisione ${updated.revision} salvata.`
+      actionMessage = formatMessage(
+        $messages.tritaleleRevisionSaved,
+        { revision: updated.revision },
+      )
     } catch (error) {
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
-      actionError = displayError(error, 'Revisione non riuscita')
+      actionError = displayError(
+        error,
+        $messages.tritaleleRevisionFailed,
+      )
       if (error instanceof ApiError) recoveryDetails = error.recovery
     } finally {
       if (request === actionRequest) mutating = false
@@ -373,7 +483,8 @@
   async function acceptCandidate() {
     if (!candidate || candidate.state !== 'staged') return
     if (!candidate.approval_destination) {
-      actionError = 'Completa e salva i metadati canonici prima di accettare.'
+      actionError =
+        $messages.tritaleleAcceptMetadataRequired
       return
     }
     const captured = candidate
@@ -389,10 +500,16 @@
       )
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
       replaceCandidate(updated)
-      actionMessage = `Candidato accettato per la revisione ${updated.revision}; non è ancora pubblicato.`
+      actionMessage = formatMessage(
+        $messages.tritaleleAccepted,
+        { revision: updated.revision },
+      )
     } catch (error) {
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
-      actionError = displayError(error, 'Accettazione non riuscita')
+      actionError = displayError(
+        error,
+        $messages.tritaleleAcceptFailed,
+      )
       if (error instanceof ApiError) recoveryDetails = error.recovery
     } finally {
       if (request === actionRequest) mutating = false
@@ -402,7 +519,8 @@
   async function rejectCandidate() {
     if (!candidate || !['staged', 'in_review'].includes(candidate.state)) return
     if (!transitionReason.trim()) {
-      actionError = 'Inserisci un motivo per rendere il rifiuto tracciabile.'
+      actionError =
+        $messages.tritaleleRejectReasonRequired
       return
     }
     const captured = candidate
@@ -418,10 +536,16 @@
       )
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
       replaceCandidate(updated)
-      actionMessage = `Candidato rifiutato alla revisione ${updated.revision}; resta nello staging.`
+      actionMessage = formatMessage(
+        $messages.tritaleleRejected,
+        { revision: updated.revision },
+      )
     } catch (error) {
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
-      actionError = displayError(error, 'Rifiuto non riuscito')
+      actionError = displayError(
+        error,
+        $messages.tritaleleRejectFailed,
+      )
       if (error instanceof ApiError) recoveryDetails = error.recovery
     } finally {
       if (request === actionRequest) mutating = false
@@ -436,20 +560,28 @@
   async function runReadBacks(lessonId: string, relativePath: string) {
     const request = ++readBackRequest
     lessonReadBack = 'loading'
-    lessonReadBackMessage = 'Lettura proiezione in corso…'
+    lessonReadBackMessage =
+      $messages.tritaleleProjectionReadbackLoading
     vaultReadBack = 'loading'
-    vaultReadBackMessage = 'Lettura vault in corso…'
+    vaultReadBackMessage =
+      $messages.tritaleleVaultReadbackLoading
 
     void api.getLesson(lessonId).then(
       (lesson) => {
         if (request !== readBackRequest) return
         lessonReadBack = 'ok'
-        lessonReadBackMessage = `Lesson riletta: ${lesson.id}`
+        lessonReadBackMessage = formatMessage(
+          $messages.tritaleleLessonReadback,
+          { id: lesson.id },
+        )
       },
       (error) => {
         if (request !== readBackRequest) return
         lessonReadBack = 'error'
-        lessonReadBackMessage = displayError(error, 'Read-back lesson fallito')
+        lessonReadBackMessage = displayError(
+          error,
+          $messages.tritaleleLessonReadbackFailed,
+        )
       },
     )
 
@@ -458,16 +590,25 @@
         if (request !== readBackRequest) return
         if (treeContainsPath(tree.tree, relativePath)) {
           vaultReadBack = 'ok'
-          vaultReadBackMessage = `File vault riletto: ${relativePath}`
+          vaultReadBackMessage = formatMessage(
+            $messages.tritaleleVaultReadback,
+            { path: relativePath },
+          )
         } else {
           vaultReadBack = 'error'
-          vaultReadBackMessage = `File non trovato nel read-back vault: ${relativePath}`
+          vaultReadBackMessage = formatMessage(
+            $messages.tritaleleVaultFileMissing,
+            { path: relativePath },
+          )
         }
       },
       (error) => {
         if (request !== readBackRequest) return
         vaultReadBack = 'error'
-        vaultReadBackMessage = displayError(error, 'Read-back vault fallito')
+        vaultReadBackMessage = displayError(
+          error,
+          $messages.tritaleleVaultReadbackFailed,
+        )
       },
     )
   }
@@ -515,10 +656,12 @@
       if (request !== actionRequest || selectedId !== captured.candidate_id) return
       approvalResult = result
       approvalDialog = false
-      actionMessage =
+      actionMessage = formatMessage(
         result.vault_write_outcome === 'created'
-          ? `Approvazione completata: creato ${result.relative_vault_path}.`
-          : `Approvazione verificata: file canonico identico ${result.relative_vault_path}.`
+          ? $messages.tritaleleApprovalCreated
+          : $messages.tritaleleApprovalIdentical,
+        { path: result.relative_vault_path },
+      )
       await refreshApprovedCandidate(captured.candidate_id, request)
       void runReadBacks(result.lesson_id, result.relative_vault_path)
     } catch (error) {
@@ -528,12 +671,15 @@
         approvalDialog = false
         approvalResult = recovered
         approvalWarning =
-          'Approvazione persistita, ma refresh della proiezione fallito (partial_refresh). Verifica i read-back separati.'
+          $messages.tritaleleApprovalPartialRefresh
         recoveryDetails = error.recovery
         await refreshApprovedCandidate(captured.candidate_id, request)
         if (recovered) void runReadBacks(recovered.lesson_id, recovered.relative_vault_path)
       } else {
-        actionError = displayError(error, 'Approvazione non riuscita')
+        actionError = displayError(
+          error,
+          $messages.tritaleleApprovalFailed,
+        )
         if (error instanceof ApiError) recoveryDetails = error.recovery
       }
     } finally {
@@ -553,61 +699,67 @@
   <section class="card ingestion" aria-labelledby="ingestion-title">
     <div class="section-head">
       <div>
-        <h2 id="ingestion-title">Raccogli nuove LeLe</h2>
-        <p class="meta">Trasforma appunti e documenti in nuove LeLe da revisionare.</p>
+        <h2 id="ingestion-title">{$messages.tritaleleCollectTitle}</h2>
+        <p class="meta">{$messages.tritaleleCollectDescription}</p>
       </div>
-      {#if loadedFileName}<span class="tag">file: {loadedFileName}</span>{/if}
+      {#if loadedFileName}<span class="tag">{$messages.tritaleleFileTag}: {loadedFileName}</span>{/if}
     </div>
 
     <div class="source-grid">
       <label>
-        File Markdown o testo
+        {$messages.tritaleleFileInput}
         <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onchange={loadFile} />
       </label>
       <label>
-        Formato del contenuto
+        {$messages.tritaleleContentFormat}
         <select bind:value={sourceKind} onchange={sourceSettingsChanged}>
-          <option value="plain_text">plain_text</option>
-          <option value="markdown">markdown</option>
+          <option value="plain_text">{$messages.tritaleleSourceKindPlainText}</option>
+          <option value="markdown">{$messages.tritaleleSourceKindMarkdown}</option>
         </select>
       </label>
       <label>
-        Nome della fonte
+        {$messages.tritaleleSourceName}
         <input bind:value={logicalName} oninput={sourceSettingsChanged} />
       </label>
       <label>
-        Dimensione massima delle sezioni
+        {$messages.tritaleleMaxSectionSize}
         <input type="number" min="1" bind:value={maxCharacters} oninput={sourceSettingsChanged} />
       </label>
     </div>
     <label class="source-text">
-      Testo sorgente
+      {$messages.tritaleleSourceText}
       <textarea
         rows="8"
         bind:value={sourceContent}
         oninput={sourceChanged}
-        placeholder="Incolla qui testo plain text o Markdown…"
+        placeholder={$messages.tritaleleSourcePlaceholder}
       ></textarea>
     </label>
     <div class="actions">
       <button class="btn" onclick={runPreview} disabled={previewLoading || staging}>
-        {previewLoading ? 'Anteprima…' : 'Crea anteprima'}
+        {previewLoading
+          ? $messages.tritalelePreviewing
+          : $messages.tritaleleCreatePreview}
       </button>
       <button
         class="btn btn-primary"
         onclick={runStage}
         disabled={!preview || previewVersion !== inputVersion || previewLoading || staging}
       >
-        {staging ? 'Aggiunta alla raccolta…' : 'Aggiungi alla raccolta'}
+        {staging
+          ? $messages.tritaleleStaging
+          : $messages.tritaleleAddCollection}
       </button>
     </div>
     {#if ingestionError}<p class="error" role="alert">{ingestionError}</p>{/if}
 
     {#if preview}
       <div class="preview-block" data-testid="ingestion-preview">
-        <h3>Anteprima (nessuna scrittura)</h3>
+        <h3>{$messages.tritalelePreviewTitle}</h3>
         <p class="meta">
-          {preview.counts.planned} pianificati · {preview.counts.pending} nuovi · {preview.counts.skipped} già presenti
+          {$messages.tritalelePlanned}: {preview.counts.planned}
+          · {$messages.tritaleleNew}: {preview.counts.pending}
+          · {$messages.tritaleleAlreadyPresent}: {preview.counts.skipped}
         </p>
         <ol>
           {#each preview.candidates as item}
@@ -622,7 +774,9 @@
 
     {#if stageResult}
       <div class="stage-result ok" role="status">
-        Staging completato: {stageResult.counts.created} created, {stageResult.counts.skipped} identical/skipped.
+        {$messages.tritaleleStageCompleted}
+        · {$messages.tritaleleCreated}: {stageResult.counts.created}
+        · {$messages.tritaleleIdenticalSkipped}: {stageResult.counts.skipped}
       </div>
     {/if}
   </section>
@@ -631,46 +785,46 @@
     <div class="candidate-column">
       <section class="card filters" aria-labelledby="candidate-list-title">
         <div class="section-head">
-          <h2 id="candidate-list-title">LeLe da revisionare</h2>
-          <button class="btn" onclick={() => loadCandidates()} disabled={candidatesLoading}>Aggiorna</button>
+          <h2 id="candidate-list-title">{$messages.tritaleleReviewListTitle}</h2>
+          <button class="btn" onclick={() => loadCandidates()} disabled={candidatesLoading}>{$messages.tritaleleRefresh}</button>
         </div>
         <div class="filter-grid">
           <label>
-            Stato
+            {$messages.tritaleleStateLabel}
             <select bind:value={stateFilter}>
-              <option value="">tutti</option>
-              <option value="staged">staged</option>
-              <option value="in_review">in_review</option>
-              <option value="rejected">rejected</option>
-              <option value="approved">approved</option>
+              <option value="">{$messages.tritaleleAll}</option>
+              <option value="staged">{$messages.tritaleleStateStaged}</option>
+              <option value="in_review">{$messages.tritaleleStateInReview}</option>
+              <option value="rejected">{$messages.tritaleleStateRejected}</option>
+              <option value="approved">{$messages.tritaleleStateApproved}</option>
             </select>
           </label>
           <label>
-            Tipo
+            {$messages.tritaleleType}
             <select bind:value={kindFilter}>
-              <option value="">tutti</option>
-              <option value="markdown">markdown</option>
-              <option value="plain_text">plain_text</option>
-              <option value="stdin">stdin</option>
-              <option value="in_memory">in_memory</option>
+              <option value="">{$messages.tritaleleAll}</option>
+              <option value="markdown">{$messages.tritaleleSourceKindMarkdown}</option>
+              <option value="plain_text">{$messages.tritaleleSourceKindPlainText}</option>
+              <option value="stdin">{$messages.tritaleleSourceKindStdin}</option>
+              <option value="in_memory">{$messages.tritaleleSourceKindMemory}</option>
             </select>
           </label>
-          <label>Nome sorgente <input bind:value={nameFilter} /></label>
-          <label>Chunk <input type="number" min="0" bind:value={chunkFilter} /></label>
-          <label class="wide-filter">Fingerprint <input bind:value={fingerprintFilter} /></label>
+          <label>{$messages.tritaleleSourceName} <input bind:value={nameFilter} /></label>
+          <label>{$messages.tritaleleChunk} <input type="number" min="0" bind:value={chunkFilter} /></label>
+          <label class="wide-filter">{$messages.tritaleleFingerprint} <input bind:value={fingerprintFilter} /></label>
         </div>
         <div class="actions compact">
-          <button class="btn btn-primary" onclick={() => loadCandidates()}>Applica filtri</button>
-          <button class="btn" onclick={resetFilters}>Reset filtri</button>
+          <button class="btn btn-primary" onclick={() => loadCandidates()}>{$messages.tritaleleApplyFilters}</button>
+          <button class="btn" onclick={resetFilters}>{$messages.tritaleleResetFilters}</button>
         </div>
         {#if candidatesError}<p class="error" role="alert">{candidatesError}</p>{/if}
       </section>
 
       <div class="candidate-list" aria-live="polite">
         {#if candidatesLoading}
-          <p class="meta">Caricamento candidati…</p>
+          <p class="meta">{$messages.tritaleleCandidatesLoading}</p>
         {:else if candidates.length === 0}
-          <p class="card meta empty">Nessun candidato corrisponde ai filtri.</p>
+          <p class="card meta empty">{$messages.tritaleleCandidatesEmpty}</p>
         {:else}
           {#each candidates as item (item.candidate_id)}
             <CandidateCard
@@ -686,35 +840,35 @@
     <div class="detail-column">
       {#if !selectedId}
         <section class="card empty detail-empty">
-          <h2>Dettaglio della LeLe</h2>
-          <p class="meta">Nessuna selezione. Scegli esplicitamente un candidato dalla lista.</p>
+          <h2>{$messages.tritaleleDetailTitle}</h2>
+          <p class="meta">{$messages.tritaleleNoSelection}</p>
         </section>
       {:else if detailLoading}
-        <section class="card"><p class="meta">Caricamento dettaglio…</p></section>
+        <section class="card"><p class="meta">{$messages.tritaleleDetailLoading}</p></section>
       {:else if detailError}
         <section class="card">
           <p class="error" role="alert">{detailError}</p>
-          <button class="btn" onclick={reloadSelected}>Riprova</button>
+          <button class="btn" onclick={reloadSelected}>{$messages.tritaleleRetry}</button>
         </section>
       {:else if candidate}
         <section class="card candidate-detail" aria-labelledby="candidate-detail-title">
           <div class="section-head">
             <div>
-              <h2 id="candidate-detail-title">Dettaglio della LeLe</h2>
+              <h2 id="candidate-detail-title">{$messages.tritaleleDetailTitle}</h2>
               <code>{candidate.candidate_id}</code>
             </div>
-            <span class={`state state-${candidate.state}`}>{candidate.state} · rev {candidate.revision}</span>
+            <span class={`state state-${candidate.state}`}>{candidateStateLabel(candidate.state)} · {$messages.tritaleleRevisionShort} {candidate.revision}</span>
           </div>
 
           <details open>
-            <summary>Provenienza</summary>
+            <summary>{$messages.tritaleleProvenance}</summary>
             <dl>
-              <dt>Sorgente</dt><dd>{candidate.provenance.source_logical_name}</dd>
-              <dt>Tipo</dt><dd>{candidate.provenance.source_kind}</dd>
-              <dt>Fingerprint</dt><dd><code>{candidate.provenance.source_fingerprint}</code></dd>
-              <dt>Chunk</dt><dd>{candidate.provenance.chunk_index ?? '—'}</dd>
+              <dt>{$messages.fieldSource}</dt><dd>{candidate.provenance.source_logical_name}</dd>
+              <dt>{$messages.tritaleleType}</dt><dd>{sourceKindLabel(candidate.provenance.source_kind)}</dd>
+              <dt>{$messages.tritaleleFingerprint}</dt><dd><code>{candidate.provenance.source_fingerprint}</code></dd>
+              <dt>{$messages.tritaleleChunk}</dt><dd>{candidate.provenance.chunk_index ?? '—'}</dd>
               <dt>Span</dt><dd>{candidate.provenance.source_span ? `${candidate.provenance.source_span.start}–${candidate.provenance.source_span.end}` : '—'}</dd>
-              <dt>Ingested at</dt><dd>{candidate.provenance.ingested_at}</dd>
+              <dt>{$messages.tritaleleIngestedAt}</dt><dd>{candidate.provenance.ingested_at}</dd>
             </dl>
             {#if Object.keys(candidate.provenance.run_metadata).length || candidate.provenance.transformations.length}
               <pre>{JSON.stringify({ run_metadata: candidate.provenance.run_metadata, transformations: candidate.provenance.transformations }, null, 2)}</pre>
@@ -723,41 +877,42 @@
 
           <div class="review-form">
             <label>
-              Testo proposto
+              {$messages.tritaleleProposedText}
               <textarea rows="11" bind:value={proposedText} disabled={candidate.state !== 'staged'}></textarea>
             </label>
             <div class="metadata-grid">
-              <label>Topic <input bind:value={metadataTopic} disabled={candidate.state !== 'staged'} /></label>
-              <label>Source <input bind:value={metadataSource} disabled={candidate.state !== 'staged'} /></label>
-              <label>Importance <input type="number" min="1" max="5" bind:value={metadataImportance} disabled={candidate.state !== 'staged'} /></label>
-              <label>Date <input type="date" bind:value={metadataDate} disabled={candidate.state !== 'staged'} /></label>
-              <label class="wide">Tags <input bind:value={metadataTags} placeholder="python, pytest" disabled={candidate.state !== 'staged'} /></label>
-              <label class="wide">Title <input bind:value={metadataTitle} disabled={candidate.state !== 'staged'} /></label>
+              <label>{$messages.fieldTopic} <input bind:value={metadataTopic} disabled={candidate.state !== 'staged'} /></label>
+              <label>{$messages.fieldSource} <input bind:value={metadataSource} disabled={candidate.state !== 'staged'} /></label>
+              <label>{$messages.fieldImportance} <input type="number" min="1" max="5" bind:value={metadataImportance} disabled={candidate.state !== 'staged'} /></label>
+              <label>{$messages.fieldDate} <input type="date" bind:value={metadataDate} disabled={candidate.state !== 'staged'} /></label>
+              <label class="wide">{$messages.fieldTags} <input bind:value={metadataTags} placeholder="python, pytest" disabled={candidate.state !== 'staged'} /></label>
+              <label class="wide">{$messages.fieldTitle} <input bind:value={metadataTitle} disabled={candidate.state !== 'staged'} /></label>
             </div>
             {#if candidate.state === 'staged'}
-              <label>Motivo revisione (opzionale) <input bind:value={revisionReason} /></label>
-              <button class="btn" onclick={saveRevision} disabled={mutating}>Salva revisione</button>
+              <label>{$messages.tritaleleRevisionReasonOptional} <input bind:value={revisionReason} /></label>
+              <button class="btn" onclick={saveRevision} disabled={mutating}>{$messages.tritaleleSaveRevision}</button>
             {/if}
           </div>
 
           <div class="markdown-preview">
-            <h3>Preview testo effettivo</h3>
+            <h3>{$messages.tritaleleEffectivePreview}</h3>
             <article class="markdown-body">{@html renderMarkdown(proposedText)}</article>
           </div>
 
           {#if candidate.approval_destination}
             <div class="destination" data-testid="approval-destination">
-              <strong>Destinazione canonica calcolata dal backend</strong>
+              <strong>{$messages.tritaleleCanonicalDestination}</strong>
               <code>{candidate.approval_destination.lesson_id}</code>
               <code>{candidate.approval_destination.relative_vault_path}</code>
             </div>
           {:else}
-            <p class="meta">Destinazione non calcolabile: completa e salva i metadati.</p>
+            <p class="meta">{$messages.tritaleleDestinationUnavailable}</p>
           {/if}
 
           {#if candidate.state === 'staged' || candidate.state === 'in_review'}
             <label>
-              Motivo transizione {candidate.state === 'staged' ? '(obbligatorio per rifiutare)' : '(obbligatorio per rifiutare)'}
+              {$messages.tritaleleTransitionReason}
+              {$messages.tritaleleRejectRequired}
               <input bind:value={transitionReason} />
             </label>
             <div class="actions">
@@ -767,11 +922,11 @@
                   onclick={acceptCandidate}
                   disabled={mutating || !candidate.approval_destination}
                 >
-                  Accetta per revisione
+                  {$messages.tritaleleAcceptReview}
                 </button>
               {/if}
               <button class="btn danger" onclick={rejectCandidate} disabled={mutating || !transitionReason.trim()}>
-                Rifiuta candidato
+                {$messages.tritaleleRejectCandidate}
               </button>
               {#if candidate.state === 'in_review'}
                 <button
@@ -779,7 +934,7 @@
                   onclick={() => (approvalDialog = true)}
                   disabled={mutating || !candidate.approval_destination}
                 >
-                  Approva nel vault
+                  {$messages.tritaleleApproveVault}
                 </button>
               {/if}
             </div>
@@ -790,41 +945,41 @@
             <div class="action-error" role="alert">
               <p class="error">{actionError}</p>
               {#if actionError.includes('409')}
-                <button class="btn" onclick={reloadSelected}>Ricarica candidato</button>
+                <button class="btn" onclick={reloadSelected}>{$messages.tritaleleReloadCandidate}</button>
               {/if}
             </div>
           {/if}
           {#if approvalWarning}<p class="warning" role="status">{approvalWarning}</p>{/if}
           {#if recoveryDetails}
             <details class="recovery">
-              <summary>Dettagli di recupero</summary>
+              <summary>{$messages.tritaleleRecoveryDetails}</summary>
               <pre>{JSON.stringify(recoveryDetails, null, 2)}</pre>
             </details>
           {/if}
           {#if approvalResult}
             <div class="approval-result" data-testid="approval-result">
-              <h3>Esito approvazione: {approvalResult.vault_write_outcome}</h3>
+              <h3>{$messages.tritaleleApprovalOutcome}: {approvalOutcomeLabel(approvalResult.vault_write_outcome)}</h3>
               <p><code>{approvalResult.lesson_id}</code></p>
               <p><code>{approvalResult.relative_vault_path}</code></p>
             </div>
           {/if}
           {#if lessonReadBack !== 'idle' || vaultReadBack !== 'idle'}
-            <div class="readbacks" aria-label="Read-back approvazione">
+            <div class="readbacks" aria-label={$messages.tritaleleApprovalReadback}>
               <p class:ok={lessonReadBack === 'ok'} class:error={lessonReadBack === 'error'}>{lessonReadBackMessage}</p>
               <p class:ok={vaultReadBack === 'ok'} class:error={vaultReadBack === 'error'}>{vaultReadBackMessage}</p>
             </div>
           {/if}
 
           <details class="history" open>
-            <summary>History ({candidate.review_history.length})</summary>
+            <summary>{$messages.tritaleleHistory} ({candidate.review_history.length})</summary>
             {#if candidate.review_history.length === 0}
-              <p class="meta">Nessuna revisione registrata.</p>
+              <p class="meta">{$messages.tritaleleNoHistory}</p>
             {:else}
               <ol>
                 {#each candidate.review_history as event}
                   <li>
-                    <strong>rev {event.revision} · {event.action}</strong>
-                    <span>{event.previous_state} → {event.resulting_state}</span>
+                    <strong>{$messages.tritaleleRevisionShort} {event.revision} · {reviewActionLabel(event.action)}</strong>
+                    <span>{candidateStateLabel(event.previous_state)} → {candidateStateLabel(event.resulting_state)}</span>
                     <time>{event.occurred_at}</time>
                     {#if event.reason}<q>{event.reason}</q>{/if}
                   </li>
@@ -841,25 +996,27 @@
 {#if approvalDialog && candidate?.approval_destination}
   <div class="dialog-backdrop" role="presentation">
     <div class="approval-dialog card" role="dialog" aria-modal="true" aria-labelledby="approval-title">
-      <h2 id="approval-title">Conferma approvazione canonica</h2>
-      <p>Questa è l’unica azione che pubblica nel vault.</p>
+      <h2 id="approval-title">{$messages.tritaleleApprovalTitle}</h2>
+      <p>{$messages.tritaleleApprovalOnlyPublishes}</p>
       <dl>
-        <dt>Candidato</dt><dd><code>{candidate.candidate_id}</code></dd>
-        <dt>Revisione</dt><dd>{candidate.revision}</dd>
-        <dt>Lesson ID</dt><dd><code>{candidate.approval_destination.lesson_id}</code></dd>
-        <dt>Path canonico</dt><dd><code>{candidate.approval_destination.relative_vault_path}</code></dd>
+        <dt>{$messages.tritaleleCandidate}</dt><dd><code>{candidate.candidate_id}</code></dd>
+        <dt>{$messages.tritaleleRevision}</dt><dd>{candidate.revision}</dd>
+        <dt>{$messages.tritaleleLessonId}</dt><dd><code>{candidate.approval_destination.lesson_id}</code></dd>
+        <dt>{$messages.tritaleleCanonicalPath}</dt><dd><code>{candidate.approval_destination.relative_vault_path}</code></dd>
       </dl>
       {#if actionError}<p class="error" role="alert">{actionError}</p>{/if}
       {#if recoveryDetails}
         <details class="recovery">
-          <summary>Dettagli di recupero</summary>
+          <summary>{$messages.tritaleleRecoveryDetails}</summary>
           <pre>{JSON.stringify(recoveryDetails, null, 2)}</pre>
         </details>
       {/if}
       <div class="actions">
-        <button class="btn" onclick={() => (approvalDialog = false)} disabled={approving}>Annulla</button>
+        <button class="btn" onclick={() => (approvalDialog = false)} disabled={approving}>{$messages.tritaleleCancel}</button>
         <button class="btn btn-primary" onclick={confirmApproval} disabled={approving}>
-          {approving ? 'Approvazione…' : 'Conferma approvazione'}
+          {approving
+            ? $messages.tritaleleApproving
+            : $messages.tritaleleConfirmApproval}
         </button>
       </div>
     </div>
