@@ -130,7 +130,8 @@ def test_detail_editor_and_duplicate_controls_use_giada_ui() -> None:
     assert "from 'giadaware-ui-components'" in editor
     assert "from 'giadaware-ui-components/studio'" in editor
     assert "<Panel" in editor
-    assert editor.count("<Button") == 1
+    # Save plus the explicit similarity-check action are both Giada UI buttons.
+    assert editor.count("<Button") == 2
     assert editor.count("<FieldLabel") == 10
     assert "<FormStatus" in editor
     assert '<section class="card editor-pane">' not in editor

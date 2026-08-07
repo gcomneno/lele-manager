@@ -25,27 +25,73 @@
 
 <div class="health-bar">
   {#if error}
-    <span class="dot err"></span>
-    <span class="error">{$messages.healthApiOffline}</span>
-  {:else if health}
-    <span class="dot ok"></span>
-    <span>API</span>
-    <span class="sep">·</span>
-    <span class:warn={!health.has_data}>
-      {$messages.healthDataset}
-      {health.has_data
-        ? $messages.healthOk
-        : $messages.healthMissing}
+    <span
+      class="status-item error"
+      aria-label={$messages.healthApiOffline}
+    >
+      <span class="dot err" aria-hidden="true"></span>
+      <span>{$messages.healthApiOffline}</span>
     </span>
+  {:else if health}
+    <span
+      class="status-item"
+      aria-label={`API: ${$messages.healthOk}`}
+    >
+      <span class="dot ok" aria-hidden="true"></span>
+      <span>API</span>
+    </span>
+
     <span class="sep">·</span>
-    <span class:warn={!health.has_model}>
-      {$messages.healthModel}
-      {health.has_model
-        ? $messages.healthOk
-        : $messages.healthMissing}
+
+    <span
+      class="status-item"
+      class:warn={!health.has_data}
+      aria-label={`${$messages.healthDataset}: ${
+        health.has_data
+          ? $messages.healthOk
+          : $messages.healthMissing
+      }`}
+    >
+      <span
+        class="dot"
+        class:ok={health.has_data}
+        class:warn={!health.has_data}
+        aria-hidden="true"
+      ></span>
+      <span>
+        {$messages.healthDataset}{#if !health.has_data}
+          {$messages.healthMissing}
+        {/if}
+      </span>
+    </span>
+
+    <span class="sep">·</span>
+
+    <span
+      class="status-item"
+      class:warn={!health.has_model}
+      aria-label={`${$messages.healthModel}: ${
+        health.has_model
+          ? $messages.healthOk
+          : $messages.healthMissing
+      }`}
+    >
+      <span
+        class="dot"
+        class:ok={health.has_model}
+        class:warn={!health.has_model}
+        aria-hidden="true"
+      ></span>
+      <span>
+        {$messages.healthModel}{#if !health.has_model}
+          {$messages.healthMissing}
+        {/if}
+      </span>
     </span>
   {:else}
-    <span class="meta">{$messages.healthLoading}</span>
+    <span class="meta" role="status">
+      {$messages.healthLoading}
+    </span>
   {/if}
 </div>
 
@@ -56,6 +102,12 @@
     gap: 8px;
     font-size: 0.85rem;
     color: var(--muted);
+  }
+
+  .status-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
   }
 
   .dot {
@@ -71,6 +123,10 @@
 
   .dot.err {
     background: var(--err);
+  }
+
+  .dot.warn {
+    background: var(--warn);
   }
 
   .warn {

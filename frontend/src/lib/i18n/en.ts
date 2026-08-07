@@ -52,6 +52,8 @@ export const en = {
   editorNewTitle: 'New LeLe',
   editorSaving: 'Saving…',
   editorSaveVault: 'Save to vault',
+  editorCheckSimilarity: 'Check similarity',
+  editorCheckingSimilarity: 'Checking similarity…',
   editorBodyRequired: 'The body cannot be empty.',
   editorTopicRequired: 'Topic is required.',
   editorSaved: 'Saved to vault: {id}',
@@ -83,7 +85,7 @@ export const en = {
   vaultImportJsonl: 'Import → JSONL',
   vaultNew: '+ New',
 
-  similarWhy: 'Why similar?',
+  similarWhy: 'Why is it similar?',
   similarDefaultTitle: 'Similar',
   similarQueryTopic: 'query topic',
   similarQueryTags: 'query tags',
@@ -202,6 +204,148 @@ export const en = {
   opsDoctorOk: 'vault doctor ok — {files}',
   opsDoctorIssues: 'vault doctor — {errors}',
   opsDoctorError: 'vault doctor error: {error}',
+
+  tritaleleCollectTitle: 'Collect new LeLe',
+  tritaleleCollectDescription:
+    'Turn notes and documents into new LeLe to review.',
+  tritaleleFileTag: 'file',
+  tritaleleFileInput: 'Markdown or text file',
+  tritaleleContentFormat: 'Content format',
+  tritaleleSourceName: 'Source name',
+  tritaleleMaxSectionSize: 'Maximum section size',
+  tritaleleSourceText: 'Source text',
+  tritaleleSourcePlaceholder: 'Paste plain text or Markdown here…',
+  tritalelePreviewing: 'Previewing…',
+  tritaleleCreatePreview: 'Create preview',
+  tritaleleStaging: 'Adding to collection…',
+  tritaleleAddCollection: 'Add to collection',
+  tritalelePreviewTitle: 'Preview (no writes)',
+  tritalelePlanned: 'Planned',
+  tritaleleNew: 'New',
+  tritaleleAlreadyPresent: 'Already present',
+  tritaleleStageCompleted: 'Staging completed',
+  tritaleleCreated: 'Created',
+  tritaleleIdenticalSkipped: 'Identical/skipped',
+
+  tritaleleReviewListTitle: 'LeLe to review',
+  tritaleleRefresh: 'Refresh',
+  tritaleleStateLabel: 'State',
+  tritaleleAll: 'all',
+  tritaleleType: 'Type',
+  tritaleleChunk: 'Chunk',
+  tritaleleFingerprint: 'Fingerprint',
+  tritaleleApplyFilters: 'Apply filters',
+  tritaleleResetFilters: 'Reset filters',
+  tritaleleCandidatesLoading: 'Loading candidates…',
+  tritaleleCandidatesEmpty: 'No candidates match the filters.',
+
+  tritaleleDetailTitle: 'LeLe details',
+  tritaleleNoSelection:
+    'No selection. Explicitly choose a candidate from the list.',
+  tritaleleDetailLoading: 'Loading details…',
+  tritaleleRetry: 'Retry',
+  tritaleleProvenance: 'Provenance',
+  tritaleleIngestedAt: 'Ingested at',
+  tritaleleProposedText: 'Proposed text',
+  tritaleleRevisionReasonOptional: 'Revision reason (optional)',
+  tritaleleSaveRevision: 'Save revision',
+  tritaleleEffectivePreview: 'Effective text preview',
+  tritaleleCanonicalDestination:
+    'Canonical destination calculated by the backend',
+  tritaleleDestinationUnavailable:
+    'Destination unavailable: complete and save the metadata.',
+  tritaleleTransitionReason: 'Transition reason',
+  tritaleleRejectRequired: '(required to reject)',
+  tritaleleAcceptReview: 'Accept for review',
+  tritaleleRejectCandidate: 'Reject candidate',
+  tritaleleApproveVault: 'Approve to vault',
+  tritaleleReloadCandidate: 'Reload candidate',
+
+  tritaleleRecoveryDetails: 'Recovery details',
+  tritaleleApprovalOutcome: 'Approval outcome',
+  tritaleleApprovalReadback: 'Approval read-back',
+  tritaleleHistory: 'History',
+  tritaleleNoHistory: 'No review recorded.',
+
+  tritaleleApprovalTitle: 'Confirm canonical approval',
+  tritaleleApprovalOnlyPublishes:
+    'This is the only action that publishes to the vault.',
+  tritaleleCandidate: 'Candidate',
+  tritaleleRevision: 'Revision',
+  tritaleleRevisionShort: 'rev',
+  tritaleleLessonId: 'Lesson ID',
+  tritaleleCanonicalPath: 'Canonical path',
+  tritaleleCancel: 'Cancel',
+  tritaleleApproving: 'Approving…',
+  tritaleleConfirmApproval: 'Confirm approval',
+
+  tritaleleOpenCandidate: 'Open candidate {id}',
+  tritaleleSourceKindPlainText: 'Plain text',
+  tritaleleSourceKindMarkdown: 'Markdown',
+  tritaleleSourceKindStdin: 'Standard input',
+  tritaleleSourceKindMemory: 'In-memory',
+  tritaleleStateStaged: 'Staged',
+  tritaleleStateInReview: 'In review',
+  tritaleleStateRejected: 'Rejected',
+  tritaleleStateApproved: 'Approved',
+  tritaleleActionRevise: 'Revised',
+  tritaleleActionAccept: 'Accepted',
+  tritaleleActionReject: 'Rejected',
+  tritaleleActionApprove: 'Approved',
+  tritaleleOutcomeCreated: 'created',
+  tritaleleOutcomeIdentical: 'identical',
+
+  tritaleleFileReadError: 'Unable to read the selected file.',
+  tritaleleContextError: '{context}: {error}',
+  tritaleleConflict:
+    'Conflict (409{code}). Reload the candidate and try again.',
+  tritaleleInvalidData:
+    'Invalid data (422). Check the request fields.',
+  tritaleleOperationalError:
+    'Operational error (503{code}). Persisted data remains visible.',
+  tritaleleInvalidRequest: 'Invalid request{code}.',
+  tritaleleSourceRequired:
+    'Source text and logical name are required.',
+  tritalelePreviewFailed: 'Preview failed',
+  tritalelePreviewRequired:
+    'Create a new preview before staging.',
+  tritaleleStageFailed: 'Staging failed',
+  tritaleleCandidateListUnavailable: 'Candidate list unavailable',
+  tritaleleDetailUnavailable: 'Details unavailable',
+
+  tritaleleReviewFieldsRequired:
+    'Complete text and metadata are required; add at least one tag.',
+  tritaleleNoChanges: 'No changes to save.',
+  tritaleleRevisionSaved: 'Revision {revision} saved.',
+  tritaleleRevisionFailed: 'Revision failed',
+  tritaleleAcceptMetadataRequired:
+    'Complete and save canonical metadata before accepting.',
+  tritaleleAccepted:
+    'Candidate accepted at revision {revision}; it is not published yet.',
+  tritaleleAcceptFailed: 'Acceptance failed',
+  tritaleleRejectReasonRequired:
+    'Enter a reason to keep the rejection traceable.',
+  tritaleleRejected:
+    'Candidate rejected at revision {revision}; it remains in staging.',
+  tritaleleRejectFailed: 'Rejection failed',
+
+  tritaleleProjectionReadbackLoading:
+    'Reading the projection…',
+  tritaleleVaultReadbackLoading: 'Reading the vault…',
+  tritaleleLessonReadback: 'Lesson read back: {id}',
+  tritaleleLessonReadbackFailed: 'Lesson read-back failed',
+  tritaleleVaultReadback: 'Vault file read back: {path}',
+  tritaleleVaultFileMissing:
+    'File not found during vault read-back: {path}',
+  tritaleleVaultReadbackFailed: 'Vault read-back failed',
+
+  tritaleleApprovalCreated:
+    'Approval completed: created {path}.',
+  tritaleleApprovalIdentical:
+    'Approval verified: canonical file is identical at {path}.',
+  tritaleleApprovalPartialRefresh:
+    'Approval persisted, but projection refresh failed (partial_refresh). Check the separate read-backs.',
+  tritaleleApprovalFailed: 'Approval failed',
 } as const
 
 export type TranslationKey = keyof typeof en

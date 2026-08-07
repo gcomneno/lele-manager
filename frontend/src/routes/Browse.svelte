@@ -190,7 +190,7 @@
         message={status}
         tone="info"
         class="browse-result-status"
-        style="--giu-form-status-padding: 0; --giu-form-status-border-width: 0; --giu-form-status-info-background: transparent; --giu-form-status-info-color: var(--color-success)"
+        style="--giu-form-status-padding: var(--space-2) 0 0; --giu-form-status-border-width: 0; --giu-form-status-info-background: transparent; --giu-form-status-info-color: var(--color-success)"
       />
     {/if}
 

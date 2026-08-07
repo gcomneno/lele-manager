@@ -35,6 +35,8 @@
   let similarMeta = $state<SimilarMeta | null>(null)
   let similarLoading = $state(false)
   let similarError = $state('')
+  let similarSearched = $state(false)
+  let similarRequestVersion = $state(0)
   let loadError = $state('')
   let saving = $state(false)
   let saveMsg = $state('')
@@ -42,10 +44,6 @@
 
   let topK = $state(5)
   let minScore = $state(0.1)
-
-  let debounceTimer:
-    | ReturnType<typeof setTimeout>
-    | undefined
 
   function composeText(): string {
     const tagList = tags
@@ -76,16 +74,40 @@
     return frontmatter
   }
 
-  async function fetchSuggest() {
-    const text = composeText().trim()
+  function suggestionSeed(): string {
+    return [
+      title.trim(),
+      tags.trim(),
+      body.trim(),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+  }
 
-    if (text.length < 12) {
-      similar = []
+  function invalidateSimilarity() {
+    similarRequestVersion += 1
+    similar = []
+    similarMeta = null
+    similarLoading = false
+    similarError = ''
+    similarSearched = false
+  }
+
+  async function checkSimilarity() {
+    if (suggestionSeed().length < 12) {
+      invalidateSimilarity()
       return
     }
 
+    const requestVersion = similarRequestVersion + 1
+    similarRequestVersion = requestVersion
+
+    const text = composeText().trim()
+
     similarLoading = true
     similarError = ''
+    similarSearched = true
 
     try {
       const resp = await api.editorSuggest(
@@ -94,21 +116,28 @@
         minScore,
         true,
       )
+
+      if (requestVersion !== similarRequestVersion) {
+        return
+      }
+
       similar = resp.results
       similarMeta = resp.meta ?? null
     } catch (e) {
+      if (requestVersion !== similarRequestVersion) {
+        return
+      }
+
       similar = []
+      similarMeta = null
       similarError = e instanceof Error
         ? e.message
         : String(e)
     } finally {
-      similarLoading = false
+      if (requestVersion === similarRequestVersion) {
+        similarLoading = false
+      }
     }
-  }
-
-  function scheduleSuggest() {
-    clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(fetchSuggest, 500)
   }
 
   async function loadExisting(lessonIdValue: string) {
@@ -128,7 +157,7 @@
 
       const parsed = stripFrontmatter(lesson.text ?? '')
       body = parsed.body || lesson.text || ''
-      scheduleSuggest()
+      invalidateSimilarity()
     } catch (e) {
       loadError = e instanceof Error
         ? e.message
@@ -210,8 +239,6 @@
   $effect(() => {
     if (id) {
       loadExisting(id)
-    } else {
-      scheduleSuggest()
     }
   })
 </script>
@@ -224,6 +251,21 @@
     class="editor-pane"
   >
     {#snippet actions()}
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={checkSimilarity}
+        disabled={
+          saving ||
+          similarLoading ||
+          suggestionSeed().length < 12
+        }
+      >
+        {similarLoading
+          ? $messages.editorCheckingSimilarity
+          : $messages.editorCheckSimilarity}
+      </Button>
+
       <Button
         size="compact"
         onclick={save}
@@ -252,20 +294,21 @@
     {/if}
 
     <div class="meta-grid">
-      <label>
-        <FieldLabel label="ID" />
-        <input
-          bind:value={lessonId}
-          placeholder={$messages.editorIdPlaceholder}
-          readonly={!!id}
-        />
-      </label>
+      {#if id}
+        <label>
+          <FieldLabel label="ID" />
+          <input
+            value={lessonId}
+            readonly
+          />
+        </label>
+      {/if}
 
       <label>
         <FieldLabel label={$messages.fieldTopic} />
         <input
           bind:value={topic}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
@@ -273,7 +316,7 @@
         <FieldLabel label={$messages.fieldSource} />
         <input
           bind:value={source}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
@@ -284,7 +327,7 @@
           min="1"
           max="5"
           bind:value={importance}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
@@ -292,7 +335,7 @@
         <FieldLabel label={$messages.fieldDate} />
         <input
           bind:value={date}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
@@ -301,7 +344,7 @@
         <input
           bind:value={tags}
           placeholder="python, pytest"
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
@@ -309,7 +352,7 @@
         <FieldLabel label={$messages.fieldTitle} />
         <input
           bind:value={title}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
     </div>
@@ -319,7 +362,7 @@
       <textarea
         rows="16"
         bind:value={body}
-        oninput={scheduleSuggest}
+        oninput={invalidateSimilarity}
         placeholder={$messages.editorBodyPlaceholder}
       ></textarea>
     </label>
@@ -332,7 +375,7 @@
           min="1"
           max="20"
           bind:value={topK}
-          onchange={fetchSuggest}
+          onchange={invalidateSimilarity}
         />
       </label>
 
@@ -344,26 +387,29 @@
           max="1"
           step="0.01"
           bind:value={minScore}
-          onchange={fetchSuggest}
+          onchange={invalidateSimilarity}
         />
       </label>
     </div>
   </Panel>
 
-  <SimilarPanel
-    title={$messages.editorLiveSimilar}
-    items={similar}
-    meta={similarMeta}
-    explain={true}
-    loading={similarLoading}
-    error={similarError}
-  />
+  {#if similarSearched}
+    <SimilarPanel
+      title={$messages.editorLiveSimilar}
+      items={similar}
+      meta={similarMeta}
+      explain={true}
+      loading={similarLoading}
+      error={similarError}
+      searched={true}
+    />
+  {/if}
 </div>
 
 <style>
   .editor-layout {
     display: grid;
-    grid-template-columns: 1.3fr 0.7fr;
+    grid-template-columns: 1fr;
     gap: 16px;
     align-items: start;
   }

@@ -27,6 +27,22 @@ http://127.0.0.1:8000/app/
 Usare `scripts/lele-api-refresh.sh` quando occorre prima importare il vault
 Markdown e riaddestrare il modello topic.
 
+## Lingua della GUI
+
+LeLe Manager parte in **inglese** quando non è memorizzata una scelta esplicita
+della lingua. Il selettore si trova nella sidebar, immediatamente sopra la
+firma GiadaWare. Le lingue mantenute della GUI sono **English** e **Italiano**.
+
+Il cambio di lingua aggiorna immediatamente la GUI senza ricaricare la pagina.
+La scelta esplicita viene conservata localmente nel browser con la chiave
+`lele-manager.locale`. Valori memorizzati mancanti, malformati o non
+supportati ricadono in sicurezza sull'inglese; il rilevamento automatico della
+lingua del browser è intenzionalmente assente.
+
+La localizzazione riguarda soltanto la presentazione della GUI. Non traduce né
+modifica LeLe scritte dall'utente, contenuto Markdown del vault, valori del
+dataset, topic, fonti, percorsi, ID, payload API o identità di navigazione.
+
 ## Flusso quotidiano
 
 1. Controllare health e diagnostica del vault in **Ops**.

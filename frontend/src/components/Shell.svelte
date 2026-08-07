@@ -256,7 +256,6 @@
   }
 
   .content {
-    width: min(100%, var(--content-width));
     padding: var(--space-5);
   }
 

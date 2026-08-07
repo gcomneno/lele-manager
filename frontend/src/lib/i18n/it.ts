@@ -54,6 +54,8 @@ export const it = {
   editorNewTitle: 'Nuova LeLe',
   editorSaving: 'Salvataggio…',
   editorSaveVault: 'Salva nel vault',
+  editorCheckSimilarity: 'Verifica similarità',
+  editorCheckingSimilarity: 'Verifica in corso…',
   editorBodyRequired: 'Il body non può essere vuoto.',
   editorTopicRequired: 'Topic obbligatorio.',
   editorSaved: 'Salvato nel vault: {id}',
@@ -85,7 +87,7 @@ export const it = {
   vaultImportJsonl: 'Importa → JSONL',
   vaultNew: '+ Nuova',
 
-  similarWhy: 'Perché simile?',
+  similarWhy: 'Perché è simile?',
   similarDefaultTitle: 'Simili',
   similarQueryTopic: 'topic query',
   similarQueryTags: 'tag query',
@@ -204,4 +206,151 @@ export const it = {
   opsDoctorOk: 'vault doctor ok — {files}',
   opsDoctorIssues: 'vault doctor — {errors}',
   opsDoctorError: 'errore vault doctor: {error}',
+
+  tritaleleCollectTitle: 'Raccogli nuove LeLe',
+  tritaleleCollectDescription:
+    'Trasforma appunti e documenti in nuove LeLe da revisionare.',
+  tritaleleFileTag: 'file',
+  tritaleleFileInput: 'File Markdown o testo',
+  tritaleleContentFormat: 'Formato del contenuto',
+  tritaleleSourceName: 'Nome della fonte',
+  tritaleleMaxSectionSize: 'Dimensione massima delle sezioni',
+  tritaleleSourceText: 'Testo sorgente',
+  tritaleleSourcePlaceholder:
+    'Incolla qui testo plain text o Markdown…',
+  tritalelePreviewing: 'Anteprima…',
+  tritaleleCreatePreview: 'Crea anteprima',
+  tritaleleStaging: 'Aggiunta alla raccolta…',
+  tritaleleAddCollection: 'Aggiungi alla raccolta',
+  tritalelePreviewTitle: 'Anteprima (nessuna scrittura)',
+  tritalelePlanned: 'Pianificati',
+  tritaleleNew: 'Nuovi',
+  tritaleleAlreadyPresent: 'Già presenti',
+  tritaleleStageCompleted: 'Staging completato',
+  tritaleleCreated: 'Creati',
+  tritaleleIdenticalSkipped: 'Identici/saltati',
+
+  tritaleleReviewListTitle: 'LeLe da revisionare',
+  tritaleleRefresh: 'Aggiorna',
+  tritaleleStateLabel: 'Stato',
+  tritaleleAll: 'tutti',
+  tritaleleType: 'Tipo',
+  tritaleleChunk: 'Chunk',
+  tritaleleFingerprint: 'Fingerprint',
+  tritaleleApplyFilters: 'Applica filtri',
+  tritaleleResetFilters: 'Reimposta filtri',
+  tritaleleCandidatesLoading: 'Caricamento candidati…',
+  tritaleleCandidatesEmpty:
+    'Nessun candidato corrisponde ai filtri.',
+
+  tritaleleDetailTitle: 'Dettaglio della LeLe',
+  tritaleleNoSelection:
+    'Nessuna selezione. Scegli esplicitamente un candidato dalla lista.',
+  tritaleleDetailLoading: 'Caricamento dettaglio…',
+  tritaleleRetry: 'Riprova',
+  tritaleleProvenance: 'Provenienza',
+  tritaleleIngestedAt: 'Acquisito il',
+  tritaleleProposedText: 'Testo proposto',
+  tritaleleRevisionReasonOptional:
+    'Motivo revisione (opzionale)',
+  tritaleleSaveRevision: 'Salva revisione',
+  tritaleleEffectivePreview: 'Anteprima testo effettivo',
+  tritaleleCanonicalDestination:
+    'Destinazione canonica calcolata dal backend',
+  tritaleleDestinationUnavailable:
+    'Destinazione non calcolabile: completa e salva i metadati.',
+  tritaleleTransitionReason: 'Motivo transizione',
+  tritaleleRejectRequired: '(obbligatorio per rifiutare)',
+  tritaleleAcceptReview: 'Accetta per revisione',
+  tritaleleRejectCandidate: 'Rifiuta candidato',
+  tritaleleApproveVault: 'Approva nel vault',
+  tritaleleReloadCandidate: 'Ricarica candidato',
+
+  tritaleleRecoveryDetails: 'Dettagli di recupero',
+  tritaleleApprovalOutcome: 'Esito approvazione',
+  tritaleleApprovalReadback: 'Read-back approvazione',
+  tritaleleHistory: 'Cronologia revisioni',
+  tritaleleNoHistory: 'Nessuna revisione registrata.',
+
+  tritaleleApprovalTitle: 'Conferma approvazione canonica',
+  tritaleleApprovalOnlyPublishes:
+    'Questa è l’unica azione che pubblica nel vault.',
+  tritaleleCandidate: 'Candidato',
+  tritaleleRevision: 'Revisione',
+  tritaleleRevisionShort: 'rev',
+  tritaleleLessonId: 'Lesson ID',
+  tritaleleCanonicalPath: 'Path canonico',
+  tritaleleCancel: 'Annulla',
+  tritaleleApproving: 'Approvazione…',
+  tritaleleConfirmApproval: 'Conferma approvazione',
+
+  tritaleleOpenCandidate: 'Apri candidato {id}',
+  tritaleleSourceKindPlainText: 'Testo semplice',
+  tritaleleSourceKindMarkdown: 'Markdown',
+  tritaleleSourceKindStdin: 'Standard input',
+  tritaleleSourceKindMemory: 'In memoria',
+  tritaleleStateStaged: 'In staging',
+  tritaleleStateInReview: 'In revisione',
+  tritaleleStateRejected: 'Rifiutato',
+  tritaleleStateApproved: 'Approvato',
+  tritaleleActionRevise: 'Revisionato',
+  tritaleleActionAccept: 'Accettato',
+  tritaleleActionReject: 'Rifiutato',
+  tritaleleActionApprove: 'Approvato',
+  tritaleleOutcomeCreated: 'creato',
+  tritaleleOutcomeIdentical: 'identico',
+
+  tritaleleFileReadError:
+    'Impossibile leggere il file selezionato.',
+  tritaleleContextError: '{context}: {error}',
+  tritaleleConflict:
+    'Conflitto (409{code}). Ricarica il candidato e riprova.',
+  tritaleleInvalidData:
+    'Dati non validi (422). Controlla i campi della richiesta.',
+  tritaleleOperationalError:
+    'Errore operativo (503{code}). I dati già persistiti restano visibili.',
+  tritaleleInvalidRequest: 'Richiesta non valida{code}.',
+  tritaleleSourceRequired:
+    'Testo sorgente e nome logico sono obbligatori.',
+  tritalelePreviewFailed: 'Anteprima non riuscita',
+  tritalelePreviewRequired:
+    'Genera una nuova anteprima prima di creare lo staging.',
+  tritaleleStageFailed: 'Staging non riuscito',
+  tritaleleCandidateListUnavailable:
+    'Lista candidati non disponibile',
+  tritaleleDetailUnavailable: 'Dettaglio non disponibile',
+
+  tritaleleReviewFieldsRequired:
+    'Testo e metadati completi sono obbligatori; inserisci almeno un tag.',
+  tritaleleNoChanges: 'Nessuna modifica da salvare.',
+  tritaleleRevisionSaved: 'Revisione {revision} salvata.',
+  tritaleleRevisionFailed: 'Revisione non riuscita',
+  tritaleleAcceptMetadataRequired:
+    'Completa e salva i metadati canonici prima di accettare.',
+  tritaleleAccepted:
+    'Candidato accettato per la revisione {revision}; non è ancora pubblicato.',
+  tritaleleAcceptFailed: 'Accettazione non riuscita',
+  tritaleleRejectReasonRequired:
+    'Inserisci un motivo per rendere il rifiuto tracciabile.',
+  tritaleleRejected:
+    'Candidato rifiutato alla revisione {revision}; resta nello staging.',
+  tritaleleRejectFailed: 'Rifiuto non riuscito',
+
+  tritaleleProjectionReadbackLoading:
+    'Lettura proiezione in corso…',
+  tritaleleVaultReadbackLoading: 'Lettura vault in corso…',
+  tritaleleLessonReadback: 'Lesson riletta: {id}',
+  tritaleleLessonReadbackFailed: 'Read-back lesson fallito',
+  tritaleleVaultReadback: 'File vault riletto: {path}',
+  tritaleleVaultFileMissing:
+    'File non trovato nel read-back vault: {path}',
+  tritaleleVaultReadbackFailed: 'Read-back vault fallito',
+
+  tritaleleApprovalCreated:
+    'Approvazione completata: creato {path}.',
+  tritaleleApprovalIdentical:
+    'Approvazione verificata: file canonico identico {path}.',
+  tritaleleApprovalPartialRefresh:
+    'Approvazione persistita, ma refresh della proiezione fallito (partial_refresh). Verifica i read-back separati.',
+  tritaleleApprovalFailed: 'Approvazione non riuscita',
 } satisfies Messages

@@ -10,6 +10,7 @@
     loading?: boolean
     error?: string
     explain?: boolean
+    searched?: boolean
     onclickItem?: (id: string) => void
   }
 
@@ -20,6 +21,7 @@
     loading = false,
     error = '',
     explain = true,
+    searched = true,
     onclickItem,
   }: Props = $props()
 
@@ -54,9 +56,9 @@
     <p class="meta">{$messages.commonLoading}</p>
   {:else if error}
     <p class="error">{error}</p>
-  {:else if items.length === 0}
+  {:else if searched && items.length === 0}
     <p class="meta">{$messages.similarEmpty}</p>
-  {:else}
+  {:else if searched}
     <ul>
       {#each items as item}
         <li>

@@ -391,7 +391,7 @@ test.describe('GUI localization', () => {
 
     await expect(
       page.getByRole('heading', {
-        name: 'Why similar?',
+        name: 'Why is it similar?',
         exact: true,
       }),
     ).toBeVisible()
@@ -409,7 +409,7 @@ test.describe('GUI localization', () => {
 
     await expect(
       page.getByRole('heading', {
-        name: 'Perché simile?',
+        name: 'Perché è simile?',
         exact: true,
       }),
     ).toBeVisible()
@@ -503,6 +503,189 @@ test.describe('GUI localization', () => {
         exact: true,
       }),
     ).toBeVisible()
+  })
+
+
+  test('localizes TritaLeLe without changing workflow input', async ({
+    page,
+  }) => {
+    await resetLocale(page)
+
+    const navigation = page.getByRole('navigation')
+
+    await navigation
+      .getByRole('link', {
+        name: 'Collection',
+        exact: true,
+      })
+      .click()
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Collect new LeLe',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    const ingestion = page.getByRole('region', {
+      name: 'Collect new LeLe',
+      exact: true,
+    })
+
+    const sourceName = ingestion.getByLabel('Source name')
+    const sourceText = ingestion.getByLabel('Source text')
+
+    await sourceName.fill('locale-preserved.txt')
+    await sourceText.fill(
+      'Workflow input must remain unchanged while locale changes.',
+    )
+
+    const hashBefore = await page.evaluate(
+      () => window.location.hash,
+    )
+
+    await page
+      .getByLabel('Language')
+      .selectOption('it')
+
+    await expect(
+      page.getByRole('heading', {
+        name: 'Raccogli nuove LeLe',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    const italianIngestion = page.getByRole('region', {
+      name: 'Raccogli nuove LeLe',
+      exact: true,
+    })
+
+    await expect(
+      italianIngestion.getByLabel('Nome della fonte'),
+    ).toHaveValue('locale-preserved.txt')
+
+    await expect(
+      italianIngestion.getByLabel('Testo sorgente'),
+    ).toHaveValue(
+      'Workflow input must remain unchanged while locale changes.',
+    )
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Crea anteprima',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    expect(
+      await page.evaluate(() => window.location.hash),
+    ).toBe(hashBefore)
+
+    await page
+      .getByLabel('Lingua')
+      .selectOption('en')
+
+    await expect(sourceName).toHaveValue(
+      'locale-preserved.txt',
+    )
+
+    await expect(sourceText).toHaveValue(
+      'Workflow input must remain unchanged while locale changes.',
+    )
+  })
+
+
+  test('presents healthy services with consistent status indicators', async ({
+    page,
+  }) => {
+    await resetLocale(page)
+    await page.goto('/app/#/')
+
+    const healthBar = page.locator('.health-bar')
+
+    await expect(healthBar).toBeVisible()
+
+    await expect(
+      healthBar.locator('[aria-label="API: ok"]'),
+    ).toBeVisible()
+
+    await expect(
+      healthBar.locator('[aria-label="dataset: ok"]'),
+    ).toBeVisible()
+
+    await expect(
+      healthBar.locator('[aria-label="model: ok"]'),
+    ).toBeVisible()
+
+    await expect(
+      healthBar.locator('.dot.ok'),
+    ).toHaveCount(3)
+
+    await expect(healthBar).not.toContainText(
+      'dataset ok',
+    )
+
+    await expect(healthBar).not.toContainText(
+      'model ok',
+    )
+
+    await page
+      .getByLabel('Language')
+      .selectOption('it')
+
+    await expect(
+      healthBar.locator('[aria-label="API: ok"]'),
+    ).toBeVisible()
+
+    await expect(
+      healthBar.locator('[aria-label="dataset: ok"]'),
+    ).toBeVisible()
+
+    await expect(
+      healthBar.locator('[aria-label="modello: ok"]'),
+    ).toBeVisible()
+
+    await expect(
+      healthBar.locator('.dot.ok'),
+    ).toHaveCount(3)
+
+    await expect(healthBar).not.toContainText(
+      'modello ok',
+    )
+  })
+
+
+  test('localizes the explicit editor similarity action', async ({
+    page,
+  }) => {
+    await resetLocale(page)
+    await page.goto('/app/#/editor')
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Check similarity',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.locator('.similar-panel'),
+    ).toHaveCount(0)
+
+    await page
+      .getByLabel('Language')
+      .selectOption('it')
+
+    await expect(
+      page.getByRole('button', {
+        name: 'Verifica similarità',
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    await expect(
+      page.locator('.similar-panel'),
+    ).toHaveCount(0)
   })
 
 })

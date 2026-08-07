@@ -247,7 +247,7 @@
       </div>
     </div>
 
-    <div class="actions">
+    <div class="actions maintenance-actions">
       <button class="btn" onclick={refreshHealth} disabled={loadingHealth}>{$messages.opsRefreshStatus}</button>
       <button class="btn" onclick={vaultImport} disabled={importing}>{$messages.opsRefreshVault}</button>
       <button class="btn btn-primary" onclick={train} disabled={training}>
@@ -279,60 +279,69 @@
   </section>
 
   <section class="card doctor" aria-live="polite">
-    <h3>{$messages.opsDoctorTitle}</h3>
-    <p class="meta">{$messages.opsDoctorDescription}</p>
-    <div class="actions">
-      <button class="btn" onclick={runDoctor} disabled={runningDoctor}>
-        {runningDoctor
-          ? $messages.opsDoctorRunning
-          : $messages.opsDoctorRun}
-      </button>
-    </div>
+    <div
+      class="doctor-layout"
+      class:has-report={Boolean(doctorReport)}
+    >
+      <div class="doctor-controls">
+        <h3>{$messages.opsDoctorTitle}</h3>
+        <p class="meta">{$messages.opsDoctorDescription}</p>
+        <div class="actions">
+          <button class="btn" onclick={runDoctor} disabled={runningDoctor}>
+            {runningDoctor
+              ? $messages.opsDoctorRunning
+              : $messages.opsDoctorRun}
+          </button>
+        </div>
 
-    {#if doctorError}
-      <p class="error">{doctorError}</p>
-    {/if}
+        {#if doctorError}
+          <p class="error">{doctorError}</p>
+        {/if}
+      </div>
 
-    {#if doctorReport}
-      <p class={doctorReport.valid ? 'ok' : 'error'}>
-        {doctorReport.valid
-          ? $messages.opsVaultHealthy
-          : $messages.opsVaultNotHealthy}
-      </p>
-      <p class="meta">
-        {filesCheckedLabel(doctorReport.files_checked)}
-        ·
-        {formatMessage(
-          $messages.opsUniqueIds,
-          { count: doctorReport.unique_ids },
-        )}
-        ·
-        {errorsLabel(doctorReport.error_count)}
-      </p>
-
-      {#if doctorReport.problems.length > 0}
-        <div class="doctor-diagnostic-groups">
-          {#each groupDoctorProblems(doctorReport.problems) as group}
-            <section class="doctor-diagnostic-group">
-              <h4>{group.code} ({group.problems.length} {findingsLabel(group.problems.length)})</h4>
-              <ul class="doctor-diagnostics">
-                {#each group.problems as problem}
-                  <li>
-                    <div class="diagnostic-details">
-                      <code>{problem.path}</code>
-                      {#if problem.field}
-                        <span class="diagnostic-field">{$messages.opsField}: {problem.field}</span>
-                      {/if}
-                      <span class="tag severity-error">{problem.severity}</span>
-                    </div>
-                    <p>{problem.message}</p>
-                  </li>
-                {/each}
-              </ul>
-            </section>
-          {/each}
+      {#if doctorReport}
+        <div class="doctor-result">
+          <p class={doctorReport.valid ? 'ok' : 'error'}>
+            {doctorReport.valid
+              ? $messages.opsVaultHealthy
+              : $messages.opsVaultNotHealthy}
+          </p>
+          <p class="meta">
+            {filesCheckedLabel(doctorReport.files_checked)}
+            ·
+            {formatMessage(
+              $messages.opsUniqueIds,
+              { count: doctorReport.unique_ids },
+            )}
+            ·
+            {errorsLabel(doctorReport.error_count)}
+          </p>
         </div>
       {/if}
+    </div>
+
+    {#if doctorReport && doctorReport.problems.length > 0}
+      <div class="doctor-diagnostic-groups">
+        {#each groupDoctorProblems(doctorReport.problems) as group}
+          <section class="doctor-diagnostic-group">
+            <h4>{group.code} ({group.problems.length} {findingsLabel(group.problems.length)})</h4>
+            <ul class="doctor-diagnostics">
+              {#each group.problems as problem}
+                <li>
+                  <div class="diagnostic-details">
+                    <code>{problem.path}</code>
+                    {#if problem.field}
+                      <span class="diagnostic-field">{$messages.opsField}: {problem.field}</span>
+                    {/if}
+                    <span class="tag severity-error">{problem.severity}</span>
+                  </div>
+                  <p>{problem.message}</p>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/each}
+      </div>
     {/if}
   </section>
 
@@ -350,7 +359,6 @@
   .ops {
     display: grid;
     gap: 16px;
-    max-width: 900px;
   }
 
   h2, h3, h4 {
@@ -362,6 +370,30 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
     margin: 16px 0;
+  }
+
+  .health-grid > div {
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #faf8f4;
+  }
+
+  .health-grid strong {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .health-grid strong::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: 999px;
+    background: currentColor;
   }
 
   .label {
@@ -379,6 +411,36 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+  }
+
+  .maintenance-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    max-width: 760px;
+  }
+
+  .maintenance-actions .btn {
+    width: 100%;
+  }
+
+  .doctor-layout {
+    display: grid;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .doctor-layout.has-report {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.8fr);
+  }
+
+  .doctor-result {
+    min-width: 0;
+    padding-left: 20px;
+    border-left: 1px solid var(--border);
+  }
+
+  .doctor-result p:first-child {
+    margin-top: 0;
   }
 
   pre {
@@ -439,5 +501,30 @@
   .severity-error {
     background: #fbe5e3;
     color: var(--err);
+  }
+
+  @media (max-width: 900px) {
+    .maintenance-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      max-width: none;
+    }
+
+    .doctor-layout.has-report {
+      grid-template-columns: 1fr;
+    }
+
+    .doctor-result {
+      padding-left: 0;
+      padding-top: 16px;
+      border-left: 0;
+      border-top: 1px solid var(--border);
+    }
+  }
+
+  @media (max-width: 560px) {
+    .health-grid,
+    .maintenance-actions {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('renders Browse with direct Giada UI primitives', async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 900 })
   await page.goto('/app/')
 
   const panel = page.locator('.giu-panel')
@@ -8,6 +9,45 @@ test('renders Browse with direct Giada UI primitives', async ({ page }) => {
   await expect(
     panel.getByRole('heading', { name: 'Browse', exact: true }),
   ).toBeVisible()
+
+
+  const fullWidthGeometry = await panel.evaluate((browsePanel) => {
+    const content = browsePanel.closest('.content')
+
+    if (!(content instanceof HTMLElement)) {
+      throw new Error('Shell content container not found')
+    }
+
+    const contentBox = content.getBoundingClientRect()
+    const panelBox = browsePanel.getBoundingClientRect()
+    const contentStyle = getComputedStyle(content)
+    const paddingLeft = Number.parseFloat(contentStyle.paddingLeft)
+    const paddingRight = Number.parseFloat(contentStyle.paddingRight)
+
+    return {
+      leftGap:
+        panelBox.left -
+        (contentBox.left + paddingLeft),
+      rightGap:
+        contentBox.right -
+        paddingRight -
+        panelBox.right,
+      usableWidth:
+        contentBox.width -
+        paddingLeft -
+        paddingRight,
+      panelWidth: panelBox.width,
+    }
+  })
+
+  expect(Math.abs(fullWidthGeometry.leftGap)).toBeLessThanOrEqual(1)
+  expect(Math.abs(fullWidthGeometry.rightGap)).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(
+      fullWidthGeometry.panelWidth -
+      fullWidthGeometry.usableWidth,
+    ),
+  ).toBeLessThanOrEqual(2)
 
   const buttons = panel.locator('button[data-giu-variant]')
   await expect(buttons).toHaveCount(4)
@@ -37,6 +77,41 @@ test('renders Browse with direct Giada UI primitives', async ({ page }) => {
     'background-color',
     'rgba(0, 0, 0, 0)',
   )
+})
+
+test('System view fills the available content width', async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 900 })
+  await page.goto('/app/#/ops')
+
+  const ops = page.locator('.ops')
+  await expect(ops).toBeVisible()
+
+  const geometry = await ops.evaluate((opsElement) => {
+    const content = opsElement.closest('.content')
+
+    if (!(content instanceof HTMLElement)) {
+      throw new Error('Shell content container not found')
+    }
+
+    const contentBox = content.getBoundingClientRect()
+    const opsBox = opsElement.getBoundingClientRect()
+    const style = getComputedStyle(content)
+    const paddingLeft = Number.parseFloat(style.paddingLeft)
+    const paddingRight = Number.parseFloat(style.paddingRight)
+
+    return {
+      leftGap: opsBox.left - (contentBox.left + paddingLeft),
+      rightGap: contentBox.right - paddingRight - opsBox.right,
+      usableWidth: contentBox.width - paddingLeft - paddingRight,
+      opsWidth: opsBox.width,
+    }
+  })
+
+  expect(Math.abs(geometry.leftGap)).toBeLessThanOrEqual(1)
+  expect(Math.abs(geometry.rightGap)).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(geometry.opsWidth - geometry.usableWidth),
+  ).toBeLessThanOrEqual(2)
 })
 
 test('renders Stats and Vault with Giada UI primitives', async ({
@@ -123,6 +198,20 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   await expect(
     editorPanel.locator('.giu-field-label'),
   ).toHaveCount(10)
+
+  const similarityButton = editorPanel.getByRole('button', {
+    name: 'Check similarity',
+    exact: true,
+  })
+
+  await expect(similarityButton).toHaveAttribute(
+    'data-giu-variant',
+    'secondary',
+  )
+  await expect(similarityButton).toHaveAttribute(
+    'data-giu-size',
+    'compact',
+  )
 
   const saveButton = editorPanel.getByRole('button', {
     name: 'Save to vault',
