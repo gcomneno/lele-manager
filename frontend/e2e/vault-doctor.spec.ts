@@ -30,8 +30,8 @@ async function resetVaultFixture() {
 
 async function openDoctor(page: import('@playwright/test').Page) {
   await page.goto('/app/#/ops')
-  await expect(page.getByRole('heading', { name: 'Vault Doctor' })).toBeVisible()
-  await page.getByRole('button', { name: 'Run Doctor' }).click()
+  await expect(page.getByRole('heading', { name: 'Controllo del vault' })).toBeVisible()
+  await page.getByRole('button', { name: 'Esegui controllo' }).click()
 }
 
 test.describe('ops: vault doctor', () => {
@@ -106,7 +106,7 @@ test.describe('ops: vault doctor', () => {
         body: JSON.stringify({ detail: 'vault inspection failed for E2E' }),
       })
     })
-    await page.getByRole('button', { name: 'Run Doctor' }).click()
+    await page.getByRole('button', { name: 'Esegui controllo' }).click()
 
     await expect(page.locator('.doctor').getByText('vault inspection failed for E2E')).toBeVisible()
     await expect(page.getByText('Vault healthy')).toHaveCount(0)

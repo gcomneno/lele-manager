@@ -1,15 +1,22 @@
 <script lang="ts">
+  import { FormStatus } from 'giadaware-ui-components'
+  import {
+    Button,
+    FieldLabel,
+    FormActions,
+    Panel,
+  } from 'giadaware-ui-components/studio'
   import { api, type DuplicateLessonSnapshot, type DuplicatePair, type DuplicateReportResponse } from '../lib/api'
 
   const reasonLabels: Record<string, string> = {
-    duplicate_id: 'Same lesson ID',
-    exact_text: 'Exact normalized text',
-    equivalent_metadata: 'Equivalent metadata',
-    same_title: 'Same title',
-    same_topic: 'Same topic',
-    same_source: 'Same source',
-    same_date: 'Same date',
-    shared_tags: 'Shared tags',
+    duplicate_id: 'Stesso ID LeLe',
+    exact_text: 'Testo normalizzato identico',
+    equivalent_metadata: 'Metadati equivalenti',
+    same_title: 'Stesso titolo',
+    same_topic: 'Stesso topic',
+    same_source: 'Stessa fonte',
+    same_date: 'Stessa data',
+    shared_tags: 'Tag condivisi',
   }
 
   interface LessonSide {
@@ -45,7 +52,7 @@
   }
 
   function describeReason(reason: string): string {
-    return reasonLabels[reason] ?? 'Reported duplicate signal'
+    return reasonLabels[reason] ?? 'Segnale di duplicato rilevato'
   }
 
   function isModelError(message: string): boolean {
@@ -60,26 +67,26 @@
 
   function metadata(lesson: DuplicateLessonSnapshot): Array<[string, string | number]> {
     return [
-      ['Title', lesson.title ?? '—'],
+      ['Titolo', lesson.title ?? '—'],
       ['Topic', lesson.topic ?? '—'],
-      ['Source', lesson.source ?? '—'],
-      ['Importance', lesson.importance ?? '—'],
-      ['Date', lesson.date ?? '—'],
-      ['Created', lesson.created_at ?? '—'],
+      ['Fonte', lesson.source ?? '—'],
+      ['Importanza', lesson.importance ?? '—'],
+      ['Data', lesson.date ?? '—'],
+      ['Creata', lesson.created_at ?? '—'],
     ]
   }
 
   function lessonSides(pair: DuplicatePair): LessonSide[] {
     return [
       {
-        heading: 'Left lesson',
+        heading: 'LeLe a sinistra',
         position: pair.left_position,
         id: pair.left_id,
         lesson: pair.left_lesson,
         path: displayPath(pair, 'left'),
       },
       {
-        heading: 'Right lesson',
+        heading: 'LeLe a destra',
         position: pair.right_position,
         id: pair.right_id,
         lesson: pair.right_lesson,
@@ -95,12 +102,12 @@
 
     const parsedLimit = requestLimit()
     if (parsedLimit == null) {
-      error = 'Limit must be a whole number of at least 1.'
+      error = 'Il numero massimo deve essere un intero maggiore o uguale a 1.'
       return
     }
     const parsedMinScore = requestMinScore()
     if (parsedMinScore == null) {
-      error = 'Minimum score must be a finite number between 0 and 1.'
+      error = 'La soglia minima deve essere un numero compreso tra 0 e 1.'
       return
     }
     const requestedExactOnly = exactOnly
@@ -122,80 +129,133 @@
 </script>
 
 <section class="duplicates">
-  <section class="card controls">
-    <h2>Duplicate review</h2>
-    <p class="meta">Read-only review of exact and near duplicate candidates. No records are changed.</p>
+  <Panel title="Revisione duplicati" class="controls">
+    <p class="meta controls-description">
+      Controlla duplicati esatti e possibili somiglianze
+      senza modificare l’archivio.
+    </p>
+
     <div class="control-grid">
       <label>
-        Minimum score
-        <input aria-label="Minimum score" type="number" min="0" max="1" step="0.01" bind:value={minScore} />
+        <FieldLabel label="Soglia minima" />
+        <input
+          aria-label="Soglia minima"
+          type="number"
+          min="0"
+          max="1"
+          step="0.01"
+          bind:value={minScore}
+        />
       </label>
+
       <label class="checkbox-label">
-        <input aria-label="Exact only" type="checkbox" bind:checked={exactOnly} />
-        Exact only (does not require the similarity model)
+        <input
+          aria-label="Solo duplicati esatti"
+          type="checkbox"
+          bind:checked={exactOnly}
+        />
+        <FieldLabel label="Solo duplicati esatti" />
       </label>
+
       <label>
-        Display limit
-        <input aria-label="Display limit" type="number" min="1" step="1" bind:value={limit} />
+        <FieldLabel label="Numero massimo" />
+        <input
+          aria-label="Numero massimo"
+          type="number"
+          min="1"
+          step="1"
+          bind:value={limit}
+        />
       </label>
     </div>
-    <div class="actions">
-      <button class="btn btn-primary" onclick={runReview} disabled={loading}>
-        {loading ? 'Running…' : report ? 'Refresh review' : 'Run review'}
-      </button>
-    </div>
-  </section>
+
+    <FormActions
+      style="--giu-form-actions-gap: var(--space-2); margin-top: var(--space-3)"
+    >
+      <Button
+        size="compact"
+        onclick={runReview}
+        disabled={loading}
+      >
+        {loading
+          ? 'Controllo in corso…'
+          : report
+            ? 'Aggiorna controllo'
+            : 'Avvia controllo'}
+      </Button>
+    </FormActions>
+  </Panel>
 
   {#if loading}
-    <p class="meta" role="status">Running duplicate review…</p>
+    <FormStatus
+      message="Controllo duplicati in corso…"
+      tone="info"
+      style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+    />
   {:else if error}
-    <section class="card error-state" role="alert">
-      <h3>{isModelError(error) ? 'Similarity model unavailable' : 'Duplicate review failed'}</h3>
-      <p class="error">{error}</p>
+    <Panel
+      title={isModelError(error)
+        ? 'Modello di somiglianza non disponibile'
+        : 'Controllo duplicati non riuscito'}
+      headingLevel={3}
+      class="error-state"
+    >
+      <FormStatus
+        message={error}
+        tone="error"
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+
       {#if isModelError(error)}
-        <p class="meta">Run an exact-only review, or train and make the topic model available before reviewing near duplicates.</p>
+        <p class="meta">
+          Controlla solo i duplicati esatti oppure aggiorna
+          il topic model prima di cercare somiglianze.
+        </p>
       {/if}
-    </section>
+    </Panel>
   {:else if report && appliedQuery}
-    <section class="card summary" aria-label="Duplicate review summary">
-      <h3>Review summary</h3>
-      <dl>
-        <div><dt>Lessons analyzed</dt><dd>{report.lessons_analyzed}</dd></div>
-        <div><dt>Total pairs before limit</dt><dd>{report.total_pairs}</dd></div>
-        <div><dt>Exact pairs before limit</dt><dd>{report.exact_pairs}</dd></div>
-        <div><dt>Near pairs before limit</dt><dd>{report.near_pairs}</dd></div>
-        <div><dt>Configured minimum score</dt><dd>{appliedQuery.minScore}</dd></div>
-        <div><dt>Configured display limit</dt><dd>{appliedQuery.limit}</dd></div>
-        <div><dt>Exact only</dt><dd>{appliedQuery.exactOnly ? 'Yes' : 'No'}</dd></div>
-        <div><dt>Displayed pairs</dt><dd>{report.pairs.length}</dd></div>
+    <Panel
+      title="Riepilogo del controllo"
+      headingLevel={3}
+      class="summary"
+    >
+      <dl class="summary-grid">
+        <div><dt>LeLe analizzate</dt><dd>{report.lessons_analyzed}</dd></div>
+        <div><dt>Coppie totali prima del limite</dt><dd>{report.total_pairs}</dd></div>
+        <div><dt>Coppie esatte prima del limite</dt><dd>{report.exact_pairs}</dd></div>
+        <div><dt>Somiglianze prima del limite</dt><dd>{report.near_pairs}</dd></div>
+        <div><dt>Soglia minima impostata</dt><dd>{appliedQuery.minScore}</dd></div>
+        <div><dt>Numero massimo impostato</dt><dd>{appliedQuery.limit}</dd></div>
+        <div><dt>Solo duplicati esatti</dt><dd>{appliedQuery.exactOnly ? 'Sì' : 'No'}</dd></div>
+        <div><dt>Coppie mostrate</dt><dd>{report.pairs.length}</dd></div>
       </dl>
-    </section>
+    </Panel>
 
     {#if report.pairs.length === 0}
       <section class="card empty-state">
-        <h3>No duplicate pairs found</h3>
-        <p class="meta">Try a lower minimum score or review a dataset with more lessons.</p>
+        <h3>Nessun duplicato trovato</h3>
+        <p class="meta">Prova una soglia più bassa o aggiungi altre LeLe.</p>
       </section>
     {:else}
       <section class="pair-list" aria-label="Duplicate pairs">
         {#each report.pairs as pair, index (`${pair.left_position}-${pair.right_position}-${index}`)}
           <article class="card duplicate-pair">
             <header class="pair-header">
-              <h3>Pair {index + 1}</h3>
+              <h3>Coppia {index + 1}</h3>
               <div class="signals">
-                <span class:exact={pair.kind === 'exact'} class:near={pair.kind === 'near'} class="kind">{pair.kind} duplicate</span>
-                <span class="score">Score {pair.score.toFixed(3)}</span>
+                <span class:exact={pair.kind === 'exact'} class:near={pair.kind === 'near'} class="kind">{pair.kind === 'exact' ? 'duplicato esatto' : 'possibile somiglianza'}</span>
+                <span class="score">Punteggio {pair.score.toFixed(3)}</span>
               </div>
             </header>
-            <div class="reasons" aria-label="Duplicate signals">
+            <div class="reasons" aria-label="Segnali di duplicato">
               {#if pair.reasons.length}
                 {#each pair.reasons as reason}
                   <span class="reason" title={reason}>{describeReason(reason)} <code>{reason}</code></span>
                 {/each}
               {:else}
-                <span class="meta">Reasons: —</span>
+                <span class="meta">Segnali: —</span>
               {/if}
-              <span class="meta">Shared tags: {pair.shared_tags.length ? pair.shared_tags.join(', ') : '—'}</span>
+              <span class="meta">Tag condivisi: {pair.shared_tags.length ? pair.shared_tags.join(', ') : '—'}</span>
             </div>
 
             <div class="lessons">
@@ -203,13 +263,13 @@
                 <section class="lesson" aria-label={item.heading}>
                   <h4>{item.heading}</h4>
                   <dl class="identity">
-                    <div><dt>Position (zero-based)</dt><dd>{item.position}</dd></div>
+                    <div><dt>Posizione (da zero)</dt><dd>{item.position}</dd></div>
                     <div><dt>ID</dt><dd>{item.id || '—'}</dd></div>
-                    <div><dt>Path</dt><dd>{item.path}</dd></div>
+                    <div><dt>Percorso</dt><dd>{item.path}</dd></div>
                   </dl>
-                  <h5>Text</h5>
+                  <h5>Testo</h5>
                   <pre>{item.lesson.text}</pre>
-                  <h5>Metadata</h5>
+                  <h5>Metadati</h5>
                   <dl class="metadata">
                     {#each metadata(item.lesson) as field}
                       <div><dt>{field[0]}</dt><dd>{field[1]}</dd></div>
@@ -227,22 +287,20 @@
       </section>
     {/if}
   {:else}
-    <p class="meta">Choose the review settings and run the read-only check.</p>
+    <p class="meta">Imposta le opzioni e avvia il controllo.</p>
   {/if}
 </section>
 
 <style>
   .duplicates, .pair-list { display: grid; gap: 16px; }
-  h2, h3, h4, h5 { margin: 0; }
-  .controls > .meta { margin: 8px 0 16px; }
+  h3, h4, h5 { margin: 0; }
+  .controls-description { margin: 0 0 16px; }
   .control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
   label { display: grid; gap: 5px; color: var(--muted); font-size: .85rem; }
   input[type='number'] { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--text); }
   .checkbox-label { display: flex; align-items: center; gap: 8px; padding-top: 25px; }
-  .actions { margin-top: 14px; }
-  .summary h3 { margin-bottom: 12px; }
-  .summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0; }
-  .summary dl div, .identity div, .metadata div { border: 1px solid var(--border); border-radius: 7px; padding: 8px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0; }
+  .summary-grid div, .identity div, .metadata div { border: 1px solid var(--border); border-radius: 7px; padding: 8px; }
   dt { color: var(--muted); font-size: .76rem; }
   dd { margin: 3px 0 0; overflow-wrap: anywhere; }
   .pair-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

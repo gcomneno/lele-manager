@@ -134,8 +134,8 @@
 
 <div class="ops">
   <section class="card">
-    <h2>Ops / Admin</h2>
-    <p class="meta">Import vault, train e refresh completo (import + train).</p>
+    <h2>Stato e manutenzione</h2>
+    <p class="meta">Aggiorna i contenuti, il modello di ricerca e lo stato locale.</p>
 
     <div class="health-grid">
       <div>
@@ -153,13 +153,13 @@
     </div>
 
     <div class="actions">
-      <button class="btn" onclick={refreshHealth} disabled={loadingHealth}>Refresh health</button>
-      <button class="btn" onclick={vaultImport} disabled={importing}>Import vault</button>
+      <button class="btn" onclick={refreshHealth} disabled={loadingHealth}>Aggiorna stato</button>
+      <button class="btn" onclick={vaultImport} disabled={importing}>Aggiorna dal vault</button>
       <button class="btn btn-primary" onclick={train} disabled={training}>
-        {training ? 'Training…' : 'Train topic model'}
+        {training ? 'Aggiornamento del modello…' : 'Aggiorna il modello di ricerca'}
       </button>
       <button class="btn btn-primary" onclick={fullRefresh} disabled={refreshing}>
-        {refreshing ? 'Refresh…' : 'Refresh completo'}
+        {refreshing ? 'Aggiornamento…' : 'Aggiorna tutto'}
       </button>
     </div>
 
@@ -172,11 +172,11 @@
   </section>
 
   <section class="card doctor" aria-live="polite">
-    <h3>Vault Doctor</h3>
+    <h3>Controllo del vault</h3>
     <p class="meta">Controllo in sola lettura della struttura e dei metadati del vault.</p>
     <div class="actions">
       <button class="btn" onclick={runDoctor} disabled={runningDoctor}>
-        {runningDoctor ? 'Running Doctor…' : 'Run Doctor'}
+        {runningDoctor ? 'Controllo in corso…' : 'Esegui controllo'}
       </button>
     </div>
 
@@ -220,7 +220,7 @@
   </section>
 
   <section class="card">
-    <h3>Log operazioni</h3>
+    <h3>Registro attività</h3>
     {#if log.length === 0}
       <p class="meta">Nessuna operazione ancora.</p>
     {:else}
