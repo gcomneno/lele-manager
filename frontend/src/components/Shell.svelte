@@ -1,5 +1,10 @@
 <script lang="ts">
   import { navigate, type Route } from '../lib/router'
+  import {
+    locale,
+    messages,
+    setLocale,
+  } from '../lib/i18n'
   import HealthBar from './HealthBar.svelte'
 
   interface Props {
@@ -10,14 +15,14 @@
   let { route, children }: Props = $props()
 
   const links = [
-    { view: 'browse' as const, label: 'Esplora', hash: '#/' },
-    { view: 'timeline' as const, label: 'Cronologia', hash: '#/timeline' },
-    { view: 'stats' as const, label: 'Statistiche', hash: '#/stats' },
-    { view: 'editor' as const, label: 'Nuova LeLe', hash: '#/editor' },
-    { view: 'tritalele' as const, label: 'Raccolta', hash: '#/tritalele' },
-    { view: 'vault' as const, label: 'Vault', hash: '#/vault' },
-    { view: 'duplicates' as const, label: 'Duplicati', hash: '#/duplicates' },
-    { view: 'ops' as const, label: 'Sistema', hash: '#/ops' },
+    { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/' },
+    { view: 'timeline' as const, labelKey: 'navTimeline' as const, hash: '#/timeline' },
+    { view: 'stats' as const, labelKey: 'navStatistics' as const, hash: '#/stats' },
+    { view: 'editor' as const, labelKey: 'navNewLele' as const, hash: '#/editor' },
+    { view: 'tritalele' as const, labelKey: 'navCollection' as const, hash: '#/tritalele' },
+    { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault' },
+    { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates' },
+    { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops' },
   ]
 
   function isActive(view: Route['view']) {
@@ -27,11 +32,11 @@
 
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="#/" aria-label="LeLe Manager, browse" onclick={(e) => { e.preventDefault(); navigate({ view: 'browse' }) }}>
+    <a class="brand" href="#/" aria-label={$messages.brandBrowseAccessible} onclick={(e) => { e.preventDefault(); navigate({ view: 'browse' }) }}>
       <img src="/app/brand/lele-manager-mark.svg" alt="" aria-hidden="true" />
       <span>
         <strong>LeLe Manager</strong>
-        <small class="brand-tagline" data-testid="brand-tagline">Lo spazio locale per le tue 'Lessons Learned'</small>
+        <small class="brand-tagline" data-testid="brand-tagline">{$messages.brandTagline}</small>
       </span>
     </a>
     <nav>
@@ -44,10 +49,33 @@
             navigate({ view: link.view })
           }}
         >
-          {link.label}
+          {$messages[link.labelKey]}
         </a>
       {/each}
     </nav>
+    <div
+      class="language-control"
+      data-testid="language-control"
+    >
+      <label for="lele-manager-language">
+        {$messages.languageLabel}
+      </label>
+      <select
+        id="lele-manager-language"
+        value={$locale}
+        onchange={(event) => {
+          setLocale(event.currentTarget.value)
+        }}
+      >
+        <option value="en">
+          {$messages.languageEnglish}
+        </option>
+        <option value="it">
+          {$messages.languageItalian}
+        </option>
+      </select>
+    </div>
+
     <footer class="product-signature" data-testid="giadaware-signature">
       <img
         class="signature-mark"
@@ -57,7 +85,7 @@
       />
       <span class="signature-copy">
         <strong>GiadaWare™</strong>
-        <small>Software open source</small>
+        <small>{$messages.makerOpenSource}</small>
       </span>
     </footer>
   </aside>
@@ -68,7 +96,7 @@
       <a
         class="btn btn-primary"
         href="#/editor"
-        aria-label="Nuova LeLe"
+        aria-label={$messages.newLeleAccessible}
         data-testid="new-lesson-cta"
         onclick={(e) => {
           e.preventDefault()
@@ -76,7 +104,7 @@
         }}
       >
         <span class="new-lesson-visible" aria-hidden="true">
-          <span class="new-lesson-prefix">+ Nuova</span>
+          <span class="new-lesson-prefix">+ {$messages.newLelePrefix}</span>
           <span class="lele-mascot-badge">
             <img
               src="/app/brand/giadaware-monkey.svg"
@@ -162,12 +190,41 @@
     opacity: 1;
   }
 
+  .language-control {
+    display: grid;
+    gap: 5px;
+    margin-top: auto;
+    padding: var(--space-4) 4px 0;
+    border-top: 1px solid rgb(255 255 255 / 14%);
+  }
+
+  .language-control label {
+    color: var(--color-text-inverse-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .language-control select {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 28px 6px 9px;
+    border: 1px solid rgb(255 255 255 / 24%);
+    border-radius: var(--radius-sm);
+    color: var(--sidebar-text);
+    background: var(--sidebar);
+    font: inherit;
+  }
+
+  .language-control select:focus-visible {
+    outline: 0;
+    box-shadow: var(--focus-ring);
+  }
+
   .product-signature {
     display: grid;
     gap: 2px;
-    margin-top: auto;
-    padding: var(--space-4) 4px 2px;
-    border-top: 1px solid rgb(255 255 255 / 14%);
+    padding: var(--space-3) 4px 2px;
     color: var(--color-text-inverse-muted);
     font-size: var(--font-size-xs);
     line-height: var(--line-height-tight);
@@ -243,6 +300,18 @@
 
     .product-signature {
       display: none;
+    }
+
+    .language-control {
+      flex: 0 0 140px;
+      margin-top: 0;
+      margin-left: auto;
+      padding: 0;
+      border-top: 0;
+    }
+
+    .language-control label {
+      color: var(--sidebar-text);
     }
 
     nav {
@@ -368,6 +437,47 @@
     background: var(--color-surface);
     content: '';
     transform: rotate(45deg);
+  }
+
+  /* Compact desktop sidebar for short viewports */
+  @media (min-width: 801px) and (max-height: 700px) {
+    .sidebar {
+      padding-top: 12px;
+      padding-bottom: 12px;
+      gap: 8px;
+    }
+
+    .brand > span {
+      gap: 2px;
+    }
+
+    .brand-tagline {
+      font-size: 11px;
+      line-height: 1.2;
+    }
+
+    nav {
+      gap: 2px;
+    }
+
+    nav a {
+      padding: 6px 10px;
+    }
+
+    .language-control {
+      gap: 3px;
+      padding-top: var(--space-2);
+    }
+
+    .language-control select {
+      min-height: 32px;
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+
+    .product-signature {
+      padding-top: var(--space-2);
+    }
   }
 
 </style>
