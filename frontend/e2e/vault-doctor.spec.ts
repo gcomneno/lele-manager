@@ -30,8 +30,8 @@ async function resetVaultFixture() {
 
 async function openDoctor(page: import('@playwright/test').Page) {
   await page.goto('/app/#/ops')
-  await expect(page.getByRole('heading', { name: 'Controllo del vault' })).toBeVisible()
-  await page.getByRole('button', { name: 'Esegui controllo' }).click()
+  await expect(page.getByRole('heading', { name: 'Vault doctor' })).toBeVisible()
+  await page.getByRole('button', { name: 'Run check' }).click()
 }
 
 test.describe('ops: vault doctor', () => {
@@ -46,7 +46,7 @@ test.describe('ops: vault doctor', () => {
 
     await expect(page.getByText('Vault healthy')).toBeVisible()
     await expect(page.locator('.doctor .error')).toHaveCount(0)
-    await expect(page.locator('.doctor').getByText('1 file controllati')).toBeVisible()
+    await expect(page.locator('.doctor').getByText('1 file checked')).toBeVisible()
   })
 
   test('groups malformed-frontmatter findings by diagnostic code', async ({ page }) => {
@@ -106,11 +106,11 @@ test.describe('ops: vault doctor', () => {
         body: JSON.stringify({ detail: 'vault inspection failed for E2E' }),
       })
     })
-    await page.getByRole('button', { name: 'Esegui controllo' }).click()
+    await page.getByRole('button', { name: 'Run check' }).click()
 
     await expect(page.locator('.doctor').getByText('vault inspection failed for E2E')).toBeVisible()
     await expect(page.getByText('Vault healthy')).toHaveCount(0)
     await expect(page.getByText('Vault not healthy')).toHaveCount(0)
-    await expect(page.locator('.doctor').getByText('1 file controllati')).toHaveCount(0)
+    await expect(page.locator('.doctor').getByText('1 file checked')).toHaveCount(0)
   })
 })

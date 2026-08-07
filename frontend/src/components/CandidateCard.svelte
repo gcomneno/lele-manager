@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Candidate } from '../lib/api'
+  import { formatMessage, messages } from '../lib/i18n'
 
   interface Props {
     candidate: Candidate
@@ -10,7 +11,39 @@
   let { candidate, selected = false, onclick }: Props = $props()
 
   function shortId(id: string): string {
-    return id.startsWith('sha256:') ? id.slice(7, 19) : id.slice(0, 12)
+    return id.startsWith('sha256:')
+      ? id.slice(7, 19)
+      : id.slice(0, 12)
+  }
+
+  function stateLabel(state: string): string {
+    switch (state) {
+      case 'staged':
+        return $messages.tritaleleStateStaged
+      case 'in_review':
+        return $messages.tritaleleStateInReview
+      case 'rejected':
+        return $messages.tritaleleStateRejected
+      case 'approved':
+        return $messages.tritaleleStateApproved
+      default:
+        return state
+    }
+  }
+
+  function sourceKindLabel(kind: string): string {
+    switch (kind) {
+      case 'plain_text':
+        return $messages.tritaleleSourceKindPlainText
+      case 'markdown':
+        return $messages.tritaleleSourceKindMarkdown
+      case 'stdin':
+        return $messages.tritaleleSourceKindStdin
+      case 'in_memory':
+        return $messages.tritaleleSourceKindMemory
+      default:
+        return kind
+    }
   }
 </script>
 
@@ -18,16 +51,24 @@
   class="candidate-card"
   class:selected
   type="button"
-  aria-label={`Apri candidato ${shortId(candidate.candidate_id)}`}
+  aria-label={formatMessage(
+    $messages.tritaleleOpenCandidate,
+    { id: shortId(candidate.candidate_id) },
+  )}
   {onclick}
 >
-  <span class={`state state-${candidate.state}`}>{candidate.state}</span>
+  <span class={`state state-${candidate.state}`}>
+    {stateLabel(candidate.state)}
+  </span>
   <strong>{candidate.provenance.source_logical_name}</strong>
-  <span class="meta identity">{shortId(candidate.candidate_id)} · rev {candidate.revision}</span>
+  <span class="meta identity">
+    {shortId(candidate.candidate_id)}
+    · {$messages.tritaleleRevisionShort} {candidate.revision}
+  </span>
   <span class="meta">
-    {candidate.provenance.source_kind}
+    {sourceKindLabel(candidate.provenance.source_kind)}
     {#if candidate.provenance.chunk_index !== null}
-      · chunk {candidate.provenance.chunk_index}
+      · {$messages.tritaleleChunk} {candidate.provenance.chunk_index}
     {/if}
   </span>
   <span class="preview">

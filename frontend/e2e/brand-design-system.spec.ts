@@ -8,11 +8,11 @@ test.describe('brand foundation', () => {
     await expect(brand).toBeVisible()
     await expect(brand.locator('img')).toHaveAttribute('src', '/app/brand/lele-manager-mark.svg')
     const browsePanel = page.getByRole('region', {
-      name: 'Esplora',
+      name: 'Browse',
       exact: true,
     })
     const searchButton = browsePanel.getByRole('button', {
-      name: 'Cerca',
+      name: 'Search',
       exact: true,
     })
 
@@ -30,18 +30,18 @@ test.describe('brand foundation', () => {
     await expect(browsePanel).toBeVisible()
   })
 
-  test('uses Italian product labels while preserving navigation hashes', async ({ page }) => {
+  test('uses default English product labels while preserving navigation hashes', async ({ page }) => {
     await page.goto('/app/#/')
 
     const navigation = [
-      ['Esplora', '#/'],
-      ['Cronologia', '#/timeline'],
-      ['Statistiche', '#/stats'],
-      ['Nuova LeLe', '#/editor'],
-      ['Raccolta', '#/tritalele'],
+      ['Browse', '#/'],
+      ['Timeline', '#/timeline'],
+      ['Statistics', '#/stats'],
+      ['New LeLe', '#/editor'],
+      ['Collection', '#/tritalele'],
       ['Vault', '#/vault'],
-      ['Duplicati', '#/duplicates'],
-      ['Sistema', '#/ops'],
+      ['Duplicates', '#/duplicates'],
+      ['System', '#/ops'],
     ] as const
 
     const primaryNavigation = page.getByRole('navigation')
@@ -60,7 +60,7 @@ test.describe('brand foundation', () => {
   test('makes keyboard focus visible on navigation and controls', async ({ page }) => {
     await page.goto('/app/#/')
 
-    const timeline = page.getByRole('link', { name: 'Cronologia' })
+    const timeline = page.getByRole('link', { name: 'Timeline' })
     await timeline.focus()
     await expect(timeline).toBeFocused()
     await expect(timeline).toHaveCSS('box-shadow', /rgb/)
@@ -76,13 +76,13 @@ test('shows the GiadaWare product signature without crowding the product brand',
   await page.goto('/app/')
 
   await expect(page.getByTestId('brand-tagline')).toHaveText(
-    "Lo spazio locale per le tue 'Lessons Learned'",
+    'Your local space for your “Lessons Learned”',
   )
 
   const signature = page.getByTestId('giadaware-signature')
   await expect(signature).toBeVisible()
   await expect(signature.getByText('GiadaWare™')).toBeVisible()
-  await expect(signature.getByText('Software open source')).toBeVisible()
+  await expect(signature.getByText('Open-source software')).toBeVisible()
   await expect(signature.locator('img')).toHaveAttribute(
     'src',
     '/app/brand/giadaware-monkey.svg',
@@ -126,16 +126,19 @@ test('pins the maker signature to the desktop viewport across routes', async ({ 
 
   await expectSignatureInsideViewport()
 
-  await page.getByRole('link', { name: 'Cronologia' }).click()
+  await page.getByRole('link', { name: 'Timeline' }).click()
   await expect(
-    page.getByRole('heading', { name: 'Cronologia' }),
+    page.getByRole('heading', { name: 'Timeline' }),
   ).toBeVisible()
   await expect(signature).toBeVisible()
   await expectSignatureInsideViewport()
 
-  await page.getByRole('link', { name: 'Esplora' }).click()
+  await page.getByRole('link', {
+    name: 'Browse',
+    exact: true,
+  }).click()
   await expect(
-    page.getByRole('heading', { name: 'Esplora' }),
+    page.getByRole('heading', { name: 'Browse' }),
   ).toBeVisible()
   await expect(signature).toBeVisible()
   await expectSignatureInsideViewport()
@@ -181,8 +184,8 @@ test('presents the new lesson action with the LeLe monkey balloon', async ({ pag
   const action = page.getByTestId('new-lesson-cta')
 
   await expect(action).toBeVisible()
-  await expect(action).toHaveAccessibleName('Nuova LeLe')
-  await expect(action.getByText('+ Nuova')).toBeVisible()
+  await expect(action).toHaveAccessibleName('New LeLe')
+  await expect(action.getByText('+ New')).toBeVisible()
   await expect(action.getByText('LeLe')).toBeVisible()
   await expect(action.locator('img')).toHaveAttribute(
     'src',

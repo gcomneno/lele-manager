@@ -11,6 +11,7 @@
     type SimilarMeta,
   } from '../lib/api'
   import { navigate } from '../lib/router'
+  import { messages } from '../lib/i18n'
   import { renderMarkdown } from '../lib/markdown'
   import SimilarPanel from '../components/SimilarPanel.svelte'
 
@@ -73,7 +74,7 @@
 </script>
 
 {#if loading}
-  <p class="meta">Caricamento…</p>
+  <p class="meta">{$messages.commonLoading}</p>
 {:else if error}
   <FormStatus
     message={error}
@@ -93,15 +94,15 @@
             id: lesson!.id,
           })}
         >
-          Modifica
+          {$messages.detailEdit}
         </Button>
       {/snippet}
 
       <div class="meta row">
-        <span>topic: {lesson.topic ?? '—'}</span>
-        <span>source: {lesson.source ?? '—'}</span>
-        <span>importance: {lesson.importance ?? '?'}</span>
-        <span>date: {lesson.date ?? '—'}</span>
+        <span>{$messages.fieldTopic}: {lesson.topic ?? '—'}</span>
+        <span>{$messages.fieldSource}: {lesson.source ?? '—'}</span>
+        <span>{$messages.fieldImportance}: {lesson.importance ?? '?'}</span>
+        <span>{$messages.fieldDate}: {lesson.date ?? '—'}</span>
       </div>
 
       {#if lesson.tags?.length}
@@ -122,7 +123,7 @@
     </Panel>
 
     <SimilarPanel
-      title="LeLe simili"
+      title={$messages.detailSimilarLessons}
       items={similar}
       meta={similarMeta}
       explain={true}

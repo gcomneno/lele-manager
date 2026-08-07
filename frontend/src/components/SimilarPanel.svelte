@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SimilarItem, SimilarMeta } from '../lib/api'
   import { navigate } from '../lib/router'
+  import { messages } from '../lib/i18n'
 
   interface Props {
     title?: string
@@ -9,16 +10,18 @@
     loading?: boolean
     error?: string
     explain?: boolean
+    searched?: boolean
     onclickItem?: (id: string) => void
   }
 
   let {
-    title = 'Simili',
+    title = '',
     items,
     meta = null,
     loading = false,
     error = '',
     explain = true,
+    searched = true,
     onclickItem,
   }: Props = $props()
 
@@ -29,27 +32,33 @@
 </script>
 
 <section class="card similar-panel">
-  <h3>{explain ? 'Perché simile?' : title}</h3>
+  <h3>
+    {explain
+      ? $messages.similarWhy
+      : title || $messages.similarDefaultTitle}
+  </h3>
 
   {#if explain && meta}
     <p class="explain-meta">
       top_k={meta.top_k}, min_score={meta.min_score.toFixed(2)}
       {#if meta.query_topic}
-        · query topic: <strong>{meta.query_topic}</strong>
+        · {$messages.similarQueryTopic}:
+        <strong>{meta.query_topic}</strong>
       {/if}
       {#if meta.query_tags?.length}
-        · tag query: {meta.query_tags.join(', ')}
+        · {$messages.similarQueryTags}:
+        {meta.query_tags.join(', ')}
       {/if}
     </p>
   {/if}
 
   {#if loading}
-    <p class="meta">Caricamento…</p>
+    <p class="meta">{$messages.commonLoading}</p>
   {:else if error}
     <p class="error">{error}</p>
-  {:else if items.length === 0}
-    <p class="meta">Nessun risultato.</p>
-  {:else}
+  {:else if searched && items.length === 0}
+    <p class="meta">{$messages.similarEmpty}</p>
+  {:else if searched}
     <ul>
       {#each items as item}
         <li>
@@ -66,7 +75,10 @@
             <span class="id">{item.id}</span>
             <span class="preview">{item.text_preview}</span>
             {#if explain && item.tags_shared?.length}
-              <span class="tags-shared">tag in comune: {item.tags_shared.join(', ')}</span>
+              <span class="tags-shared">
+                {$messages.similarSharedTags}:
+                {item.tags_shared.join(', ')}
+              </span>
             {/if}
           </button>
         </li>

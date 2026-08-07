@@ -13,6 +13,7 @@
   } from '../lib/api'
   import { stripFrontmatter } from '../lib/markdown'
   import { navigate } from '../lib/router'
+  import { formatMessage, messages } from '../lib/i18n'
   import SimilarPanel from '../components/SimilarPanel.svelte'
 
   interface Props {
@@ -34,16 +35,15 @@
   let similarMeta = $state<SimilarMeta | null>(null)
   let similarLoading = $state(false)
   let similarError = $state('')
+  let similarSearched = $state(false)
+  let similarRequestVersion = $state(0)
   let loadError = $state('')
   let saving = $state(false)
   let saveMsg = $state('')
+  let saveSucceeded = $state(false)
 
   let topK = $state(5)
   let minScore = $state(0.1)
-
-  let debounceTimer:
-    | ReturnType<typeof setTimeout>
-    | undefined
 
   function composeText(): string {
     const tagList = tags
@@ -74,16 +74,40 @@
     return frontmatter
   }
 
-  async function fetchSuggest() {
-    const text = composeText().trim()
+  function suggestionSeed(): string {
+    return [
+      title.trim(),
+      tags.trim(),
+      body.trim(),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+  }
 
-    if (text.length < 12) {
-      similar = []
+  function invalidateSimilarity() {
+    similarRequestVersion += 1
+    similar = []
+    similarMeta = null
+    similarLoading = false
+    similarError = ''
+    similarSearched = false
+  }
+
+  async function checkSimilarity() {
+    if (suggestionSeed().length < 12) {
+      invalidateSimilarity()
       return
     }
 
+    const requestVersion = similarRequestVersion + 1
+    similarRequestVersion = requestVersion
+
+    const text = composeText().trim()
+
     similarLoading = true
     similarError = ''
+    similarSearched = true
 
     try {
       const resp = await api.editorSuggest(
@@ -92,21 +116,28 @@
         minScore,
         true,
       )
+
+      if (requestVersion !== similarRequestVersion) {
+        return
+      }
+
       similar = resp.results
       similarMeta = resp.meta ?? null
     } catch (e) {
+      if (requestVersion !== similarRequestVersion) {
+        return
+      }
+
       similar = []
+      similarMeta = null
       similarError = e instanceof Error
         ? e.message
         : String(e)
     } finally {
-      similarLoading = false
+      if (requestVersion === similarRequestVersion) {
+        similarLoading = false
+      }
     }
-  }
-
-  function scheduleSuggest() {
-    clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(fetchSuggest, 500)
   }
 
   async function loadExisting(lessonIdValue: string) {
@@ -126,7 +157,7 @@
 
       const parsed = stripFrontmatter(lesson.text ?? '')
       body = parsed.body || lesson.text || ''
-      scheduleSuggest()
+      invalidateSimilarity()
     } catch (e) {
       loadError = e instanceof Error
         ? e.message
@@ -153,16 +184,19 @@
 
   async function save() {
     if (!body.trim()) {
-      saveMsg = 'Il body non può essere vuoto.'
+      saveSucceeded = false
+      saveMsg = $messages.editorBodyRequired
       return
     }
 
     if (!topic.trim()) {
-      saveMsg = 'Topic obbligatorio.'
+      saveSucceeded = false
+      saveMsg = $messages.editorTopicRequired
       return
     }
 
     saving = true
+    saveSucceeded = false
     saveMsg = ''
 
     try {
@@ -183,12 +217,17 @@
         })
       }
 
-      saveMsg = `Salvato nel vault: ${lesson.id}`
+      saveSucceeded = true
+      saveMsg = formatMessage(
+        $messages.editorSaved,
+        { id: lesson.id },
+      )
       navigate({
         view: 'detail',
         id: lesson.id,
       })
     } catch (e) {
+      saveSucceeded = false
       saveMsg = e instanceof Error
         ? e.message
         : String(e)
@@ -200,24 +239,41 @@
   $effect(() => {
     if (id) {
       loadExisting(id)
-    } else {
-      scheduleSuggest()
     }
   })
 </script>
 
 <div class="editor-layout">
   <Panel
-    title={id ? 'Modifica LeLe' : 'Nuova LeLe'}
+    title={id
+      ? $messages.editorEditTitle
+      : $messages.editorNewTitle}
     class="editor-pane"
   >
     {#snippet actions()}
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={checkSimilarity}
+        disabled={
+          saving ||
+          similarLoading ||
+          suggestionSeed().length < 12
+        }
+      >
+        {similarLoading
+          ? $messages.editorCheckingSimilarity
+          : $messages.editorCheckSimilarity}
+      </Button>
+
       <Button
         size="compact"
         onclick={save}
         disabled={saving}
       >
-        {saving ? 'Salvataggio…' : 'Salva nel vault'}
+        {saving
+          ? $messages.editorSaving
+          : $messages.editorSaveVault}
       </Button>
     {/snippet}
 
@@ -232,83 +288,82 @@
     {#if saveMsg}
       <FormStatus
         message={saveMsg}
-        tone={saveMsg.startsWith('Salvato')
-          ? 'success'
-          : 'error'}
+        tone={saveSucceeded ? 'success' : 'error'}
         style="--giu-form-status-padding: var(--space-2) var(--space-3)"
       />
     {/if}
 
     <div class="meta-grid">
-      <label>
-        <FieldLabel label="ID" />
-        <input
-          bind:value={lessonId}
-          placeholder="auto (topic/data.slug)"
-          readonly={!!id}
-        />
-      </label>
+      {#if id}
+        <label>
+          <FieldLabel label="ID" />
+          <input
+            value={lessonId}
+            readonly
+          />
+        </label>
+      {/if}
 
       <label>
-        <FieldLabel label="Topic" />
+        <FieldLabel label={$messages.fieldTopic} />
         <input
           bind:value={topic}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
       <label>
-        <FieldLabel label="Source" />
+        <FieldLabel label={$messages.fieldSource} />
         <input
           bind:value={source}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
       <label>
-        <FieldLabel label="Importance" />
+        <FieldLabel label={$messages.fieldImportance} />
         <input
           type="number"
           min="1"
           max="5"
           bind:value={importance}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
       <label>
-        <FieldLabel label="Date" />
+        <FieldLabel label={$messages.fieldDate} />
         <input
           bind:value={date}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
       <label>
-        <FieldLabel label="Tags" />
+        <FieldLabel label={$messages.fieldTags} />
         <input
           bind:value={tags}
           placeholder="python, pytest"
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
 
       <label class="wide">
-        <FieldLabel label="Title" />
+        <FieldLabel label={$messages.fieldTitle} />
         <input
           bind:value={title}
-          oninput={scheduleSuggest}
+          oninput={invalidateSimilarity}
         />
       </label>
     </div>
 
     <label class="body-label">
-      <FieldLabel label="Body (Markdown)" />
+      <FieldLabel label={$messages.editorBodyLabel} />
       <textarea
         rows="16"
         bind:value={body}
-        oninput={scheduleSuggest}
-        placeholder="Scrivi la lesson learned…"
+        oninput={invalidateSimilarity}
+        placeholder={$messages.editorBodyPlaceholder}
       ></textarea>
     </label>
 
@@ -320,7 +375,7 @@
           min="1"
           max="20"
           bind:value={topK}
-          onchange={fetchSuggest}
+          onchange={invalidateSimilarity}
         />
       </label>
 
@@ -332,26 +387,29 @@
           max="1"
           step="0.01"
           bind:value={minScore}
-          onchange={fetchSuggest}
+          onchange={invalidateSimilarity}
         />
       </label>
     </div>
   </Panel>
 
-  <SimilarPanel
-    title="Simili live"
-    items={similar}
-    meta={similarMeta}
-    explain={true}
-    loading={similarLoading}
-    error={similarError}
-  />
+  {#if similarSearched}
+    <SimilarPanel
+      title={$messages.editorLiveSimilar}
+      items={similar}
+      meta={similarMeta}
+      explain={true}
+      loading={similarLoading}
+      error={similarError}
+      searched={true}
+    />
+  {/if}
 </div>
 
 <style>
   .editor-layout {
     display: grid;
-    grid-template-columns: 1.3fr 0.7fr;
+    grid-template-columns: 1fr;
     gap: 16px;
     align-items: start;
   }
