@@ -1365,6 +1365,19 @@ if GUI_DIR is not None:
     @app.get("/app/{full_path:path}", include_in_schema=False)
     def gui_app(full_path: str = "") -> FileResponse:
         index = _gui_dir / "index.html"
+
+        if full_path:
+            gui_root = _gui_dir.resolve()
+            requested_file = (gui_root / full_path).resolve()
+
+            try:
+                requested_file.relative_to(gui_root)
+            except ValueError:
+                return FileResponse(index)
+
+            if requested_file.is_file():
+                return FileResponse(requested_file)
+
         return FileResponse(index)
 else:
 

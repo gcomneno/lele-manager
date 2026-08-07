@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 test.describe('GUI smoke', () => {
   test('browse → click risultato → detail', async ({ page }) => {
     await page.goto('/app/#/')
-    await expect(page.getByRole('heading', { name: 'Browse' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Esplora' })).toBeVisible()
 
     const firstCard = page.locator('.lesson-card').first()
     await expect(firstCard).toBeVisible({ timeout: 15_000 })
@@ -31,23 +31,41 @@ test.describe('GUI smoke', () => {
 
   test('stats e timeline caricano senza errori', async ({ page }) => {
     await page.goto('/app/#/stats')
-    await expect(page.getByRole('heading', { name: 'Statistiche' })).toBeVisible()
-    await expect(page.locator('.stats .error')).toHaveCount(0, { timeout: 15_000 })
-    await expect(page.locator('.kpi').first()).toBeVisible()
+    const statsPanel = page.getByRole('region', {
+      name: 'Statistiche',
+      exact: true,
+    })
+    await expect(statsPanel).toBeVisible()
+    await expect(statsPanel.getByRole('alert')).toHaveCount(0, {
+      timeout: 15_000,
+    })
+    await expect(statsPanel.locator('.kpi').first()).toBeVisible()
 
-    await page.getByRole('link', { name: 'Timeline' }).click()
-    await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible()
+    await page.getByRole('link', { name: 'Cronologia' }).click()
+    await expect(page.getByRole('heading', { name: 'Cronologia' })).toBeVisible()
     await expect(page.locator('.timeline .error')).toHaveCount(0, { timeout: 15_000 })
     await expect(page.locator('.bucket').first()).toBeVisible()
   })
 
-  test('Ops e Vault caricano sulla fixture isolata', async ({ page }) => {
+  test('Sistema e Vault caricano sulla fixture isolata', async ({ page }) => {
     await page.goto('/app/#/ops')
-    await expect(page.getByRole('heading', { name: 'Ops / Admin' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Stato e manutenzione' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Aggiorna dal vault' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Aggiorna il modello di ricerca' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Aggiorna tutto' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Esegui controllo' })).toBeVisible()
     await expect(page.locator('.ops .error')).toHaveCount(0, { timeout: 15_000 })
 
     await page.getByRole('link', { name: 'Vault' }).click()
-    await expect(page.getByRole('heading', { name: 'Vault' })).toBeVisible()
-    await expect(page.locator('section.card > .error')).toHaveCount(0, { timeout: 15_000 })
+
+    const vaultPanel = page.getByRole('region', {
+      name: 'Vault',
+      exact: true,
+    })
+
+    await expect(vaultPanel).toBeVisible()
+    await expect(vaultPanel.getByRole('alert')).toHaveCount(0, {
+      timeout: 15_000,
+    })
   })
 })

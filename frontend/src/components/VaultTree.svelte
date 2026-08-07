@@ -1,4 +1,5 @@
 <script lang="ts">
+  import VaultTree from './VaultTree.svelte'
   import type { VaultTreeNode } from '../lib/api'
   import { navigate } from '../lib/router'
 
@@ -22,7 +23,7 @@
     {#if node.children?.length}
       <div class="children">
         {#each node.children as child}
-          <svelte:self node={child} depth={depth + 1} />
+          <VaultTree node={child} depth={depth + 1} />
         {/each}
       </div>
     {/if}
