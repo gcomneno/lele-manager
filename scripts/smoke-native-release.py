@@ -102,8 +102,15 @@ def extract_release_archive(archive: Path, destination: Path) -> None:
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as stream:
             for member in stream.infolist():
-                _safe_zip_destination(destination, member.filename)
-            stream.extractall(destination)
+                extracted = _safe_zip_destination(
+                    destination,
+                    member.filename,
+                )
+                stream.extract(member, destination)
+
+                unix_mode = (member.external_attr >> 16) & 0o777
+                if unix_mode and extracted.is_file():
+                    extracted.chmod(unix_mode)
         return
 
     raise RuntimeError(f"Formato archive non supportato: {archive}")
