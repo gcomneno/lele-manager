@@ -85,7 +85,7 @@ test('shows the GiadaWare product signature without crowding the product brand',
   await expect(signature.getByText('Open-source software')).toBeVisible()
   await expect(signature.locator('img')).toHaveAttribute(
     'src',
-    '/app/brand/giadaware-monkey.svg',
+    '/app/brand/lele-cameo/05-walk-right-a.png',
   )
 })
 
@@ -189,6 +189,6 @@ test('presents the new lesson action with the LeLe monkey balloon', async ({ pag
   await expect(action.getByText('LeLe')).toBeVisible()
   await expect(action.locator('img')).toHaveAttribute(
     'src',
-    '/app/brand/giadaware-monkey.svg',
+    '/app/brand/lele-cameo/05-walk-right-a.png',
   )
 })

@@ -15,14 +15,14 @@
   let { route, children }: Props = $props()
 
   const links = [
-    { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/' },
-    { view: 'timeline' as const, labelKey: 'navTimeline' as const, hash: '#/timeline' },
-    { view: 'stats' as const, labelKey: 'navStatistics' as const, hash: '#/stats' },
-    { view: 'editor' as const, labelKey: 'navNewLele' as const, hash: '#/editor' },
-    { view: 'tritalele' as const, labelKey: 'navCollection' as const, hash: '#/tritalele' },
-    { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault' },
-    { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates' },
-    { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops' },
+    { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/', icon: '🏠' },
+    { view: 'timeline' as const, labelKey: 'navTimeline' as const, hash: '#/timeline', icon: '🕒' },
+    { view: 'stats' as const, labelKey: 'navStatistics' as const, hash: '#/stats', icon: '📊' },
+    { view: 'editor' as const, labelKey: 'navNewLele' as const, hash: '#/editor', icon: '✨' },
+    { view: 'tritalele' as const, labelKey: 'navCollection' as const, hash: '#/tritalele', icon: '🗂️' },
+    { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault', icon: '🧠' },
+    { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates', icon: '🧪' },
+    { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops', icon: '⚙️' },
   ]
 
   function isActive(view: Route['view']) {
@@ -49,7 +49,8 @@
             navigate({ view: link.view })
           }}
         >
-          {$messages[link.labelKey]}
+          <span class="nav-link-icon" aria-hidden="true">{link.icon}</span>
+          <span>{$messages[link.labelKey]}</span>
         </a>
       {/each}
     </nav>
@@ -77,12 +78,28 @@
     </div>
 
     <footer class="product-signature" data-testid="giadaware-signature">
-      <img
-        class="signature-mark"
-        src="/app/brand/giadaware-monkey.svg"
-        alt=""
+      <span
+        class="signature-mascot"
+        data-testid="giadaware-signature-mascot"
         aria-hidden="true"
-      />
+      >
+        <span class="signature-face-crop">
+          <img
+            class="signature-mark"
+            src="/app/brand/lele-cameo/05-walk-right-a.png"
+            alt=""
+          />
+        </span>
+        <span
+          class="signature-tongue"
+          data-testid="giadaware-signature-tongue"
+          aria-hidden="true"
+        ></span>
+        <span
+          class="signature-thought"
+          data-testid="giadaware-signature-thought"
+        >…</span>
+      </span>
       <span class="signature-copy">
         <strong>GiadaWare™</strong>
         <small>{$messages.makerOpenSource}</small>
@@ -94,7 +111,7 @@
     <header>
       <HealthBar />
       <a
-        class="btn btn-primary"
+        class="btn btn-primary new-lesson-cta"
         href="#/editor"
         aria-label={$messages.newLeleAccessible}
         data-testid="new-lesson-cta"
@@ -106,10 +123,15 @@
         <span class="new-lesson-visible" aria-hidden="true">
           <span class="new-lesson-prefix">+ {$messages.newLelePrefix}</span>
           <span class="lele-mascot-badge">
-            <img
-              src="/app/brand/giadaware-monkey.svg"
-              alt=""
-            />
+            <span
+              class="lele-monkey-face"
+              data-testid="lele-monkey-motion"
+            >
+              <img
+                src="/app/brand/lele-cameo/05-walk-right-a.png"
+                alt=""
+              />
+            </span>
             <span class="lele-balloon">LeLe</span>
           </span>
         </span>
@@ -117,6 +139,60 @@
     </header>
     <div class="content">
       {@render children()}
+    </div>
+
+    <div
+      class="lele-cameo"
+      data-testid="lele-monkey-cameo"
+      aria-hidden="true"
+    >
+      <div
+        class="lele-cameo-stage"
+        data-testid="lele-monkey-cameo-character"
+      >
+        <img
+          class="lele-cameo-frame lele-cameo-enter"
+          src="/app/brand/lele-cameo/01-enter.png"
+          alt=""
+        />
+        <img
+          class="lele-cameo-frame lele-cameo-walk-left-a"
+          src="/app/brand/lele-cameo/02-walk-left-a.png"
+          alt=""
+        />
+        <img
+          class="lele-cameo-frame lele-cameo-walk-left-b"
+          src="/app/brand/lele-cameo/03-walk-left-b.png"
+          alt=""
+        />
+        <img
+          class="lele-cameo-frame lele-cameo-scratch"
+          src="/app/brand/lele-cameo/04-scratch.png"
+          alt=""
+        />
+        <img
+          class="lele-cameo-frame lele-cameo-walk-right-a"
+          src="/app/brand/lele-cameo/05-walk-right-a.png"
+          alt=""
+        />
+        <img
+          class="lele-cameo-frame lele-cameo-walk-right-b"
+          src="/app/brand/lele-cameo/06-walk-right-b.png"
+          alt=""
+        />
+        <img
+          class="lele-cameo-frame lele-cameo-exit"
+          src="/app/brand/lele-cameo/07-exit.png"
+          alt=""
+        />
+      </div>
+
+      <span
+        class="lele-cameo-balloon"
+        data-testid="lele-monkey-cameo-balloon"
+      >
+        LeLe!!
+      </span>
     </div>
   </div>
 </div>
@@ -177,6 +253,9 @@
   }
 
   nav a {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     color: var(--sidebar-text);
     text-decoration: none;
     padding: 10px 12px;
@@ -184,6 +263,17 @@
     opacity: 0.85;
   }
 
+  .nav-link-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    flex: 0 0 1.05rem;
+    line-height: 1;
+    font-size: 0.95rem;
+    opacity: 0.9;
+    user-select: none;
+  }
   nav a:hover,
   nav a.active {
     background: rgba(255, 255, 255, 0.1);
@@ -357,10 +447,138 @@
     column-gap: 10px;
   }
 
-  .signature-mark {
+  .signature-mascot {
+    position: relative;
     display: block;
     width: 32px;
     height: 32px;
+    transform-origin: 50% 72%;
+    animation: lele-signature-think 26s ease-in-out infinite;
+  }
+
+  .signature-face-crop {
+    position: relative;
+    display: block;
+    width: 32px;
+    height: 32px;
+    overflow: hidden;
+    border-radius: 50%;
+  }
+
+  .signature-mark {
+    position: absolute;
+    top: -8px;
+    left: -17px;
+    display: block;
+    width: 61px;
+    height: 61px;
+    max-width: none;
+  }
+
+  .signature-tongue {
+    position: absolute;
+    left: 23px;
+    top: 20px;
+    z-index: 2;
+    width: 4px;
+    height: 5px;
+    border: 1px solid rgb(81 42 35 / 28%);
+    border-top: 0;
+    border-radius: 0 0 999px 999px;
+    background: #f28da8;
+    opacity: 0;
+    transform: translateY(-2px) scaleY(0.2);
+    transform-origin: top center;
+    pointer-events: none;
+    animation: lele-signature-tongue 31s ease-in-out infinite;
+  }
+
+  .signature-thought {
+    position: absolute;
+    left: 24px;
+    top: -13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 17px;
+    padding: 0 5px 2px;
+    border: 1px solid rgb(255 255 255 / 42%);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 1px;
+    opacity: 0;
+    transform: translate(-2px, 3px) scale(0.88);
+    transform-origin: left bottom;
+    pointer-events: none;
+    animation: lele-thought-bubble 26s ease-in-out infinite;
+  }
+
+  .signature-thought::before {
+    position: absolute;
+    left: -5px;
+    bottom: -4px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--color-surface);
+    content: '';
+  }
+
+  @keyframes lele-signature-tongue {
+    0%,
+    68%,
+    75%,
+    100% {
+      opacity: 0;
+      transform: translateY(-2px) scaleY(0.2);
+    }
+
+    69%,
+    73% {
+      opacity: 1;
+      transform: translateY(0) scaleY(1);
+    }
+  }
+
+  @keyframes lele-signature-think {
+    0%,
+    84%,
+    100% {
+      transform: rotate(0deg) translateY(0);
+    }
+
+    87% {
+      transform: rotate(-5deg) translateY(-1px);
+    }
+
+    91% {
+      transform: rotate(-4deg) translateY(-1px);
+    }
+
+    95% {
+      transform: rotate(0deg) translateY(0);
+    }
+  }
+
+  @keyframes lele-thought-bubble {
+    0%,
+    85%,
+    97%,
+    100% {
+      opacity: 0;
+      transform: translate(-2px, 3px) scale(0.88);
+    }
+
+    88%,
+    94% {
+      opacity: 1;
+      transform: translate(0, 0) scale(1);
+    }
   }
 
   .signature-copy {
@@ -399,11 +617,99 @@
     height: 28px;
   }
 
-  .lele-mascot-badge img {
-    display: block;
+  .lele-monkey-face {
+    position: relative;
+    display: inline-flex;
     width: 25px;
     height: 25px;
-    flex: 0 0 auto;
+    flex: 0 0 25px;
+    overflow: hidden;
+    border-radius: 50%;
+    transform-origin: 50% 70%;
+    animation: lele-monkey-idle 18s ease-in-out infinite;
+  }
+
+  .lele-mascot-badge img {
+    position: absolute;
+    top: -6px;
+    left: -13px;
+    display: block;
+    width: 48px;
+    height: 48px;
+    max-width: none;
+    flex: none;
+    transform-origin: 53% 39%;
+  }
+
+  .new-lesson-cta:hover .lele-monkey-face,
+  .new-lesson-cta:focus-visible .lele-monkey-face {
+    animation-play-state: paused;
+  }
+
+  .new-lesson-cta:hover .lele-monkey-face img,
+  .new-lesson-cta:focus-visible .lele-monkey-face img {
+    animation: lele-monkey-react 360ms ease-out 2;
+  }
+
+  @keyframes lele-monkey-idle {
+    0%,
+    90%,
+    100% {
+      transform: translateY(0) rotate(0deg);
+    }
+
+    92% {
+      transform: translateY(-2px) rotate(-5deg);
+    }
+
+    94% {
+      transform: translateY(-1px) rotate(4deg);
+    }
+
+    96% {
+      transform: translateY(0) rotate(0deg);
+    }
+  }
+
+  @keyframes lele-monkey-react {
+    0%,
+    100% {
+      transform: rotate(0deg) scale(1);
+    }
+
+    35% {
+      transform: translateY(-2px) rotate(-8deg) scale(1.08);
+    }
+
+    68% {
+      transform: translateY(-1px) rotate(5deg) scale(1.04);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lele-monkey-face,
+    .signature-mascot,
+    .signature-thought,
+    .signature-tongue,
+    .lele-cameo,
+    .lele-cameo-stage,
+    .lele-cameo-frame,
+    .lele-cameo-balloon,
+    .new-lesson-cta:hover .lele-monkey-face img,
+    .new-lesson-cta:focus-visible .lele-monkey-face img {
+      animation: none;
+      transform: none;
+    }
+
+    .signature-thought,
+    .signature-tongue {
+      opacity: 0;
+    }
+
+    .lele-cameo {
+      display: none;
+      opacity: 0;
+    }
   }
 
   .lele-balloon {
@@ -436,6 +742,403 @@
     background: var(--color-surface);
     content: '';
     transform: rotate(45deg);
+  }
+
+  /* One-shot illustrated wandering monkey cameo */
+  .lele-cameo {
+    --lele-cameo-duration: 12s;
+    --lele-cameo-delay: 8s;
+
+    position: fixed;
+    right: -174px;
+    bottom: 4px;
+    z-index: 3;
+    width: 174px;
+    height: 174px;
+    opacity: 0;
+    pointer-events: none;
+    animation:
+      lele-cameo-path
+      var(--lele-cameo-duration)
+      linear
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-stage {
+    position: absolute;
+    inset: 0;
+  }
+
+  .lele-cameo-frame {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 174px;
+    height: 174px;
+    object-fit: contain;
+    opacity: 0;
+    user-select: none;
+  }
+
+  .lele-cameo-enter {
+    animation:
+      lele-cameo-enter-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-walk-left-a,
+  .lele-cameo-walk-left-b {
+    transform: scaleX(-1);
+  }
+
+  .lele-cameo-walk-left-a {
+    animation:
+      lele-cameo-walk-left-a-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-walk-left-b {
+    animation:
+      lele-cameo-walk-left-b-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-scratch {
+    animation:
+      lele-cameo-scratch-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-walk-right-a {
+    animation:
+      lele-cameo-walk-right-a-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-walk-right-b {
+    animation:
+      lele-cameo-walk-right-b-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-exit {
+    animation:
+      lele-cameo-exit-frame
+      var(--lele-cameo-duration)
+      steps(1, end)
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-balloon {
+    position: absolute;
+    right: 110px;
+    top: 2px;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    min-height: 34px;
+    padding: 2px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font-size: 16px;
+    font-weight: 800;
+    line-height: 1;
+    opacity: 0;
+    transform: translateY(5px) scale(0.86);
+    transform-origin: right bottom;
+    box-shadow: 0 3px 9px rgb(36 28 22 / 12%);
+    animation:
+      lele-cameo-balloon
+      var(--lele-cameo-duration)
+      ease-in-out
+      var(--lele-cameo-delay)
+      1
+      both;
+  }
+
+  .lele-cameo-balloon::after {
+    position: absolute;
+    right: -5px;
+    bottom: 3px;
+    width: 9px;
+    height: 9px;
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--color-surface);
+    content: '';
+    transform: rotate(-45deg);
+  }
+
+  @keyframes lele-cameo-path {
+    0% {
+      opacity: 0;
+      transform: translateX(0);
+    }
+
+    2% {
+      opacity: 1;
+    }
+
+    9% {
+      opacity: 1;
+      transform: translateX(-105px);
+    }
+
+    13% {
+      transform: translateX(-145px);
+    }
+
+    17% {
+      transform: translateX(-185px);
+    }
+
+    21% {
+      transform: translateX(-225px);
+    }
+
+    25% {
+      transform: translateX(-265px);
+    }
+
+    29% {
+      transform: translateX(-305px);
+    }
+
+    32%,
+    58% {
+      opacity: 1;
+      transform: translateX(-325px);
+    }
+
+    62% {
+      transform: translateX(-290px);
+    }
+
+    66% {
+      transform: translateX(-250px);
+    }
+
+    70% {
+      transform: translateX(-210px);
+    }
+
+    74% {
+      transform: translateX(-170px);
+    }
+
+    78% {
+      transform: translateX(-130px);
+    }
+
+    82% {
+      transform: translateX(-90px);
+    }
+
+    86% {
+      transform: translateX(-50px);
+    }
+
+    90% {
+      transform: translateX(-15px);
+    }
+
+    98% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    100% {
+      opacity: 0;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes lele-cameo-enter-frame {
+    0%,
+    9.99% {
+      opacity: 1;
+    }
+
+    10%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes lele-cameo-walk-left-a-frame {
+    0%,
+    9.99%,
+    13%,
+    16.99%,
+    21%,
+    24.99%,
+    29%,
+    100% {
+      opacity: 0;
+    }
+
+    10%,
+    12.99%,
+    17%,
+    20.99%,
+    25%,
+    28.99% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes lele-cameo-walk-left-b-frame {
+    0%,
+    12.99%,
+    17%,
+    20.99%,
+    25%,
+    28.99%,
+    32%,
+    100% {
+      opacity: 0;
+    }
+
+    13%,
+    16.99%,
+    21%,
+    24.99%,
+    29%,
+    31.99% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes lele-cameo-scratch-frame {
+    0%,
+    31.99%,
+    58%,
+    100% {
+      opacity: 0;
+    }
+
+    32%,
+    57.99% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes lele-cameo-walk-right-a-frame {
+    0%,
+    57.99%,
+    62%,
+    65.99%,
+    70%,
+    73.99%,
+    78%,
+    81.99%,
+    86%,
+    100% {
+      opacity: 0;
+    }
+
+    58%,
+    61.99%,
+    66%,
+    69.99%,
+    74%,
+    77.99%,
+    82%,
+    85.99% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes lele-cameo-walk-right-b-frame {
+    0%,
+    61.99%,
+    66%,
+    69.99%,
+    74%,
+    77.99%,
+    82%,
+    85.99%,
+    90%,
+    100% {
+      opacity: 0;
+    }
+
+    62%,
+    65.99%,
+    70%,
+    73.99%,
+    78%,
+    81.99%,
+    86%,
+    89.99% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes lele-cameo-exit-frame {
+    0%,
+    89.99% {
+      opacity: 0;
+    }
+
+    90%,
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes lele-cameo-balloon {
+    0%,
+    40%,
+    57%,
+    100% {
+      opacity: 0;
+      transform: translateY(5px) scale(0.86);
+    }
+
+    41%,
+    56% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @media (max-width: 800px) {
+    .lele-cameo {
+      display: none;
+    }
   }
 
   /* Compact desktop sidebar for short viewports */
