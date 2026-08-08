@@ -15,6 +15,15 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+def test_runtime_info_exposes_authoritative_application_version() -> None:
+    client = TestClient(server.app)
+
+    resp = client.get("/runtime/info")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"version": server.__version__}
+
+
 def test_health_without_data_and_model(tmp_path, monkeypatch) -> None:
     """Se DATA_PATH e MODEL_PATH puntano a file inesistenti, /health deve dire has_data=False, has_model=False."""
     data_path = tmp_path / "data" / "lessons.jsonl"
