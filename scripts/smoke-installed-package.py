@@ -51,6 +51,7 @@ if not frontend_assets:
     )
 
 for asset_name in (
+    "LICENSE",
     "brand/lele-manager-mark.svg",
     "brand/lele-manager-lockup.svg",
     "brand/giadaware-monkey.svg",

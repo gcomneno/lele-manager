@@ -11,6 +11,8 @@
   import Stats from './routes/Stats.svelte'
   import Timeline from './routes/Timeline.svelte'
   import TritaLeLe from './routes/TritaLeLe.svelte'
+  import Settings from './routes/Settings.svelte'
+  import About from './routes/About.svelte'
   import { parseRoute, type Route } from './lib/router'
 
   let route = $state<Route>({ view: 'dashboard' })
@@ -46,5 +48,9 @@
     <Timeline />
   {:else if route.view === 'tritalele'}
     <TritaLeLe />
+  {:else if route.view === 'settings'}
+    <Settings />
+  {:else if route.view === 'about'}
+    <About />
   {/if}
 </Shell>

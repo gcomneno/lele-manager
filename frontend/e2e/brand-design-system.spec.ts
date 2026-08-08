@@ -42,6 +42,8 @@ test.describe('brand foundation', () => {
       ['Vault', '#/vault'],
       ['Duplicates', '#/duplicates'],
       ['System', '#/ops'],
+      ['Settings', '#/settings'],
+      ['About', '#/about'],
     ] as const
 
     const primaryNavigation = page.getByRole('navigation')

@@ -163,6 +163,8 @@ test.describe('GUI localization', () => {
       ['Vault', '#/vault'],
       ['Duplicates', '#/duplicates'],
       ['System', '#/ops'],
+      ['Settings', '#/settings'],
+      ['About', '#/about'],
     ] as const
 
     const navigation = page.getByRole('navigation')
@@ -190,6 +192,8 @@ test.describe('GUI localization', () => {
       ['Vault', '#/vault'],
       ['Duplicati', '#/duplicates'],
       ['Sistema', '#/ops'],
+      ['Impostazioni', '#/settings'],
+      ['Informazioni', '#/about'],
     ] as const
 
     for (const [label, hash] of italianExpected) {

@@ -81,6 +81,69 @@ export interface DashboardSummaryResponse {
   candidates: DashboardCandidateSummary | null
 }
 
+export type RuntimePathRole =
+  | 'authoritative_user_data'
+  | 'persistent_application_state'
+  | 'derived_rebuildable_artifact'
+  | 'cache_temporary_state'
+
+export type RuntimePathProvenanceKind =
+  | 'configuration_override'
+  | 'legacy_override'
+  | 'platform_default'
+  | 'product_default'
+  | 'runtime_override'
+
+export interface RuntimePathProvenanceResponse {
+  kind: RuntimePathProvenanceKind
+  variable: string | null
+  deprecated: boolean
+}
+
+export interface RuntimePathResponse {
+  key: string
+  path: string
+  role: RuntimePathRole
+  exists: boolean
+  kind: 'directory' | 'file'
+  provenance: RuntimePathProvenanceResponse
+}
+
+export interface SettingsRuntimeResponse {
+  version: string
+  health: HealthResponse
+  paths: RuntimePathResponse[]
+}
+
+export interface AboutResponse {
+  product_name: string
+  version: string
+  tagline: string
+  attribution: string
+  license_id: string
+  license_summary: string
+  license_url: string
+  local_first_statement: string
+  repository_url: string
+  issue_tracker_url: string
+  releases_url: string
+  changelog_url: string
+  documentation_url: string
+  python_version: string
+  platform_system: string
+  platform_release: string
+}
+
+export interface DiagnosticsPreviewResponse {
+  product_name: string
+  version: string
+  python_version: string
+  platform_system: string
+  platform_release: string
+  health: HealthResponse
+  paths: RuntimePathResponse[]
+}
+
 export interface TrainResponse {
   message: string
   n_lessons: number
@@ -371,6 +434,15 @@ export const api = {
 
   dashboardSummary: () =>
     request<DashboardSummaryResponse>('/dashboard/summary'),
+
+  settingsRuntime: () =>
+    request<SettingsRuntimeResponse>('/settings/runtime'),
+
+  about: () =>
+    request<AboutResponse>('/about'),
+
+  diagnosticsPreview: () =>
+    request<DiagnosticsPreviewResponse>('/diagnostics/preview'),
 
   duplicates: ({ min_score, exact_only, limit }: DuplicateQuery) => {
     const params = new URLSearchParams({

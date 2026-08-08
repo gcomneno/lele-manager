@@ -30,6 +30,8 @@ test.describe('product shell hierarchy', () => {
       'Vault',
       'Duplicates',
       'System',
+      'Settings',
+      'About',
     ]) {
       await expect(
         navigation.getByRole('link', { name: label }),
@@ -46,7 +48,7 @@ test.describe('product shell hierarchy', () => {
       name: 'Primary',
     })
 
-    await expect(navigation.locator('svg')).toHaveCount(9)
+    await expect(navigation.locator('svg')).toHaveCount(11)
 
     for (const emoji of [
       '🏠',
@@ -190,6 +192,8 @@ test.describe('product shell responsive layouts', () => {
       'Vault',
       'Duplicates',
       'System',
+      'Settings',
+      'About',
     ]) {
       await expect(
         navigation.getByRole('link', { name: label }),
