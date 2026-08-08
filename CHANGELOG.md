@@ -11,6 +11,49 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+### Added
+- **Commercial-grade product experience for v1.11.0:** coherent product shell
+  and navigation hierarchy, Dashboard and explicit first-run states, read-only
+  Settings/runtime transparency, bounded support diagnostics, and an About
+  surface with product identity, MIT license, GiadaWare attribution and
+  local-first support links.
+- Direct Giada UI consumption across the shipped GUI through the pinned
+  immutable-artifact model, with English/Italian localization and persistent
+  explicit locale selection.
+- Published-style native release smoke for Linux, macOS and Windows release
+  jobs. CI now extracts the actual release archive, launches the packaged
+  executable, and checks loopback health, runtime version, packaged GUI,
+  license, About and Settings/runtime before artifact upload.
+
+### Changed
+- `/app/` now opens on the Dashboard while Browse and existing domain workflows
+  remain directly reachable.
+- Native builds fail before PyInstaller packaging when installed
+  `lele-manager` metadata does not match the source project version, preventing
+  stale-version executables from being published.
+- Native release verification uses isolated data, cache and vault directories
+  and rejects runtime paths outside that temporary road-test environment.
+- README and maintained GUI guides now document native packages as the normal
+  non-technical installation path while preserving source-checkout development
+  instructions.
+
+### Compatibility
+- No intentional breaking changes are introduced in the public API, CLI,
+  Markdown vault authority, TritaLeLe approval boundary or local-first storage
+  model.
+- No account, telemetry, cloud storage or remote knowledge dependency is
+  introduced.
+- Persistent user data remains outside native installation directories.
+
+### Verification
+- Full Python suite: 601 tests passed.
+- Frontend type/Svelte checks completed with zero errors and warnings.
+- Full and runtime-only npm audits report zero vulnerabilities.
+- Playwright: 68 passed, 1 intentional documentation-screenshot skip.
+- Python sdist/wheel build, metadata check and installed-wheel smoke passed.
+- Linux published-style native archive was extracted, launched and verified
+  successfully with runtime data isolated outside the release package.
+
 ## [1.10.1] - 2026-08-08
 
 ### Added

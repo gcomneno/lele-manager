@@ -73,9 +73,24 @@ pytest tests/test_documentation.py
   vedere il [contratto projection store](docs/it/projection-store.md) e
   [ADR 0001](docs/adr/0001-storage-backend.md), fonte tecnica canonica inglese.
 
-## Setup
+## Installazione e avvio
 
-Clonare il repository e creare un ambiente virtuale:
+Per il normale utilizzo utente, scaricare da GitHub Releases il pacchetto nativo
+per il proprio sistema operativo, estrarlo e avviare **LeLe-Manager**. I
+pacchetti nativi per Linux, macOS e Windows sono autosufficienti: non richiedono
+Python, Node.js, npm, un ambiente virtuale o un checkout del repository.
+
+Al primo avvio LeLe Manager prepara fuori dalla directory di installazione le
+directory applicative locali e il vault Markdown predefinito, avvia
+l'applicazione FastAPI locale, attende che sia pronta e apre `/app/` nel browser
+predefinito. I dati utente persistenti sopravvivono quindi alla sostituzione o
+all'aggiornamento della cartella applicativa estratta.
+
+Ogni archive nativo include `LEGGIMI_PRIMA.txt` con istruzioni di primo avvio
+specifiche per la piattaforma.
+
+Per lo sviluppo dai sorgenti, clonare il repository e creare un ambiente
+virtuale:
 
 ```bash
 git clone git@github.com:gcomneno/lele-manager.git
@@ -496,6 +511,7 @@ Viste disponibili:
 
 | Vista | Scopo |
 |---|---|
+| **Dashboard** | Stato dello spazio di lavoro, riepilogo bounded e prossime azioni utili |
 | **Browse** | Ricerca avanzata, filtri ed export Markdown |
 | **Detail** | Contenuto completo e similarità spiegata |
 | **Editor** | Authoring Markdown con suggerimenti live |
@@ -505,6 +521,8 @@ Viste disponibili:
 | **Stats** | Conteggi, tag, topic e medie |
 | **Vault** | Albero filesystem reale e import |
 | **Ops** | Health, training, import vault e refresh completo |
+| **Impostazioni** | Percorsi locali effettivi, ruoli di archiviazione e diagnostica bounded esplicita |
+| **Informazioni** | Identità prodotto, versione, licenza MIT, dichiarazione local-first e collegamenti di supporto |
 
 Il salvataggio dall'Editor scrive il file Markdown nel vault e aggiorna la
 proiezione JSONL tramite `PUT` o `POST /vault/lessons`.
@@ -570,7 +588,14 @@ LeLe Manager segue Semantic Versioning:
 - PATCH: bugfix e miglioramenti interni.
 
 Una release stabile comprende import del vault, proiezione JSONL, modelli topic
-e similarità, endpoint FastAPI, client `lele` e test verdi.
+e similarità, endpoint FastAPI, client `lele`, GUI incorporata e verifiche
+Python, frontend, sicurezza, packaging e release nativa tutte verdi.
+
+Gli archive nativi vengono verificati dopo il packaging e prima dell'upload:
+la CI estrae l'artefatto nello stesso formato destinato alla pubblicazione,
+avvia l'eseguibile packaged su loopback con runtime isolato, verifica health,
+GUI, licenza, Informazioni e Impostazioni/runtime e controlla che i percorsi
+persistenti restino fuori dalla directory applicativa estratta.
 
 Esempio di tag annotato:
 

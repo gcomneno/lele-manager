@@ -83,3 +83,31 @@ def test_find_available_port_falls_back_when_preferred_port_is_busy() -> None:
 
     assert selected != busy_port
     assert selected > 0
+
+def test_release_automation_hooks_are_disabled_by_default() -> None:
+    environment: dict[str, str] = {}
+
+    assert launcher.resolve_automation_port(environment) is None
+    assert launcher.browser_opening_enabled(environment) is True
+
+
+def test_release_automation_hooks_accept_explicit_smoke_values() -> None:
+    environment = {
+        launcher.AUTOMATION_PORT_ENV: "43210",
+        launcher.AUTOMATION_NO_BROWSER_ENV: "1",
+    }
+
+    assert launcher.resolve_automation_port(environment) == 43210
+    assert launcher.browser_opening_enabled(environment) is False
+
+
+def test_release_automation_port_rejects_invalid_values() -> None:
+    for raw in ("not-a-port", "0", "65536", "-1"):
+        environment = {launcher.AUTOMATION_PORT_ENV: raw}
+
+        try:
+            launcher.resolve_automation_port(environment)
+        except ValueError as exc:
+            assert launcher.AUTOMATION_PORT_ENV in str(exc)
+        else:
+            raise AssertionError(f"invalid automation port accepted: {raw}")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import threading
 import time
@@ -19,6 +20,41 @@ from lele_manager.core.vault import resolve_vault_dir
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 HEALTH_TIMEOUT_SECONDS = 30.0
+AUTOMATION_NO_BROWSER_ENV = "LELE_MANAGER_NO_BROWSER"
+AUTOMATION_PORT_ENV = "LELE_MANAGER_PORT"
+
+
+def resolve_automation_port(
+    environment: dict[str, str] | None = None,
+) -> int | None:
+    """Resolve the optional internal fixed port used by release automation."""
+    values = os.environ if environment is None else environment
+    raw = values.get(AUTOMATION_PORT_ENV)
+
+    if raw is None:
+        return None
+
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{AUTOMATION_PORT_ENV} must be an integer between 1 and 65535."
+        ) from exc
+
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"{AUTOMATION_PORT_ENV} must be an integer between 1 and 65535."
+        )
+
+    return port
+
+
+def browser_opening_enabled(
+    environment: dict[str, str] | None = None,
+) -> bool:
+    """Return False only for the explicit internal release-smoke override."""
+    values = os.environ if environment is None else environment
+    return values.get(AUTOMATION_NO_BROWSER_ENV) != "1"
 
 
 def find_available_port(
@@ -85,17 +121,27 @@ def main() -> int:
     """Prepare persistent state, start LeLe Manager, and open its GUI."""
     prepare_runtime()
 
-    port = find_available_port()
+    try:
+        automation_port = resolve_automation_port()
+    except ValueError as exc:
+        raise SystemExit(f"ERRORE: {exc}") from exc
+
+    port = (
+        automation_port
+        if automation_port is not None
+        else find_available_port()
+    )
     base_url = f"http://{DEFAULT_HOST}:{port}"
     health_url = f"{base_url}/health"
     app_url = f"{base_url}/app/"
 
-    browser_thread = threading.Thread(
-        target=open_browser_when_ready,
-        args=(health_url, app_url),
-        daemon=True,
-    )
-    browser_thread.start()
+    if browser_opening_enabled():
+        browser_thread = threading.Thread(
+            target=open_browser_when_ready,
+            args=(health_url, app_url),
+            daemon=True,
+        )
+        browser_thread.start()
 
     config = uvicorn.Config(
         app,
