@@ -51,19 +51,6 @@
         >
           <span class="nav-link-icon" aria-hidden="true">{link.icon}</span>
           <span>{$messages[link.labelKey]}</span>
-
-          {#if link.view === 'vault'}
-            <span
-              class="vault-monkey-icon"
-              data-testid="vault-monkey-icon"
-              aria-hidden="true"
-            >
-              <img
-                src="/app/brand/lele-cameo/05-walk-right-a.png"
-                alt=""
-              />
-            </span>
-          {/if}
         </a>
       {/each}
     </nav>
@@ -287,34 +274,6 @@
     opacity: 0.9;
     user-select: none;
   }
-
-  .vault-monkey-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 19px;
-    height: 19px;
-    flex: 0 0 19px;
-    overflow: hidden;
-    border-radius: 50%;
-    transform-origin: 50% 60%;
-  }
-
-  .vault-monkey-icon img {
-    display: block;
-    width: 36px;
-    height: 36px;
-    max-width: none;
-    position: relative;
-    top: -4px;
-    left: -9px;
-  }
-
-  nav a:hover .vault-monkey-icon,
-  nav a:focus-visible .vault-monkey-icon {
-    animation: lele-monkey-react 360ms ease-out 2;
-  }
-
   nav a:hover,
   nav a.active {
     background: rgba(255, 255, 255, 0.1);
@@ -518,11 +477,11 @@
 
   .signature-tongue {
     position: absolute;
-    left: 13px;
+    left: 23px;
     top: 20px;
     z-index: 2;
-    width: 5px;
-    height: 6px;
+    width: 4px;
+    height: 5px;
     border: 1px solid rgb(81 42 35 / 28%);
     border-top: 0;
     border-radius: 0 0 999px 999px;
@@ -737,9 +696,7 @@
     .lele-cameo-frame,
     .lele-cameo-balloon,
     .new-lesson-cta:hover .lele-monkey-face img,
-    .new-lesson-cta:focus-visible .lele-monkey-face img,
-    nav a:hover .vault-monkey-icon,
-    nav a:focus-visible .vault-monkey-icon {
+    .new-lesson-cta:focus-visible .lele-monkey-face img {
       animation: none;
       transform: none;
     }

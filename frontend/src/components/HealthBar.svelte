@@ -60,7 +60,7 @@
       ></span>
       <span>
         {$messages.healthDataset}{#if !health.has_data}
-          {$messages.healthMissing}
+          {' '}{$messages.healthMissing}
         {/if}
       </span>
     </span>
@@ -84,7 +84,7 @@
       ></span>
       <span>
         {$messages.healthModel}{#if !health.has_model}
-          {$messages.healthMissing}
+          {' '}{$messages.healthMissing}
         {/if}
       </span>
     </span>
