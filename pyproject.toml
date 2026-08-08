@@ -25,11 +25,13 @@ dependencies = [
 
 [project.scripts]
 lele = "lele_manager.cli.lele:main"
+lele-manager = "lele_manager.launcher:main"
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "pytest-cov",
+    "pyinstaller>=6.21.0,<7",
     "fastapi",
     "uvicorn",
     "pandas",

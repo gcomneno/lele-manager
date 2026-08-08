@@ -11,7 +11,7 @@ fi
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     echo "ERRORE: Python non trovato."
 else
-    "$PYTHON_BIN" "$ROOT/scripts/build-gui.py"
+    "$PYTHON_BIN" "$ROOT/scripts/build-native-app.py"
 fi
 
 printf '\nPrompt interattivo disponibile.\n'
