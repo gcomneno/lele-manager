@@ -104,7 +104,8 @@ def parse_markdown_diagnostic(content: str) -> ParsedMarkdown:
     yaml_text = "\n".join(lines[1:end_idx])
     body = "\n".join(lines[end_idx + 1 :]).lstrip("\n")
     try:
-        loaded = yaml.load(yaml_text, Loader=_DiagnosticLoader)
+        # _DiagnosticLoader subclasses yaml.SafeLoader; Bandit cannot infer that.
+        loaded = yaml.load(yaml_text, Loader=_DiagnosticLoader)  # nosec B506
     except yaml.YAMLError as exc:
         detail = str(exc).splitlines()[0]
         return ParsedMarkdown(
