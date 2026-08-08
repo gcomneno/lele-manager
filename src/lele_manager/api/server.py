@@ -289,6 +289,10 @@ class HealthResponse(BaseModel):
     has_model: bool
 
 
+class RuntimeInfoResponse(BaseModel):
+    version: str
+
+
 class VaultStatusResponse(BaseModel):
     vault_dir: str
     exists: bool
@@ -720,6 +724,12 @@ def integration_lessons(
             for lesson in feed.lessons
         ],
     )
+
+
+@app.get("/runtime/info", response_model=RuntimeInfoResponse)
+def runtime_info() -> RuntimeInfoResponse:
+    """Return bounded application identity used by the installed GUI."""
+    return RuntimeInfoResponse(version=__version__)
 
 
 @app.get("/health", response_model=HealthResponse)

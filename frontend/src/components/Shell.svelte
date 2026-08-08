@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { api } from '../lib/api'
   import { navigate, type Route } from '../lib/router'
   import {
     locale,
@@ -6,6 +8,7 @@
     setLocale,
   } from '../lib/i18n'
   import HealthBar from './HealthBar.svelte'
+  import NavIcon from './NavIcon.svelte'
 
   interface Props {
     route: Route
@@ -14,16 +17,62 @@
 
   let { route, children }: Props = $props()
 
-  const links = [
-    { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/', icon: '🏠' },
-    { view: 'timeline' as const, labelKey: 'navTimeline' as const, hash: '#/timeline', icon: '🕒' },
-    { view: 'stats' as const, labelKey: 'navStatistics' as const, hash: '#/stats', icon: '📊' },
-    { view: 'editor' as const, labelKey: 'navNewLele' as const, hash: '#/editor', icon: '✨' },
-    { view: 'tritalele' as const, labelKey: 'navCollection' as const, hash: '#/tritalele', icon: '🗂️' },
-    { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault', icon: '🧠' },
-    { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates', icon: '🧪' },
-    { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops', icon: '⚙️' },
+  const navigationGroups = [
+    {
+      labelKey: 'navGroupKnowledge' as const,
+      links: [
+        { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/', icon: 'browse' as const },
+        { view: 'timeline' as const, labelKey: 'navTimeline' as const, hash: '#/timeline', icon: 'timeline' as const },
+        { view: 'stats' as const, labelKey: 'navStatistics' as const, hash: '#/stats', icon: 'stats' as const },
+      ],
+    },
+    {
+      labelKey: 'navGroupCapture' as const,
+      links: [
+        { view: 'editor' as const, labelKey: 'navNewLele' as const, hash: '#/editor', icon: 'new' as const },
+        { view: 'tritalele' as const, labelKey: 'navCollection' as const, hash: '#/tritalele', icon: 'collection' as const },
+      ],
+    },
+    {
+      labelKey: 'navGroupManage' as const,
+      links: [
+        { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault', icon: 'vault' as const },
+        { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates', icon: 'duplicates' as const },
+        { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops', icon: 'system' as const },
+      ],
+    },
   ]
+
+  let appVersion = $state<string | null>(null)
+  let workspaceName = $state<string | null>(null)
+
+  function basename(path: string): string {
+    const parts = path.split(/[\\/]+/).filter(Boolean)
+    return parts.at(-1) ?? path
+  }
+
+  onMount(() => {
+    let active = true
+
+    void Promise.allSettled([
+      api.runtimeInfo(),
+      api.vaultStatus(),
+    ]).then(([runtime, vault]) => {
+      if (!active) return
+
+      if (runtime.status === 'fulfilled') {
+        appVersion = runtime.value.version
+      }
+
+      if (vault.status === 'fulfilled') {
+        workspaceName = basename(vault.value.vault_dir)
+      }
+    })
+
+    return () => {
+      active = false
+    }
+  })
 
   function isActive(view: Route['view']) {
     return route.view === view || (view === 'editor' && route.view === 'editor')
@@ -39,21 +88,50 @@
         <small class="brand-tagline" data-testid="brand-tagline">{$messages.brandTagline}</small>
       </span>
     </a>
-    <nav>
-      {#each links as link}
-        <a
-          href={link.hash}
-          class:active={isActive(link.view)}
-          onclick={(e) => {
-            e.preventDefault()
-            navigate({ view: link.view })
-          }}
+    <nav aria-label="Primary">
+      {#each navigationGroups as group}
+        <section
+          class="nav-group"
+          aria-label={$messages[group.labelKey]}
         >
-          <span class="nav-link-icon" aria-hidden="true">{link.icon}</span>
-          <span>{$messages[link.labelKey]}</span>
-        </a>
+          <span class="nav-group-title">
+            {$messages[group.labelKey]}
+          </span>
+          <div class="nav-group-links">
+            {#each group.links as link}
+              <a
+                href={link.hash}
+                class:active={isActive(link.view)}
+                onclick={(e) => {
+                  e.preventDefault()
+                  navigate({ view: link.view })
+                }}
+              >
+                <span class="nav-link-icon" aria-hidden="true">
+                  <NavIcon name={link.icon} />
+                </span>
+                <span>{$messages[link.labelKey]}</span>
+              </a>
+            {/each}
+          </div>
+        </section>
       {/each}
     </nav>
+
+    <dl class="shell-context" data-testid="shell-context">
+      {#if workspaceName}
+        <div>
+          <dt>{$messages.shellWorkspace}</dt>
+          <dd data-testid="shell-workspace">{workspaceName}</dd>
+        </div>
+      {/if}
+      {#if appVersion}
+        <div>
+          <dt>{$messages.shellVersion}</dt>
+          <dd data-testid="shell-version">{appVersion}</dd>
+        </div>
+      {/if}
+    </dl>
     <div
       class="language-control"
       data-testid="language-control"
@@ -249,7 +327,28 @@
 
   nav {
     display: grid;
-    gap: 6px;
+    gap: 14px;
+  }
+
+  .nav-group {
+    display: grid;
+    gap: 4px;
+  }
+
+  .nav-group-title {
+    display: block;
+    margin: 0;
+    padding: 0 12px;
+    color: var(--color-text-inverse-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .nav-group-links {
+    display: grid;
+    gap: 3px;
   }
 
   nav a {
@@ -278,6 +377,41 @@
   nav a.active {
     background: rgba(255, 255, 255, 0.1);
     opacity: 1;
+  }
+
+  .shell-context {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 10px 4px 0;
+    border-top: 1px solid rgb(255 255 255 / 14%);
+  }
+
+  .shell-context div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: baseline;
+  }
+
+  .shell-context dt,
+  .shell-context dd {
+    margin: 0;
+    min-width: 0;
+    font-size: 0.68rem;
+  }
+
+  .shell-context dt {
+    color: var(--color-text-inverse-muted);
+  }
+
+  .shell-context dd {
+    max-width: 110px;
+    overflow: hidden;
+    color: var(--sidebar-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .language-control {
@@ -366,10 +500,17 @@
 
   @media (max-width: 800px) {
     .shell {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
+      width: 100%;
+      max-width: 100%;
+      overflow-x: clip;
     }
 
     .sidebar {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
       flex-direction: row;
       flex-wrap: wrap;
       align-items: center;
@@ -387,7 +528,8 @@
       align-self: stretch;
     }
 
-    .product-signature {
+    .product-signature,
+    .shell-context {
       display: none;
     }
 
@@ -404,8 +546,35 @@
     }
 
     nav {
-      grid-auto-flow: column;
-      grid-auto-columns: max-content;
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      gap: 10px;
+    }
+
+    .nav-group,
+    .nav-group-links {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .nav-group {
+      gap: 3px;
+    }
+
+    .nav-group-title {
+      padding: 0 4px;
+    }
+
+    .nav-group-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    nav a {
+      padding: 8px 10px;
     }
 
   }
@@ -1144,9 +1313,9 @@
   /* Compact desktop sidebar for short viewports */
   @media (min-width: 801px) and (max-height: 700px) {
     .sidebar {
-      padding-top: 12px;
-      padding-bottom: 12px;
-      gap: 8px;
+      padding-top: 10px;
+      padding-bottom: 10px;
+      gap: 6px;
     }
 
     .brand > span {
@@ -1159,26 +1328,51 @@
     }
 
     nav {
-      gap: 2px;
+      gap: 5px;
+    }
+
+    .nav-group {
+      gap: 1px;
+    }
+
+    .nav-group-title {
+      font-size: 0.62rem;
+      line-height: 1.1;
+    }
+
+    .nav-group-links {
+      gap: 1px;
     }
 
     nav a {
-      padding: 6px 10px;
+      padding: 4px 10px;
+    }
+
+    .shell-context {
+      gap: 2px;
+      padding-top: 5px;
+    }
+
+    .shell-context dt,
+    .shell-context dd {
+      font-size: 0.64rem;
+      line-height: 1.15;
     }
 
     .language-control {
-      gap: 3px;
-      padding-top: var(--space-2);
+      gap: 2px;
+      padding-top: 5px;
     }
 
     .language-control select {
-      min-height: 32px;
-      padding-top: 4px;
-      padding-bottom: 4px;
+      min-height: 30px;
+      padding-top: 3px;
+      padding-bottom: 3px;
     }
 
     .product-signature {
-      padding-top: var(--space-2);
+      padding-top: 4px;
+      padding-bottom: 0;
     }
   }
 
