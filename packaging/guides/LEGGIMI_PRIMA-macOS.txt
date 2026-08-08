@@ -1,0 +1,30 @@
+LELE MANAGER — COME APRIRLO SU macOS
+
+1. Apri il file ZIP che hai scaricato.
+2. Apri la cartella che viene creata.
+3. Apri la cartella LeLe-Manager.
+4. Fai doppio clic su LeLe-Manager.
+5. Aspetta qualche secondo.
+6. LeLe Manager si aprirà automaticamente nel browser.
+
+Quando il programma è aperto puoi usare normalmente:
+- Esplora
+- Nuova LeLe
+- Vault
+
+IMPORTANTE
+
+Non devi installare Python.
+Non devi installare Node.js.
+Non devi aprire il Terminale.
+Non devi configurare niente.
+
+SE macOS BLOCCA L'APERTURA
+
+Apri Impostazioni di Sistema.
+Vai in Privacy e sicurezza.
+Controlla se macOS mostra un messaggio relativo a LeLe Manager e, se riconosci
+il programma che hai appena scaricato, usa l'opzione disponibile per aprirlo.
+
+Se ancora non parte, annota quello che compare sullo schermo e chiedi aiuto
+alla persona che ti ha mandato LeLe Manager.
