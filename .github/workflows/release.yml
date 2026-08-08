@@ -89,6 +89,49 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  github-release:
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    name: Publish GitHub Release
+    needs:
+      - native-packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download native packages
+        uses: actions/download-artifact@v6
+        with:
+          pattern: lele-manager-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify native assets
+        shell: bash
+        run: |
+          shopt -s nullglob
+          version="${GITHUB_REF_NAME#v}"
+          assets=(release-assets/LeLe-Manager-v"${version}"-*)
+          if (( ${#assets[@]} != 3 )); then
+            printf 'Expected 3 native assets for %s, found %d\n' \
+              "${GITHUB_REF_NAME}" "${#assets[@]}"
+            printf '%s\n' "${assets[@]}"
+            false
+          fi
+          printf 'Native release assets for %s:\n' "${GITHUB_REF_NAME}"
+          printf '  %s\n' "${assets[@]}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release-assets/LeLe-Manager-v"${GITHUB_REF_NAME#v}"-* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "LeLe Manager ${GITHUB_REF_NAME}"
+
+
   publish:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_pypi && vars.PYPI_ENABLED == 'true' }}
     name: Publish to PyPI
@@ -99,7 +142,7 @@ jobs:
       contents: read
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: dist
           path: dist
