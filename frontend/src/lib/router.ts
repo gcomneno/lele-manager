@@ -9,6 +9,8 @@ export type Route =
   | { view: 'stats' }
   | { view: 'timeline' }
   | { view: 'tritalele' }
+  | { view: 'settings' }
+  | { view: 'about' }
 
 export function parseRoute(hash = location.hash): Route {
   const path = hash.replace(/^#/, '') || '/'
@@ -21,6 +23,8 @@ export function parseRoute(hash = location.hash): Route {
   if (path === '/stats') return { view: 'stats' }
   if (path === '/timeline') return { view: 'timeline' }
   if (path === '/tritalele') return { view: 'tritalele' }
+  if (path === '/settings') return { view: 'settings' }
+  if (path === '/about') return { view: 'about' }
   if (path === '/editor') return { view: 'editor' }
 
   const editorMatch = path.match(/^\/editor\/(.+)$/)
@@ -50,6 +54,10 @@ export function routeToHash(route: Route): string {
       return '#/timeline'
     case 'tritalele':
       return '#/tritalele'
+    case 'settings':
+      return '#/settings'
+    case 'about':
+      return '#/about'
     case 'editor':
       return route.id ? `#/editor/${encodeURIComponent(route.id)}` : '#/editor'
     case 'detail':

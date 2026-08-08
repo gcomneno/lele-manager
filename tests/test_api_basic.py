@@ -378,3 +378,184 @@ def test_dashboard_summary_is_bounded_and_read_only(
         "model": model.exists(),
         "candidates": candidates.exists(),
     }
+
+
+def test_settings_runtime_is_bounded_side_effect_free_and_version_aligned(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    data = tmp_path / "data"
+    cache = tmp_path / "cache"
+    vault = tmp_path / "vault"
+
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(cache))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    monkeypatch.delenv("LELE_DATA_PATH", raising=False)
+    monkeypatch.delenv("LELE_MODEL_PATH", raising=False)
+    monkeypatch.setattr(server, "DATA_PATH", None, raising=False)
+    monkeypatch.setattr(server, "MODEL_PATH", None, raising=False)
+
+    client = TestClient(server.app)
+    response = client.get("/settings/runtime")
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["version"] == client.get("/runtime/info").json()["version"]
+    assert payload["health"] == {
+        "status": "ok",
+        "has_data": False,
+        "has_model": False,
+    }
+
+    by_key = {item["key"]: item for item in payload["paths"]}
+    assert set(by_key) == {
+        "vault",
+        "application_data",
+        "lesson_projection",
+        "candidate_staging",
+        "cache",
+        "topic_model",
+    }
+
+    assert by_key["vault"]["role"] == "authoritative_user_data"
+    assert by_key["application_data"]["role"] == "persistent_application_state"
+    assert by_key["candidate_staging"]["role"] == "persistent_application_state"
+    assert by_key["lesson_projection"]["role"] == "derived_rebuildable_artifact"
+    assert by_key["topic_model"]["role"] == "derived_rebuildable_artifact"
+    assert by_key["cache"]["role"] == "cache_temporary_state"
+
+    assert by_key["application_data"]["provenance"] == {
+        "kind": "configuration_override",
+        "variable": "LELE_DATA_DIR",
+        "deprecated": False,
+    }
+
+    assert not data.exists()
+    assert not cache.exists()
+    assert not vault.exists()
+
+
+def test_settings_runtime_identifies_legacy_file_overrides(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    projection = tmp_path / "legacy" / "lessons.jsonl"
+    model = tmp_path / "legacy-model" / "topic_model.joblib"
+
+    monkeypatch.setenv("LELE_DATA_PATH", str(projection))
+    monkeypatch.setenv("LELE_MODEL_PATH", str(model))
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(server, "DATA_PATH", None, raising=False)
+    monkeypatch.setattr(server, "MODEL_PATH", None, raising=False)
+
+    client = TestClient(server.app)
+    payload = client.get("/settings/runtime").json()
+    by_key = {item["key"]: item for item in payload["paths"]}
+
+    assert by_key["lesson_projection"]["path"] == str(projection.resolve())
+    assert by_key["lesson_projection"]["provenance"] == {
+        "kind": "legacy_override",
+        "variable": "LELE_DATA_PATH",
+        "deprecated": True,
+    }
+
+    assert by_key["topic_model"]["path"] == str(model.resolve())
+    assert by_key["topic_model"]["provenance"] == {
+        "kind": "legacy_override",
+        "variable": "LELE_MODEL_PATH",
+        "deprecated": True,
+    }
+
+    assert not projection.parent.exists()
+    assert not model.parent.exists()
+
+
+def test_settings_runtime_server_overrides_do_not_claim_environment_provenance(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    projection = tmp_path / "runtime" / "lessons.jsonl"
+    model = tmp_path / "runtime" / "topic_model.joblib"
+
+    monkeypatch.setenv("LELE_DATA_PATH", str(tmp_path / "env-data.jsonl"))
+    monkeypatch.setenv("LELE_MODEL_PATH", str(tmp_path / "env-model.joblib"))
+    monkeypatch.setattr(server, "DATA_PATH", projection, raising=False)
+    monkeypatch.setattr(server, "MODEL_PATH", model, raising=False)
+
+    client = TestClient(server.app)
+    payload = client.get("/settings/runtime").json()
+    by_key = {item["key"]: item for item in payload["paths"]}
+
+    assert by_key["lesson_projection"]["path"] == str(projection)
+    assert by_key["lesson_projection"]["provenance"] == {
+        "kind": "runtime_override",
+        "variable": None,
+        "deprecated": False,
+    }
+
+    assert by_key["topic_model"]["path"] == str(model)
+    assert by_key["topic_model"]["provenance"] == {
+        "kind": "runtime_override",
+        "variable": None,
+        "deprecated": False,
+    }
+
+
+def test_about_is_bounded_and_uses_authoritative_version() -> None:
+    client = TestClient(server.app)
+
+    about = client.get("/about")
+    assert about.status_code == 200
+    payload = about.json()
+
+    assert payload["product_name"] == "LeLe Manager"
+    assert payload["version"] == client.get("/runtime/info").json()["version"]
+    assert payload["license_id"] == "MIT"
+    assert payload["license_url"] == "/app/LICENSE"
+    assert payload["changelog_url"].endswith("/CHANGELOG.md")
+    assert payload["documentation_url"].endswith("/docs/gui-user-guide.md")
+    assert payload["attribution"] == "GiadaWare"
+    assert "no account" in payload["local_first_statement"]
+    assert "telemetry" in payload["local_first_statement"]
+    assert "cloud storage" in payload["local_first_statement"]
+
+
+def test_diagnostics_preview_is_exact_bounded_payload_and_side_effect_free(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    data = tmp_path / "data"
+    cache = tmp_path / "cache"
+    vault = tmp_path / "vault"
+    secret = "DO-NOT-EXPOSE-THIS-VALUE"
+
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(cache))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    monkeypatch.setenv("UNRELATED_SECRET_TOKEN", secret)
+    monkeypatch.setattr(server, "DATA_PATH", None, raising=False)
+    monkeypatch.setattr(server, "MODEL_PATH", None, raising=False)
+
+    client = TestClient(server.app)
+    response = client.get("/diagnostics/preview")
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert set(payload) == {
+        "product_name",
+        "version",
+        "python_version",
+        "platform_system",
+        "platform_release",
+        "health",
+        "paths",
+    }
+    assert payload["version"] == client.get("/runtime/info").json()["version"]
+    assert secret not in response.text
+    assert "UNRELATED_SECRET_TOKEN" not in response.text
+
+    assert not data.exists()
+    assert not cache.exists()
+    assert not vault.exists()

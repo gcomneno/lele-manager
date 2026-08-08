@@ -64,6 +64,14 @@ def test_brand_design_docs_are_declared_in_sdist_manifest() -> None:
     ):
         assert f"include {documentation_path}" in manifest
 
+def test_gui_build_packages_authoritative_license() -> None:
+    script = read("scripts/build-gui.py")
+
+    assert 'ROOT / "LICENSE"' in script
+    assert 'FRONTEND_DIST / "LICENSE"' in script
+    assert "shutil.copy2(license_source, license_target)" in script
+
+
 def test_tag_release_publishes_exact_native_version_assets() -> None:
     release = read(".github/workflows/release.yml")
 

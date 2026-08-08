@@ -54,6 +54,9 @@ dataset, topic, fonti, percorsi, ID, payload API o identità di navigazione.
 6. Ingerire appunti grezzi tramite **TritaLeLe**, mantenendo separate anteprima,
    staging, revisione e approvazione.
 7. Usare **Vault**, **Stats** e **Timeline** per controllare la knowledge base.
+8. Usare **Impostazioni** per controllare percorsi locali effettivi, ruoli di
+   archiviazione e diagnostica bounded per l’assistenza; usare **Informazioni**
+   per identità del prodotto, licenza e collegamenti di supporto.
 
 ## Viste della GUI
 
@@ -69,6 +72,8 @@ dataset, topic, fonti, percorsi, ID, payload API o identità di navigazione.
 | Vault | Albero Markdown canonico e import della proiezione |
 | Duplicates | Revisione non distruttiva di duplicati e near-duplicate |
 | Ops | Health, Vault Doctor, import, training e refresh |
+| Impostazioni | Percorsi runtime effettivi, ruoli semantici e diagnostica esplicita per l’assistenza |
+| Informazioni | Identità prodotto, versione, licenza, dichiarazione local-first e collegamenti di supporto |
 
 ## Dashboard e stati di primo avvio
 
@@ -82,6 +87,41 @@ la revisione duplicati, Vault Doctor, import, refresh o training del modello.
 
 Il vault Markdown resta la fonte autorevole. Proiezioni dataset, cache e
 artefatti del topic model sono derivati e ricostruibili.
+
+## Impostazioni, Informazioni e diagnostica per assistenza
+
+**Impostazioni** è una superficie read-only. Mostra vault Markdown, directory
+dei dati applicativi, proiezione delle lesson, staging candidati TritaLeLe,
+directory cache e percorso del topic model effettivamente utilizzati. Ogni
+posizione è classificata come dati utente autorevoli, stato applicativo
+persistente, artefatto derivato/ricostruibile oppure cache/stato temporaneo.
+
+Quando l’origine è affidabile, Impostazioni distingue un override di directory
+supportato, un override legacy di compatibilità deprecato, un default della
+piattaforma o il default del prodotto. Non espone variabili d’ambiente
+estranee e il caricamento della pagina non crea directory né modifica vault,
+proiezione, candidati, cache o modello.
+
+Ogni percorso visualizzato può essere copiato. Le azioni per aprire cartelle
+non vengono offerte dove la GUI locale ospitata nel browser non dispone di un
+bridge filesystem portabile e sicuro.
+
+La sezione **Diagnostica per assistenza** è esplicita: al caricamento della
+pagina non viene generato alcun payload diagnostico. **Genera anteprima**
+richiede un rapporto JSON bounded contenente soltanto metadati di
+prodotto/runtime, ruoli dei percorsi effettivi e stato grossolano di esistenza.
+Sono esclusi contenuti di lesson e candidati, segreti, credenziali, token,
+cookie, header di autorizzazione, variabili d’ambiente arbitrarie, filesystem
+estraneo e inventari ampi di processi o sistema.
+
+Il JSON completo viene mostrato prima dell’esportazione. **Salva diagnostica
+JSON** salva esattamente quell’anteprima senza rigenerarla.
+
+**Informazioni** usa la stessa versione autorevole mostrata dal product shell.
+Espone attribuzione GiadaWare, licenza MIT con riferimento completo incorporato,
+repository, issue tracker, release, changelog e documentazione, oltre alla
+dichiarazione local-first. LeLe Manager non introduce account, telemetria,
+storage cloud o servizi remoti per la knowledge base.
 
 ## Screenshot
 
