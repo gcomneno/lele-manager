@@ -477,7 +477,7 @@
 
   .signature-tongue {
     position: absolute;
-    left: 23px;
+    left: 18px;
     top: 20px;
     z-index: 2;
     width: 4px;
