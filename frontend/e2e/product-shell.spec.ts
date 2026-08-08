@@ -11,13 +11,13 @@ test.describe('product shell hierarchy', () => {
     })
 
     await expect(
-      navigation.getByRole('heading', { name: 'Knowledge' }),
+      navigation.getByRole('region', { name: 'Knowledge' }),
     ).toBeVisible()
     await expect(
-      navigation.getByRole('heading', { name: 'Capture' }),
+      navigation.getByRole('region', { name: 'Capture' }),
     ).toBeVisible()
     await expect(
-      navigation.getByRole('heading', { name: 'Manage' }),
+      navigation.getByRole('region', { name: 'Manage' }),
     ).toBeVisible()
 
     for (const label of [
@@ -94,13 +94,13 @@ test.describe('product shell hierarchy', () => {
     })
 
     await expect(
-      navigation.getByRole('heading', { name: 'Conoscenza' }),
+      navigation.getByRole('region', { name: 'Conoscenza' }),
     ).toBeVisible()
     await expect(
-      navigation.getByRole('heading', { name: 'Acquisizione' }),
+      navigation.getByRole('region', { name: 'Acquisizione' }),
     ).toBeVisible()
     await expect(
-      navigation.getByRole('heading', { name: 'Gestione' }),
+      navigation.getByRole('region', { name: 'Gestione' }),
     ).toBeVisible()
 
     await expect(
@@ -128,7 +128,7 @@ test.describe('product shell responsive layouts', () => {
 
     await expect(navigation).toBeVisible()
     await expect(
-      navigation.getByRole('heading', { name: 'Knowledge' }),
+      navigation.getByRole('region', { name: 'Knowledge' }),
     ).toBeVisible()
     await expect(
       navigation.getByRole('link', { name: 'Browse' }),
@@ -173,7 +173,7 @@ test.describe('product shell responsive layouts', () => {
       'Manage',
     ]) {
       await expect(
-        navigation.getByRole('heading', { name: group }),
+        navigation.getByRole('region', { name: group }),
       ).toBeVisible()
     }
 

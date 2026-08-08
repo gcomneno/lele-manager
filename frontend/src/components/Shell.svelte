@@ -90,8 +90,13 @@
     </a>
     <nav aria-label="Primary">
       {#each navigationGroups as group}
-        <section class="nav-group">
-          <h2>{$messages[group.labelKey]}</h2>
+        <section
+          class="nav-group"
+          aria-label={$messages[group.labelKey]}
+        >
+          <span class="nav-group-title">
+            {$messages[group.labelKey]}
+          </span>
           <div class="nav-group-links">
             {#each group.links as link}
               <a
@@ -330,7 +335,8 @@
     gap: 4px;
   }
 
-  .nav-group h2 {
+  .nav-group-title {
+    display: block;
     margin: 0;
     padding: 0 12px;
     color: var(--color-text-inverse-muted);
@@ -494,10 +500,17 @@
 
   @media (max-width: 800px) {
     .shell {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
+      width: 100%;
+      max-width: 100%;
+      overflow-x: clip;
     }
 
     .sidebar {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
       flex-direction: row;
       flex-wrap: wrap;
       align-items: center;
@@ -533,15 +546,24 @@
     }
 
     nav {
+      box-sizing: border-box;
       width: 100%;
+      min-width: 0;
+      max-width: 100%;
       gap: 10px;
+    }
+
+    .nav-group,
+    .nav-group-links {
+      min-width: 0;
+      max-width: 100%;
     }
 
     .nav-group {
       gap: 3px;
     }
 
-    .nav-group h2 {
+    .nav-group-title {
       padding: 0 4px;
     }
 
@@ -1313,7 +1335,7 @@
       gap: 1px;
     }
 
-    .nav-group h2 {
+    .nav-group-title {
       font-size: 0.62rem;
       line-height: 1.1;
     }
