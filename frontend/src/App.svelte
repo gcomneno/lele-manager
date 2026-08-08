@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import Shell from './components/Shell.svelte'
+  import Dashboard from './routes/Dashboard.svelte'
   import Browse from './routes/Browse.svelte'
   import Detail from './routes/Detail.svelte'
   import Editor from './routes/Editor.svelte'
@@ -12,7 +13,7 @@
   import TritaLeLe from './routes/TritaLeLe.svelte'
   import { parseRoute, type Route } from './lib/router'
 
-  let route = $state<Route>({ view: 'browse' })
+  let route = $state<Route>({ view: 'dashboard' })
 
   onMount(() => {
     route = parseRoute()
@@ -25,7 +26,9 @@
 </script>
 
 <Shell {route}>
-  {#if route.view === 'browse'}
+  {#if route.view === 'dashboard'}
+    <Dashboard />
+  {:else if route.view === 'browse'}
     <Browse />
   {:else if route.view === 'detail'}
     <Detail id={route.id} />

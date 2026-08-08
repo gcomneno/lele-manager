@@ -45,19 +45,22 @@ source names, paths, IDs, API payloads or navigation identities.
 
 ## Daily workflow
 
-1. Check health and vault diagnostics in **Ops**.
-2. Browse, filter and inspect existing lessons.
-3. Create or edit approved lessons through **Editor**.
-4. Review exact and near duplicates through **Duplicates**.
-5. Ingest raw notes through **TritaLeLe**, keeping preview, staging, review and
+1. Open **Dashboard** to see workspace readiness, attention points and the next
+   useful action.
+2. Use **Ops** when explicit diagnostics, import, training or refresh are needed.
+3. Browse, filter and inspect existing lessons.
+4. Create or edit approved lessons through **Editor**.
+5. Review exact and near duplicates through **Duplicates**.
+6. Ingest raw notes through **TritaLeLe**, keeping preview, staging, review and
    approval as separate actions.
-6. Use **Vault**, **Stats** and **Timeline** to inspect the resulting knowledge
+7. Use **Vault**, **Stats** and **Timeline** to inspect the resulting knowledge
    base.
 
 ## GUI views
 
 | View | Purpose |
 |---|---|
+| Dashboard | Inspect workspace readiness, bounded summaries and next useful actions |
 | Browse | Search, filter and export lessons |
 | Detail | Read one lesson and inspect explained similarity |
 | Editor | Create or update canonical Markdown lessons |
@@ -67,6 +70,18 @@ source names, paths, IDs, API payloads or navigation identities.
 | Vault | Inspect the canonical Markdown tree and trigger projection import |
 | Duplicates | Review duplicate and near-duplicate pairs without mutation |
 | Ops | Inspect health, run Vault Doctor, import, train and refresh |
+
+## Dashboard and first-run states
+
+`/app/` opens the Dashboard. Browse remains available at `#/browse`.
+
+The Dashboard reads bounded workspace state only. It can distinguish a fresh
+setup with no vault, an empty vault, a partially ready workspace, a ready
+workspace and recoverable loading errors. It does not run duplicate review,
+Vault Doctor, import, refresh or model training automatically.
+
+The Markdown vault remains authoritative. Dataset projections, caches and
+topic-model artifacts are derived and rebuildable.
 
 ## Screenshots
 

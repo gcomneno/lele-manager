@@ -63,6 +63,24 @@ export interface RuntimeInfoResponse {
   version: string
 }
 
+export interface DashboardCandidateSummary {
+  total: number
+  staged: number
+  in_review: number
+  rejected: number
+  approved: number
+}
+
+export interface DashboardSummaryResponse {
+  health_status: string
+  vault_exists: boolean
+  vault_markdown_files: number | null
+  projection_exists: boolean
+  model_exists: boolean
+  stats: StatsSummaryResponse | null
+  candidates: DashboardCandidateSummary | null
+}
+
 export interface TrainResponse {
   message: string
   n_lessons: number
@@ -350,6 +368,9 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
 
   runtimeInfo: () => request<RuntimeInfoResponse>('/runtime/info'),
+
+  dashboardSummary: () =>
+    request<DashboardSummaryResponse>('/dashboard/summary'),
 
   duplicates: ({ min_score, exact_only, limit }: DuplicateQuery) => {
     const params = new URLSearchParams({

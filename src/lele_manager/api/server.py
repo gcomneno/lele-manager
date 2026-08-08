@@ -13,6 +13,12 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from threading import Lock
 
+from lele_manager.adapters.json_candidate_repository import JsonCandidateRepository
+from lele_manager.application.lesson_candidate import (
+    CandidateRepositoryError,
+    CandidateState,
+)
+from lele_manager.core.paths import candidates_path
 from lele_manager.core.analytics import compute_stats_summary, compute_timeline
 from lele_manager.application.dataframes import records_to_legacy_dataframe
 from lele_manager.application.external_lessons import external_lessons_feed
@@ -54,6 +60,7 @@ MODEL_PATH: Path | None = None
 def get_data_path() -> Path:
     return DATA_PATH if DATA_PATH is not None else resolve_data_path()
 
+
 def get_model_path() -> Path:
     return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
 
@@ -87,13 +94,18 @@ app = FastAPI(
 )
 app.include_router(tritalele_router)
 
+
 # -----------------------------------------------------------------------------
 # Schemi Pydantic
 # -----------------------------------------------------------------------------
 class LessonBase(BaseModel):
     text: str = Field(..., description="Testo della lesson learned")
-    topic: Optional[str] = Field(None, description="Topic/macrocategoria (es. python, cpp, linux)")
-    source: Optional[str] = Field(None, description="Origine: chatgpt, libro, esperimento, note, ...")
+    topic: Optional[str] = Field(
+        None, description="Topic/macrocategoria (es. python, cpp, linux)"
+    )
+    source: Optional[str] = Field(
+        None, description="Origine: chatgpt, libro, esperimento, note, ..."
+    )
     importance: Optional[int] = Field(
         None,
         ge=1,
@@ -239,7 +251,12 @@ class SimilarBatchItemRequest(BaseModel):
 
 
 class SimilarBatchRequest(BaseModel):
-    items: List[SimilarBatchItemRequest] = Field(..., min_length=1, max_length=50, description="Batch di richieste di similarità.")
+    items: List[SimilarBatchItemRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Batch di richieste di similarità.",
+    )
 
 
 class SimilarBatchResponse(BaseModel):
@@ -296,6 +313,24 @@ class RuntimeInfoResponse(BaseModel):
 class VaultStatusResponse(BaseModel):
     vault_dir: str
     exists: bool
+
+
+class DashboardCandidateSummary(BaseModel):
+    total: int
+    staged: int
+    in_review: int
+    rejected: int
+    approved: int
+
+
+class DashboardSummaryResponse(BaseModel):
+    health_status: str
+    vault_exists: bool
+    vault_markdown_files: Optional[int] = None
+    projection_exists: bool
+    model_exists: bool
+    stats: Optional["StatsSummaryResponse"] = None
+    candidates: Optional[DashboardCandidateSummary] = None
 
 
 class VaultTreeResponse(BaseModel):
@@ -405,7 +440,17 @@ def load_lessons_df() -> pd.DataFrame:
         ) from e
 
     # Assicuriamoci che almeno queste colonne esistano
-    for col in ["id", "text", "topic", "source", "importance", "tags", "date", "title", "created_at"]:
+    for col in [
+        "id",
+        "text",
+        "topic",
+        "source",
+        "importance",
+        "tags",
+        "date",
+        "title",
+        "created_at",
+    ]:
         if col not in df.columns:
             df[col] = None
 
@@ -434,7 +479,9 @@ def append_lesson_to_jsonl(lesson: Lesson) -> None:
     try:
         legacy_jsonl_append_facade(get_data_path()).append(record)
     except DuplicateLessonIdError as exc:
-        raise HTTPException(status_code=409, detail=f"Lesson ID già esistente: {lesson.id}") from exc
+        raise HTTPException(
+            status_code=409, detail=f"Lesson ID già esistente: {lesson.id}"
+        ) from exc
     except ProjectionStoreError as exc:
         raise HTTPException(
             status_code=409,
@@ -496,7 +543,9 @@ def _build_similar_items(
     df_indexed = df.set_index("id")
     text_map = df_indexed["text"].fillna("").astype(str).to_dict()
     topic_map = (
-        df_indexed["topic"].fillna("").astype(str).to_dict() if "topic" in df_indexed.columns else {}
+        df_indexed["topic"].fillna("").astype(str).to_dict()
+        if "topic" in df_indexed.columns
+        else {}
     )
     tags_series = df_indexed["tags"] if "tags" in df_indexed.columns else None
 
@@ -538,7 +587,9 @@ def _build_similar_meta(
         return None
     data_path = get_data_path()
     model_path = get_model_path()
-    data_mtime_ns, model_mtime_ns = _similarity_cache_key(data_path=data_path, model_path=model_path)
+    data_mtime_ns, model_mtime_ns = _similarity_cache_key(
+        data_path=data_path, model_path=model_path
+    )
     return SimilarMeta(
         data_mtime_ns=int(data_mtime_ns),
         model_mtime_ns=int(model_mtime_ns),
@@ -570,7 +621,9 @@ def build_similarity_index(df: pd.DataFrame):
     Cached in API layer (#26).
     """
     if df.empty:
-        raise HTTPException(status_code=400, detail="Nessuna LeLe presente nel dataset.")
+        raise HTTPException(
+            status_code=400, detail="Nessuna LeLe presente nel dataset."
+        )
 
     model_path = get_model_path()
     data_path = get_data_path()
@@ -594,7 +647,9 @@ def build_similarity_index(df: pd.DataFrame):
             return app.state.sim_index
 
         pipeline = load_topic_model(str(model_path) if model_path else None)
-        index = LessonSimilarityIndex.from_topic_pipeline(df=df, pipeline=pipeline, id_column="id")
+        index = LessonSimilarityIndex.from_topic_pipeline(
+            df=df, pipeline=pipeline, id_column="id"
+        )
 
         app.state.sim_index = index
         app.state.sim_index_key = key
@@ -635,7 +690,9 @@ def _row_to_search_result(row: dict) -> LessonSearchResult:
 
     # importance: prova a convertirla, altrimenti None
     raw_importance = row.get("importance")
-    if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
+    if raw_importance is None or (
+        isinstance(raw_importance, float) and pd.isna(raw_importance)
+    ):
         importance_val: Optional[int] = None
     else:
         try:
@@ -732,6 +789,60 @@ def runtime_info() -> RuntimeInfoResponse:
     return RuntimeInfoResponse(version=__version__)
 
 
+def _count_vault_markdown_files(node: object) -> int:
+    if not isinstance(node, dict):
+        return 0
+    if node.get("type") == "file":
+        return 1
+    children = node.get("children")
+    if not isinstance(children, list):
+        return 0
+    return sum(_count_vault_markdown_files(child) for child in children)
+
+
+@app.get("/dashboard/summary", response_model=DashboardSummaryResponse)
+def dashboard_summary() -> DashboardSummaryResponse:
+    """Return bounded, side-effect-free facts used by the product dashboard."""
+    health_state = health()
+    vault_state = vault_status()
+
+    vault_markdown_files: Optional[int] = None
+    if vault_state.exists:
+        tree = build_vault_tree(Path(vault_state.vault_dir))
+        vault_markdown_files = _count_vault_markdown_files(tree.to_dict())
+
+    stats: Optional[StatsSummaryResponse] = None
+    if health_state.has_data:
+        stats = stats_summary()
+
+    candidates: Optional[DashboardCandidateSummary]
+    try:
+        staged_candidates = JsonCandidateRepository(candidates_path()).list()
+    except CandidateRepositoryError:
+        candidates = None
+    else:
+        counts = {state: 0 for state in CandidateState}
+        for candidate in staged_candidates:
+            counts[candidate.state] += 1
+        candidates = DashboardCandidateSummary(
+            total=len(staged_candidates),
+            staged=counts[CandidateState.STAGED],
+            in_review=counts[CandidateState.IN_REVIEW],
+            rejected=counts[CandidateState.REJECTED],
+            approved=counts[CandidateState.APPROVED],
+        )
+
+    return DashboardSummaryResponse(
+        health_status=health_state.status,
+        vault_exists=vault_state.exists,
+        vault_markdown_files=vault_markdown_files,
+        projection_exists=health_state.has_data,
+        model_exists=health_state.has_model,
+        stats=stats,
+        candidates=candidates,
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """
@@ -785,8 +896,12 @@ def duplicates(
     payload["pairs"] = [
         {
             **pair.to_dict(),
-            "left_lesson": _row_to_duplicate_snapshot(df.iloc[pair.left_position].to_dict()).model_dump(),
-            "right_lesson": _row_to_duplicate_snapshot(df.iloc[pair.right_position].to_dict()).model_dump(),
+            "left_lesson": _row_to_duplicate_snapshot(
+                df.iloc[pair.left_position].to_dict()
+            ).model_dump(),
+            "right_lesson": _row_to_duplicate_snapshot(
+                df.iloc[pair.right_position].to_dict()
+            ).model_dump(),
         }
         for pair in report.pairs
     ]
@@ -909,7 +1024,9 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
         na_position="last",
         kind="mergesort",  # stable sort for determinism
     )
-    df = df.drop(columns=["_importance_num", "_created_at_dt", "_id_sort"], errors="ignore")
+    df = df.drop(
+        columns=["_importance_num", "_created_at_dt", "_id_sort"], errors="ignore"
+    )
 
     # Limit
     df = df.head(body.limit)
@@ -977,10 +1094,16 @@ def export_search(
     )
 
 
-@app.get("/lessons/{lesson_id:path}/similar", response_model=SimilarResponse, response_model_exclude_none=True)
+@app.get(
+    "/lessons/{lesson_id:path}/similar",
+    response_model=SimilarResponse,
+    response_model_exclude_none=True,
+)
 def similar_lessons(
     lesson_id: str,
-    explain: bool = Query(default=False, description="Se true, include meta e rank per debug."),
+    explain: bool = Query(
+        default=False, description="Se true, include meta e rank per debug."
+    ),
     top_k: int = Query(
         default=5,
         ge=1,
@@ -999,16 +1122,26 @@ def similar_lessons(
     """
     df = load_lessons_df()
     if df.empty:
-        raise HTTPException(status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile.")
+        raise HTTPException(
+            status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
+        )
 
     matches = df[df["id"].astype(str) == lesson_id]
     if matches.empty:
-        raise HTTPException(status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata.")
+        raise HTTPException(
+            status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata."
+        )
 
     query_text = str(matches.iloc[0]["text"])
 
     index = build_similarity_index(df)
-    results_raw = similar_by_lesson_id(df=df, lesson_id=lesson_id, transformer=index.transformer, top_k=top_k, min_score=min_score)
+    results_raw = similar_by_lesson_id(
+        df=df,
+        lesson_id=lesson_id,
+        transformer=index.transformer,
+        top_k=top_k,
+        min_score=min_score,
+    )
     # Togli eventuale self-match se costruito usando il testo della stessa LeLe
     filtered = [r for r in results_raw if r.lesson_id != lesson_id]
 
@@ -1016,7 +1149,9 @@ def similar_lessons(
     query_topic = _to_optional_str(query_row.get("topic"))
     query_tags = _normalize_tags(query_row.get("tags"))
 
-    items = _build_similar_items(df, filtered, explain=explain, query_tags=query_tags if explain else None)
+    items = _build_similar_items(
+        df, filtered, explain=explain, query_tags=query_tags if explain else None
+    )
     meta = _build_similar_meta(
         explain=explain,
         top_k=top_k,
@@ -1044,7 +1179,9 @@ def get_lesson(lesson_id: str) -> Lesson:
 
     matches = df[df["id"].astype(str) == lesson_id]
     if matches.empty:
-        raise HTTPException(status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata.")
+        raise HTTPException(
+            status_code=404, detail=f"LeLe con id={lesson_id!r} non trovata."
+        )
 
     row = matches.iloc[0]
 
@@ -1054,7 +1191,9 @@ def get_lesson(lesson_id: str) -> Lesson:
     title_val = _to_optional_str(row.get("title"))
 
     raw_importance = row.get("importance")
-    if raw_importance is None or (isinstance(raw_importance, float) and pd.isna(raw_importance)):
+    if raw_importance is None or (
+        isinstance(raw_importance, float) and pd.isna(raw_importance)
+    ):
         importance_val = None
     else:
         try:
@@ -1093,7 +1232,12 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
 
 
 @app.post("/similar", response_model=SimilarResponse, response_model_exclude_none=True)
-def similar_from_text(body: SimilarTextRequest, explain: bool = Query(default=False, description="Se true, include meta e rank per debug.")) -> SimilarResponse:
+def similar_from_text(
+    body: SimilarTextRequest,
+    explain: bool = Query(
+        default=False, description="Se true, include meta e rank per debug."
+    ),
+) -> SimilarResponse:
     """
     Similarità a partire da testo libero (non richiede lesson_id).
     """
@@ -1103,7 +1247,9 @@ def similar_from_text(body: SimilarTextRequest, explain: bool = Query(default=Fa
 
     df = load_lessons_df()
     if df.empty:
-        raise HTTPException(status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile.")
+        raise HTTPException(
+            status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
+        )
 
     # build_similarity_index() gestisce 503 se manca il modello.
     index = build_similarity_index(df)  # cached
@@ -1144,7 +1290,10 @@ def train_topic() -> TrainResponse:
     """
     df = load_lessons_df()
     if df.empty:
-        raise HTTPException(status_code=400, detail="Dataset vuoto: nessuna LeLe da usare per il training.")
+        raise HTTPException(
+            status_code=400,
+            detail="Dataset vuoto: nessuna LeLe da usare per il training.",
+        )
 
     # Usa solo righe addestrabili (evita topic 'nan' generato da astype(str) su NaN)
     df_train = df.dropna(subset=["text", "topic"]).copy()
@@ -1165,7 +1314,11 @@ def train_topic() -> TrainResponse:
 
         # Caso classico: TF-IDF/CountVectorizer rimane senza termini dopo pruning (min_df/max_df)
         # -> vogliamo un messaggio "umano" che contenga segnali tipo "TF-IDF" / "vocabulary"
-        if ("no terms remain" in low) or ("after pruning" in low) or ("empty vocabulary" in low):
+        if (
+            ("no terms remain" in low)
+            or ("after pruning" in low)
+            or ("empty vocabulary" in low)
+        ):
             detail = f"TF-IDF vocabulary empty: {msg}"
             raise HTTPException(status_code=400, detail=detail)
 
@@ -1294,7 +1447,9 @@ def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
         vault_dir = require_vault_dir()
         existing = find_markdown_by_id(vault_dir, lesson_id)
         rel_path = existing.relative_to(vault_dir).as_posix() if existing else None
-        _write_lesson_to_vault(lesson_id=lesson_id, payload=body, relative_path=rel_path)
+        _write_lesson_to_vault(
+            lesson_id=lesson_id, payload=body, relative_path=rel_path
+        )
         _sync_vault_import()
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -1306,7 +1461,9 @@ def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
 
 @app.post("/ops/refresh", response_model=OpsRefreshResponse)
 def ops_refresh(
-    train: bool = Query(default=True, description="Se true, riallena anche il topic model."),
+    train: bool = Query(
+        default=True, description="Se true, riallena anche il topic model."
+    ),
 ) -> OpsRefreshResponse:
     """Import vault → JSONL e opzionalmente train topic model (come lele-api-refresh)."""
     try:
@@ -1400,11 +1557,21 @@ else:
             detail="GUI non buildata. Esegui: ./scripts/build-gui.sh",
         )
 
+
 # -----------------------------------------------------------------------------
 # Similarity batch
 # -----------------------------------------------------------------------------
-@app.post("/similar/batch", response_model=SimilarBatchResponse, response_model_exclude_none=True)
-def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(default=False, description="Se true, include meta e rank per debug.")) -> SimilarBatchResponse:
+@app.post(
+    "/similar/batch",
+    response_model=SimilarBatchResponse,
+    response_model_exclude_none=True,
+)
+def similar_from_text_batch(
+    body: SimilarBatchRequest,
+    explain: bool = Query(
+        default=False, description="Se true, include meta e rank per debug."
+    ),
+) -> SimilarBatchResponse:
     """
     Similarità batch a partire da testi liberi.
 
@@ -1413,7 +1580,9 @@ def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(def
     """
     df = load_lessons_df()
     if df.empty:
-        raise HTTPException(status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile.")
+        raise HTTPException(
+            status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
+        )
 
     index = build_similarity_index(df)  # cached
 
@@ -1448,13 +1617,18 @@ def similar_from_text_batch(body: SimilarBatchRequest, explain: bool = Query(def
 
     return SimilarBatchResponse(items=out_items)
 
+
 # -----------------------------------------------------------------------------
 # Editor integration (live suggest)
 # -----------------------------------------------------------------------------
-@app.post("/editor/suggest", response_model=SimilarResponse, response_model_exclude_none=True)
+@app.post(
+    "/editor/suggest", response_model=SimilarResponse, response_model_exclude_none=True
+)
 def editor_suggest(
     body: SimilarTextRequest,
-    explain: bool = Query(default=False, description="Se true, include meta e rank per debug."),
+    explain: bool = Query(
+        default=False, description="Se true, include meta e rank per debug."
+    ),
 ) -> SimilarResponse:
     """
     Suggest LeLe simili mentre scrivo (editor integration).

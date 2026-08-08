@@ -154,7 +154,8 @@ test.describe('GUI localization', () => {
     await resetLocale(page)
 
     const expected = [
-      ['Browse', '#/'],
+      ['Dashboard', '#/'],
+      ['Browse', '#/browse'],
       ['Timeline', '#/timeline'],
       ['Statistics', '#/stats'],
       ['New LeLe', '#/editor'],
@@ -180,7 +181,8 @@ test.describe('GUI localization', () => {
       .selectOption('it')
 
     const italianExpected = [
-      ['Esplora', '#/'],
+      ['Dashboard', '#/'],
+      ['Esplora', '#/browse'],
       ['Cronologia', '#/timeline'],
       ['Statistiche', '#/stats'],
       ['Nuova LeLe', '#/editor'],
@@ -204,6 +206,7 @@ test.describe('GUI localization', () => {
     page,
   }) => {
     await resetLocale(page)
+    await page.goto('/app/#/browse')
 
     const navigation = page.getByRole('navigation')
 
@@ -373,6 +376,7 @@ test.describe('GUI localization', () => {
     page,
   }) => {
     await resetLocale(page)
+    await page.goto('/app/#/browse')
 
     const firstCard = page.locator('.lesson-card').first()
 
@@ -599,7 +603,7 @@ test.describe('GUI localization', () => {
     page,
   }) => {
     await resetLocale(page)
-    await page.goto('/app/#/')
+    await page.goto('/app/#/browse')
 
     const healthBar = page.locator('.health-bar')
 

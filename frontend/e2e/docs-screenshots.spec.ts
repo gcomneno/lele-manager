@@ -75,7 +75,7 @@ test.describe('GUI documentation screenshots', () => {
       window.localStorage.setItem('lele-manager.locale', 'it')
     })
 
-    await page.goto('/app/#/')
+    await page.goto('/app/#/browse')
     await expect(page.getByRole('heading', { name: 'Esplora' })).toBeVisible()
     await expect(page.locator('.lesson-card').first()).toBeVisible()
     await prepareDocumentationScreenshot(page)

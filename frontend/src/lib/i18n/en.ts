@@ -1,7 +1,50 @@
 export const en = {
   brandBrowseAccessible: 'LeLe Manager, browse',
+  brandHomeAccessible: 'LeLe Manager, dashboard',
+  dashboardTitle: 'Dashboard',
+  dashboardLoading: 'Loading workspace status…',
+  dashboardIntro:
+    'A concise view of workspace readiness, attention, and the next useful action.',
+  dashboardReadiness: 'Workspace readiness',
+  dashboardSummary: 'Workspace summary',
+  dashboardFreshTitle: 'Workspace setup required',
+  dashboardFreshDescription:
+    'No usable Markdown vault is currently available. Open Vault or System to continue setup.',
+  dashboardEmptyTitle: 'Vault ready, no approved knowledge yet',
+  dashboardEmptyDescription:
+    'The Markdown vault is available but contains no lessons yet. Create or collect your first LeLe.',
+  dashboardPartialTitle: 'Workspace partially ready',
+  dashboardPartialDescription:
+    'Approved knowledge exists, but one or more derived local artifacts are missing. You can still use the vault; rebuild derived state from System when needed.',
+  dashboardReadyTitle: 'Workspace ready',
+  dashboardReadyDescription:
+    'Your local knowledge workspace and derived search state are available.',
+  dashboardOwnership:
+    'The Markdown vault is the authoritative source of approved knowledge. Projections, caches, and models are local derived artifacts that can be rebuilt.',
+  dashboardError: 'Workspace status could not be loaded: {error}',
+  dashboardRetry: 'Retry',
+  dashboardOpenVault: 'Open Vault',
+  dashboardOpenSystem: 'Open System',
+  dashboardOpenStatistics: 'Open Statistics',
+  dashboardOpenCollection: 'Open Collection',
+  dashboardVault: 'Markdown vault',
+  dashboardProjection: 'Projection',
+  dashboardModel: 'Search model',
+  dashboardApi: 'Application API',
+  dashboardAvailable: 'available',
+  dashboardMissing: 'missing',
+  dashboardMarkdownFiles: '{count} Markdown files',
+  dashboardKnowledgeTitle: 'Approved knowledge',
+  dashboardKnowledgeDescription:
+    'Bounded statistics from the current local projection.',
+  dashboardCandidatesTitle: 'Collection attention',
+  dashboardCandidatesDescription:
+    'Candidates already present in local staging; no scan is run by this dashboard.',
+  dashboardCandidateStaged: 'Staged',
+  dashboardCandidateReview: 'In review',
   brandTagline: 'Your local space for your “Lessons Learned”',
 
+  navDashboard: 'Dashboard',
   navBrowse: 'Browse',
   navTimeline: 'Timeline',
   navStatistics: 'Statistics',

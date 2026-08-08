@@ -5,6 +5,12 @@
 > **Issue:** [#96](https://github.com/gcomneno/lele-manager/issues/96)  
 > **Milestone:** [v2.0](https://github.com/gcomneno/lele-manager/milestone/3)  
 > **Data:** 2026-07-05
+>
+> **Historical note:** this document records the original GUI-alpha design.
+> Since issue #149, `/` opens the product Dashboard and Browse is available at
+> `/browse`. The wireframes and flows below are intentionally preserved as the
+> historical design baseline; maintained user behavior is documented in
+> [`gui-user-guide.md`](gui-user-guide.md).
 
 ---
 

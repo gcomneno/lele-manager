@@ -1,5 +1,6 @@
 <script lang="ts">
   type IconName =
+    | 'dashboard'
     | 'browse'
     | 'timeline'
     | 'stats'
@@ -27,7 +28,12 @@
   stroke-linejoin="round"
   aria-hidden="true"
 >
-  {#if name === 'browse'}
+  {#if name === 'dashboard'}
+    <rect x="4" y="4" width="6" height="6" rx="1" />
+    <rect x="14" y="4" width="6" height="6" rx="1" />
+    <rect x="4" y="14" width="6" height="6" rx="1" />
+    <rect x="14" y="14" width="6" height="6" rx="1" />
+  {:else if name === 'browse'}
     <path d="M4 5.5h6l2 2H20v11H4z" />
     <path d="M4 9h16" />
   {:else if name === 'timeline'}
