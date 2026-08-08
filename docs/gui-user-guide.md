@@ -55,6 +55,9 @@ source names, paths, IDs, API payloads or navigation identities.
    approval as separate actions.
 7. Use **Vault**, **Stats** and **Timeline** to inspect the resulting knowledge
    base.
+8. Use **Settings** to inspect effective local paths, storage roles and bounded
+   support diagnostics; use **About** for product identity, license and support
+   links.
 
 ## GUI views
 
@@ -70,6 +73,8 @@ source names, paths, IDs, API payloads or navigation identities.
 | Vault | Inspect the canonical Markdown tree and trigger projection import |
 | Duplicates | Review duplicate and near-duplicate pairs without mutation |
 | Ops | Inspect health, run Vault Doctor, import, train and refresh |
+| Settings | Inspect effective runtime paths, their semantic roles and explicit support diagnostics |
+| About | Inspect product identity, version, license, local-first statement and support links |
 
 ## Dashboard and first-run states
 
@@ -82,6 +87,40 @@ Vault Doctor, import, refresh or model training automatically.
 
 The Markdown vault remains authoritative. Dataset projections, caches and
 topic-model artifacts are derived and rebuildable.
+
+## Settings, About and support diagnostics
+
+**Settings** is read-only. It reports the effective Markdown vault, application
+data directory, lesson projection, TritaLeLe candidate staging, cache directory
+and topic-model path. Each location is classified as authoritative user data,
+persistent application state, derived/rebuildable artifact or cache/temporary
+state.
+
+When reliable, Settings also identifies whether a path comes from a supported
+directory-level override, a deprecated compatibility override, a platform
+default or the product default. It does not expose unrelated environment
+variables and loading the page does not create directories or mutate the vault,
+projection, candidates, cache or model.
+
+Each displayed path can be copied. Folder-opening actions are intentionally not
+offered where the browser-hosted local GUI has no safe portable filesystem
+bridge.
+
+The **Support diagnostics** section is explicit: no diagnostic payload is
+generated on page load. **Generate preview** requests a bounded JSON report
+containing product/runtime metadata, effective path roles and coarse existence
+status only. It excludes lesson and candidate contents, secrets, credentials,
+tokens, cookies, authorization headers, arbitrary environment variables,
+unrelated filesystem data and broad process/system inventories.
+
+The complete JSON is shown before export. **Save diagnostic JSON** writes
+exactly that preview without regenerating it.
+
+**About** uses the same authoritative application version as the product shell.
+It provides GiadaWare attribution, the MIT license and packaged full-license
+reference, repository, issue tracker, releases, changelog and documentation
+links, plus the local-first statement. LeLe Manager itself introduces no
+account, telemetry, cloud storage or remote knowledge service.
 
 ## Screenshots
 

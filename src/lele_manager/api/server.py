@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
@@ -19,6 +20,10 @@ from lele_manager.application.lesson_candidate import (
     CandidateState,
 )
 from lele_manager.core.paths import candidates_path
+from lele_manager.core.runtime_transparency import (
+    RuntimePathDescription,
+    describe_runtime_paths,
+)
 from lele_manager.core.analytics import compute_stats_summary, compute_timeline
 from lele_manager.application.dataframes import records_to_legacy_dataframe
 from lele_manager.application.external_lessons import external_lessons_feed
@@ -308,6 +313,72 @@ class HealthResponse(BaseModel):
 
 class RuntimeInfoResponse(BaseModel):
     version: str
+
+
+class RuntimePathProvenanceResponse(BaseModel):
+    kind: Literal[
+        "configuration_override",
+        "legacy_override",
+        "platform_default",
+        "product_default",
+        "runtime_override",
+    ]
+    variable: Optional[str] = None
+    deprecated: bool = False
+
+
+class RuntimePathResponse(BaseModel):
+    key: str
+    path: str
+    role: Literal[
+        "authoritative_user_data",
+        "persistent_application_state",
+        "derived_rebuildable_artifact",
+        "cache_temporary_state",
+    ]
+    exists: bool
+    kind: Literal["directory", "file"]
+    provenance: RuntimePathProvenanceResponse
+
+
+class SettingsRuntimeResponse(BaseModel):
+    version: str
+    health: HealthResponse
+    paths: List[RuntimePathResponse]
+
+
+class AboutLinkResponse(BaseModel):
+    label: str
+    url: str
+
+
+class AboutResponse(BaseModel):
+    product_name: str
+    version: str
+    tagline: str
+    attribution: str
+    license_id: str
+    license_summary: str
+    license_url: str
+    local_first_statement: str
+    repository_url: str
+    issue_tracker_url: str
+    releases_url: str
+    changelog_url: str
+    documentation_url: str
+    python_version: str
+    platform_system: str
+    platform_release: str
+
+
+class DiagnosticsPreviewResponse(BaseModel):
+    product_name: str
+    version: str
+    python_version: str
+    platform_system: str
+    platform_release: str
+    health: HealthResponse
+    paths: List[RuntimePathResponse]
 
 
 class VaultStatusResponse(BaseModel):
@@ -783,10 +854,158 @@ def integration_lessons(
     )
 
 
+def _runtime_path_response(
+    description: RuntimePathDescription,
+    *,
+    path_override: Path | None = None,
+    runtime_override: bool = False,
+) -> RuntimePathResponse:
+    path = path_override if path_override is not None else description.path
+    if runtime_override:
+        provenance = RuntimePathProvenanceResponse(
+            kind="runtime_override",
+            variable=None,
+            deprecated=False,
+        )
+    else:
+        provenance = RuntimePathProvenanceResponse(
+            kind=description.provenance.kind,
+            variable=description.provenance.variable,
+            deprecated=description.provenance.deprecated,
+        )
+
+    kind: Literal["directory", "file"] = (
+        "directory"
+        if description.key in {"vault", "application_data", "cache"}
+        else "file"
+    )
+
+    return RuntimePathResponse(
+        key=description.key,
+        path=str(path),
+        role=description.role,
+        exists=path.is_dir() if kind == "directory" else path.is_file(),
+        kind=kind,
+        provenance=provenance,
+    )
+
+
+def _runtime_paths_for_api() -> List[RuntimePathResponse]:
+    descriptions = {
+        item.key: item
+        for item in describe_runtime_paths()
+    }
+
+    output: List[RuntimePathResponse] = []
+    for key in (
+        "vault",
+        "application_data",
+        "lesson_projection",
+        "candidate_staging",
+        "cache",
+        "topic_model",
+    ):
+        description = descriptions[key]
+
+        if key == "lesson_projection" and DATA_PATH is not None:
+            output.append(
+                _runtime_path_response(
+                    description,
+                    path_override=DATA_PATH,
+                    runtime_override=True,
+                )
+            )
+            continue
+
+        if key == "topic_model" and MODEL_PATH is not None:
+            output.append(
+                _runtime_path_response(
+                    description,
+                    path_override=MODEL_PATH,
+                    runtime_override=True,
+                )
+            )
+            continue
+
+        output.append(_runtime_path_response(description))
+
+    return output
+
+
+def _health_from_runtime_paths(
+    paths: List[RuntimePathResponse],
+) -> HealthResponse:
+    by_key = {item.key: item for item in paths}
+    return HealthResponse(
+        status="ok",
+        has_data=by_key["lesson_projection"].exists,
+        has_model=by_key["topic_model"].exists,
+    )
+
+
 @app.get("/runtime/info", response_model=RuntimeInfoResponse)
 def runtime_info() -> RuntimeInfoResponse:
     """Return bounded application identity used by the installed GUI."""
     return RuntimeInfoResponse(version=__version__)
+
+
+@app.get("/settings/runtime", response_model=SettingsRuntimeResponse)
+def settings_runtime() -> SettingsRuntimeResponse:
+    """Return effective runtime configuration without mutating local state."""
+    paths = _runtime_paths_for_api()
+    return SettingsRuntimeResponse(
+        version=__version__,
+        health=_health_from_runtime_paths(paths),
+        paths=paths,
+    )
+
+
+@app.get("/about", response_model=AboutResponse)
+def about() -> AboutResponse:
+    """Return bounded product identity and support metadata."""
+    return AboutResponse(
+        product_name="LeLe Manager",
+        version=__version__,
+        tagline="Your local-first lessons learned workspace",
+        attribution="GiadaWare",
+        license_id="MIT",
+        license_summary=(
+            "Open-source software distributed under the MIT License."
+        ),
+        license_url="/app/LICENSE",
+        local_first_statement=(
+            "LeLe Manager itself introduces no account, telemetry, cloud "
+            "storage, or remote knowledge service."
+        ),
+        repository_url="https://github.com/gcomneno/lele-manager",
+        issue_tracker_url="https://github.com/gcomneno/lele-manager/issues",
+        releases_url="https://github.com/gcomneno/lele-manager/releases",
+        changelog_url=(
+            "https://github.com/gcomneno/lele-manager/blob/main/CHANGELOG.md"
+        ),
+        documentation_url=(
+            "https://github.com/gcomneno/lele-manager/blob/main/"
+            "docs/gui-user-guide.md"
+        ),
+        python_version=platform.python_version(),
+        platform_system=platform.system(),
+        platform_release=platform.release(),
+    )
+
+
+@app.get("/diagnostics/preview", response_model=DiagnosticsPreviewResponse)
+def diagnostics_preview() -> DiagnosticsPreviewResponse:
+    """Return the exact bounded diagnostic payload available for export."""
+    paths = _runtime_paths_for_api()
+    return DiagnosticsPreviewResponse(
+        product_name="LeLe Manager",
+        version=__version__,
+        python_version=platform.python_version(),
+        platform_system=platform.system(),
+        platform_release=platform.release(),
+        health=_health_from_runtime_paths(paths),
+        paths=paths,
+    )
 
 
 def _count_vault_markdown_files(node: object) -> int:

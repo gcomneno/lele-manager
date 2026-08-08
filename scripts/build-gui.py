@@ -41,6 +41,16 @@ def copy_distribution() -> None:
             f"ERRORE: build frontend assente: {FRONTEND_DIST}"
         )
 
+    license_source = ROOT / "LICENSE"
+    license_target = FRONTEND_DIST / "LICENSE"
+
+    if not license_source.is_file():
+        raise SystemExit(
+            f"ERRORE: licenza autorevole assente: {license_source}"
+        )
+
+    shutil.copy2(license_source, license_target)
+
     shutil.rmtree(TARGET, ignore_errors=True)
     shutil.copytree(FRONTEND_DIST, TARGET)
 

@@ -40,6 +40,8 @@
         { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault', icon: 'vault' as const },
         { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates', icon: 'duplicates' as const },
         { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops', icon: 'system' as const },
+        { view: 'settings' as const, labelKey: 'navSettings' as const, hash: '#/settings', icon: 'system' as const },
+        { view: 'about' as const, labelKey: 'navAbout' as const, hash: '#/about', icon: 'system' as const },
       ],
     },
   ]
@@ -1346,7 +1348,8 @@
     }
 
     nav a {
-      padding: 4px 10px;
+      padding: 2px 10px;
+      line-height: 1.15;
     }
 
     .shell-context {
