@@ -75,6 +75,24 @@ def test_extract_release_archive_supports_tar_and_zip(
     assert (zip_target / "package/source.txt").read_text() == "LeLe Manager"
 
 
+def test_zip_extraction_restores_unix_executable_mode(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "LeLe-Manager"
+    source.write_text("#!/bin/sh\n", encoding="utf-8")
+    source.chmod(0o755)
+
+    archive = tmp_path / "release.zip"
+    with zipfile.ZipFile(archive, "w") as stream:
+        stream.write(source, "package/LeLe-Manager")
+
+    target = tmp_path / "target"
+    extract_release_archive(archive, target)
+
+    executable = target / "package" / "LeLe-Manager"
+    assert executable.stat().st_mode & 0o777 == 0o755
+
+
 def test_runtime_paths_must_stay_outside_extracted_release(
     tmp_path: Path,
 ) -> None:
