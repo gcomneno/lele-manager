@@ -52,7 +52,7 @@ def main() -> int:
     install_dependencies(npm)
     build_frontend(npm)
 
-    print("==> Copying dist → src/lele_manager/gui/static")
+    print("==> Copying dist -> src/lele_manager/gui/static")
     copy_distribution()
 
     print(f"OK: GUI build in {TARGET}")
