@@ -21,6 +21,7 @@ test.describe('product shell hierarchy', () => {
     ).toBeVisible()
 
     for (const label of [
+      'Dashboard',
       'Browse',
       'Timeline',
       'Statistics',
@@ -45,7 +46,7 @@ test.describe('product shell hierarchy', () => {
       name: 'Primary',
     })
 
-    await expect(navigation.locator('svg')).toHaveCount(8)
+    await expect(navigation.locator('svg')).toHaveCount(9)
 
     for (const emoji of [
       '🏠',
@@ -104,8 +105,11 @@ test.describe('product shell hierarchy', () => {
     ).toBeVisible()
 
     await expect(
-      navigation.getByRole('link', { name: 'Esplora' }),
+      navigation.getByRole('link', { name: 'Dashboard' }),
     ).toHaveAttribute('href', '#/')
+    await expect(
+      navigation.getByRole('link', { name: 'Esplora' }),
+    ).toHaveAttribute('href', '#/browse')
     await expect(
       navigation.getByRole('link', { name: 'Cronologia' }),
     ).toHaveAttribute('href', '#/timeline')

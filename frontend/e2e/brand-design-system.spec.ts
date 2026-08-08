@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test'
 
 test.describe('brand foundation', () => {
   test('shows the packaged mark and consistent core control states', async ({ page }) => {
-    await page.goto('/app/#/')
+    await page.goto('/app/#/browse')
 
-    const brand = page.getByRole('link', { name: 'LeLe Manager, browse' })
+    const brand = page.getByRole('link', { name: 'LeLe Manager, dashboard' })
     await expect(brand).toBeVisible()
     await expect(brand.locator('img')).toHaveAttribute('src', '/app/brand/lele-manager-mark.svg')
     const browsePanel = page.getByRole('region', {
@@ -31,10 +31,10 @@ test.describe('brand foundation', () => {
   })
 
   test('uses default English product labels while preserving navigation hashes', async ({ page }) => {
-    await page.goto('/app/#/')
+    await page.goto('/app/#/browse')
 
     const navigation = [
-      ['Browse', '#/'],
+      ['Browse', '#/browse'],
       ['Timeline', '#/timeline'],
       ['Statistics', '#/stats'],
       ['New LeLe', '#/editor'],
@@ -58,7 +58,7 @@ test.describe('brand foundation', () => {
   })
 
   test('makes keyboard focus visible on navigation and controls', async ({ page }) => {
-    await page.goto('/app/#/')
+    await page.goto('/app/#/browse')
 
     const timeline = page.getByRole('link', { name: 'Timeline' })
     await timeline.focus()
@@ -73,7 +73,7 @@ test.describe('brand foundation', () => {
 })
 
 test('shows the GiadaWare product signature without crowding the product brand', async ({ page }) => {
-  await page.goto('/app/')
+  await page.goto('/app/#/browse')
 
   await expect(page.getByTestId('brand-tagline')).toHaveText(
     'Your local space for your “Lessons Learned”',
@@ -150,7 +150,7 @@ test('pins the maker signature to the desktop viewport across routes', async ({ 
 
 test('keeps browse filter controls clear of the right edge', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/app/')
+  await page.goto('/app/#/browse')
 
   const grid = page.getByTestId('browse-filter-grid')
   await expect(grid).toBeVisible()

@@ -1,3 +1,4 @@
+import pytest
 import json
 from pathlib import Path
 
@@ -242,9 +243,19 @@ def test_similar_returns_503_when_model_missing(tmp_path, monkeypatch) -> None:
     _write_jsonl(
         data_path,
         [
-            {"id": "1", "text": "python common pytest", "topic": "python", "importance": 3},
+            {
+                "id": "1",
+                "text": "python common pytest",
+                "topic": "python",
+                "importance": 3,
+            },
             {"id": "2", "text": "cpp common cin", "topic": "cpp", "importance": 2},
-            {"id": "3", "text": "python common fixtures", "topic": "python", "importance": 3},
+            {
+                "id": "3",
+                "text": "python common fixtures",
+                "topic": "python",
+                "importance": 3,
+            },
         ],
     )
 
@@ -318,3 +329,52 @@ def test_similar_with_model_present_returns_results(tmp_path, monkeypatch) -> No
     assert "id" in first and "score" in first and "text_preview" in first
     assert isinstance(first["score"], (int, float))
     assert isinstance(first["text_preview"], str)
+
+
+def test_dashboard_summary_is_bounded_and_read_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vault = tmp_path / "missing-vault"
+    data = tmp_path / "lessons.jsonl"
+    model = tmp_path / "topic-model.joblib"
+    candidates = tmp_path / "candidates.json"
+
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    monkeypatch.setenv("LELE_DATA_PATH", str(data))
+    monkeypatch.setenv("LELE_MODEL_PATH", str(model))
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(server, "DATA_PATH", data)
+    monkeypatch.setattr(server, "MODEL_PATH", model)
+
+    before = {
+        "vault": vault.exists(),
+        "data": data.exists(),
+        "model": model.exists(),
+        "candidates": candidates.exists(),
+    }
+
+    response = TestClient(server.app).get("/dashboard/summary")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "health_status": "ok",
+        "vault_exists": False,
+        "vault_markdown_files": None,
+        "projection_exists": False,
+        "model_exists": False,
+        "stats": None,
+        "candidates": {
+            "total": 0,
+            "staged": 0,
+            "in_review": 0,
+            "rejected": 0,
+            "approved": 0,
+        },
+    }
+    assert before == {
+        "vault": vault.exists(),
+        "data": data.exists(),
+        "model": model.exists(),
+        "candidates": candidates.exists(),
+    }

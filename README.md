@@ -486,6 +486,7 @@ Available views:
 
 | View | Purpose |
 |---|---|
+| **Dashboard** | Workspace readiness, bounded knowledge summary, and next useful actions |
 | **Browse** | Advanced search, filters, and Markdown export |
 | **Detail** | Full lesson content and explained similarity |
 | **Editor** | Markdown authoring with live suggestions |
@@ -500,6 +501,11 @@ Saving from the Editor writes the Markdown file into the vault and refreshes
 the JSONL projection through `PUT` or `POST /vault/lessons`.
 
 The GUI requires `LELE_VAULT_DIR`; the default is `~/LeLeVault`.
+
+Opening `/app/` now lands on the **Dashboard**. Browse remains directly
+available at `#/browse`. The Dashboard reports bounded, read-only workspace
+readiness and delegates explicit maintenance or mutation to the existing
+views.
 
 ### TritaLeLe workflow
 

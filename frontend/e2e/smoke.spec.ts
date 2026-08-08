@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test.describe('GUI smoke', () => {
   test('browse → click risultato → detail', async ({ page }) => {
-    await page.goto('/app/#/')
+    await page.goto('/app/#/browse')
     await expect(page.getByRole('heading', { name: 'Browse', exact: true })).toBeVisible()
 
     const firstCard = page.locator('.lesson-card').first()

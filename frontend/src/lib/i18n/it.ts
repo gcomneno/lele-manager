@@ -2,8 +2,51 @@ import type { Messages } from './en'
 
 export const it = {
   brandBrowseAccessible: 'LeLe Manager, esplora',
+  brandHomeAccessible: 'LeLe Manager, dashboard',
+  dashboardTitle: 'Dashboard',
+  dashboardLoading: 'Caricamento dello stato dello spazio di lavoro…',
+  dashboardIntro:
+    'Una vista sintetica sulla disponibilità dello spazio di lavoro, ciò che richiede attenzione e la prossima azione utile.',
+  dashboardReadiness: 'Disponibilità dello spazio di lavoro',
+  dashboardSummary: 'Riepilogo dello spazio di lavoro',
+  dashboardFreshTitle: 'Configurazione dello spazio di lavoro necessaria',
+  dashboardFreshDescription:
+    'Non è disponibile un vault Markdown utilizzabile. Apri Vault o Sistema per proseguire con la configurazione.',
+  dashboardEmptyTitle: 'Vault pronto, nessuna conoscenza approvata',
+  dashboardEmptyDescription:
+    'Il vault Markdown è disponibile ma non contiene ancora LeLe. Crea o raccogli la prima LeLe.',
+  dashboardPartialTitle: 'Spazio di lavoro parzialmente pronto',
+  dashboardPartialDescription:
+    'La conoscenza approvata esiste, ma manca almeno un artefatto locale derivato. Il vault resta utilizzabile; ricostruisci lo stato derivato da Sistema quando necessario.',
+  dashboardReadyTitle: 'Spazio di lavoro pronto',
+  dashboardReadyDescription:
+    'Lo spazio di conoscenza locale e lo stato derivato per la ricerca sono disponibili.',
+  dashboardOwnership:
+    'Il vault Markdown è la fonte autorevole della conoscenza approvata. Proiezioni, cache e modelli sono artefatti locali derivati e ricostruibili.',
+  dashboardError: 'Impossibile caricare lo stato dello spazio di lavoro: {error}',
+  dashboardRetry: 'Riprova',
+  dashboardOpenVault: 'Apri Vault',
+  dashboardOpenSystem: 'Apri Sistema',
+  dashboardOpenStatistics: 'Apri Statistiche',
+  dashboardOpenCollection: 'Apri Raccolta',
+  dashboardVault: 'Vault Markdown',
+  dashboardProjection: 'Proiezione',
+  dashboardModel: 'Modello di ricerca',
+  dashboardApi: 'API applicativa',
+  dashboardAvailable: 'disponibile',
+  dashboardMissing: 'mancante',
+  dashboardMarkdownFiles: '{count} file Markdown',
+  dashboardKnowledgeTitle: 'Conoscenza approvata',
+  dashboardKnowledgeDescription:
+    'Statistiche limitate dalla proiezione locale corrente.',
+  dashboardCandidatesTitle: 'Attenzione sulla raccolta',
+  dashboardCandidatesDescription:
+    'Candidati già presenti nello staging locale; il dashboard non esegue alcuna scansione.',
+  dashboardCandidateStaged: 'In staging',
+  dashboardCandidateReview: 'In revisione',
   brandTagline: "Lo spazio locale per le tue 'Lessons Learned'",
 
+  navDashboard: 'Dashboard',
   navBrowse: 'Esplora',
   navTimeline: 'Cronologia',
   navStatistics: 'Statistiche',
