@@ -99,7 +99,7 @@ jobs:
       contents: write
     steps:
       - name: Download native packages
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: lele-manager-*
           path: release-assets
@@ -142,7 +142,7 @@ jobs:
       contents: read
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist

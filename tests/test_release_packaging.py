@@ -68,7 +68,7 @@ def test_tag_release_publishes_exact_native_version_assets() -> None:
     release = read(".github/workflows/release.yml")
 
     assert "github-release:" in release
-    assert "actions/download-artifact@v6" in release
+    assert "actions/download-artifact@v7" in release
     assert "pattern: lele-manager-*" in release
     assert "merge-multiple: true" in release
     assert 'version="${GITHUB_REF_NAME#v}"' in release
