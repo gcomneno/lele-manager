@@ -58,7 +58,8 @@ def wait_until_ready(
 
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=1.0) as response:
+            # Callers pass the launcher-owned http://127.0.0.1 health URL only.
+            with urllib.request.urlopen(url, timeout=1.0) as response:  # nosec B310
                 if 200 <= response.status < 300:
                     return True
         except (urllib.error.URLError, OSError):

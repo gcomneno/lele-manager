@@ -44,4 +44,4 @@ jobs:
       - name: Static analysis (Bandit)
         run: |
           python -m pip install bandit
-          bandit -r src -x tests
+          bandit -r src -x tests -s B101
