@@ -198,6 +198,7 @@ test('keeps the GiadaWare signature tongue decorative and motion-safe', async ({
     /lele-signature-tongue$/,
   )
   await expect(tongue).toHaveCSS('animation-duration', '31s')
+  await expect(tongue).toHaveCSS('left', '18px')
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
 
