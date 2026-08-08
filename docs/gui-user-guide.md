@@ -10,7 +10,17 @@ remains in [`gui-design.md`](gui-design.md).
 
 ## Start the GUI
 
-The normal local workflow is:
+For normal installed-product use, download and extract the native package for
+Linux, macOS, or Windows and launch **LeLe-Manager** from the extracted
+`LeLe-Manager` directory. No Python, Node.js, npm, virtual environment, frontend
+build, or repository checkout is required. The packaged launcher prepares local
+runtime directories, starts the loopback application, waits for `/health`, and
+opens `/app/` automatically.
+
+Each native archive includes `LEGGIMI_PRIMA.txt` with platform-specific
+first-run instructions.
+
+For development from a repository checkout, use:
 
 ```bash
 export LELE_VAULT_DIR="$HOME/LeLeVault"
@@ -18,7 +28,7 @@ export LELE_VAULT_DIR="$HOME/LeLeVault"
 ./scripts/lele-api-dev.sh
 ```
 
-Open:
+Then open:
 
 ```text
 http://127.0.0.1:8000/app/

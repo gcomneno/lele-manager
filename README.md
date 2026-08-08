@@ -69,9 +69,24 @@ pytest tests/test_documentation.py
   [the projection-store contract](docs/projection-store.md) and
   [ADR 0001](docs/adr/0001-storage-backend.md).
 
-## Setup
+## Install and run
 
-Clone the repository and create a virtual environment:
+For normal end-user use, download the native package for your operating system
+from GitHub Releases, extract it, and launch **LeLe-Manager**. The native
+packages for Linux, macOS, and Windows are self-contained: they do not require
+Python, Node.js, npm, a virtual environment, or a repository checkout.
+
+On first launch, LeLe Manager prepares its local application directories and
+default Markdown vault outside the installation directory, starts the local
+FastAPI application, waits for it to become healthy, and opens `/app/` in the
+default browser. Persistent user data therefore survives replacing or upgrading
+the extracted application package.
+
+Each native archive includes `LEGGIMI_PRIMA.txt` with platform-specific
+first-run instructions.
+
+For development from source, clone the repository and create a virtual
+environment:
 
 ```bash
 git clone git@github.com:gcomneno/lele-manager.git
@@ -496,6 +511,8 @@ Available views:
 | **Stats** | Counts, tags, topics, and averages |
 | **Vault** | Real filesystem tree and import |
 | **Ops** | Health, training, vault import, and full refresh |
+| **Settings** | Effective local paths, storage roles, and explicit bounded diagnostics |
+| **About** | Product identity, version, MIT license, local-first statement, and support links |
 
 Saving from the Editor writes the Markdown file into the vault and refreshes
 the JSONL projection through `PUT` or `POST /vault/lessons`.
@@ -590,7 +607,14 @@ LeLe Manager follows Semantic Versioning:
 - PATCH: bug fixes and internal improvements.
 
 A stable release includes vault import, JSONL projection, topic and similarity
-models, FastAPI endpoints, the `lele` client, and a green test suite.
+models, FastAPI endpoints, the `lele` client, the packaged GUI, and green Python,
+frontend, security, packaging, and native-release verification.
+
+Native release archives are verified after packaging and before upload by
+extracting the published-style artifact, starting its packaged executable on
+loopback with isolated runtime directories, checking health, GUI, license,
+About and Settings/runtime surfaces, and confirming persistent paths remain
+outside the extracted application package.
 
 Example annotated tag:
 

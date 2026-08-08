@@ -100,6 +100,13 @@ GitHub Release asset.
 A release must not publish an artifact merely because packaging completed:
 the packaged executable must pass a startup/smoke verification first.
 
+The native release job therefore verifies the same published-style archive that
+would be uploaded to GitHub. CI extracts that archive into an isolated temporary
+directory, starts the packaged executable with isolated runtime paths, waits for
+the loopback health endpoint, and checks the packaged GUI, license, About and
+runtime Settings surfaces before upload. The verification also confirms that
+persistent runtime paths resolve outside the extracted release directory.
+
 ## User documentation
 
 Each release package must include a short first-run guide appropriate to the

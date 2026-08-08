@@ -83,3 +83,21 @@ def test_tag_release_publishes_exact_native_version_assets() -> None:
     assert 'LeLe-Manager-v"${version}"-*' in release
     assert 'gh release create "${GITHUB_REF_NAME}"' in release
     assert "--verify-tag" in release
+
+def test_native_release_is_smoked_before_upload() -> None:
+    release = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    package = release.index("Package native release")
+    smoke = release.index("Smoke published-style native release")
+    upload = release.index("Upload native package")
+
+    assert package < smoke < upload
+    assert "python scripts/smoke-native-release.py" in release
+
+def test_native_build_rejects_stale_installed_version() -> None:
+    script = Path("scripts/build-native-app.py").read_text(encoding="utf-8")
+
+    assert "verify_installed_version()" in script
+    assert 'version("lele-manager")' in script
+    assert '"project"]["version"]' in script
+    assert "metadata lele-manager non allineata" in script

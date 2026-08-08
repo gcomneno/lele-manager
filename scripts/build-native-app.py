@@ -4,14 +4,42 @@
 from __future__ import annotations
 
 import shutil
+import tomllib
 import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_NAME = "LeLe-Manager"
 BUILD_ROOT = ROOT / "build" / "native"
 DIST_ROOT = ROOT / "dist" / "native"
+PYPROJECT = ROOT / "pyproject.toml"
+
+
+def project_version() -> str:
+    with PYPROJECT.open("rb") as stream:
+        data = tomllib.load(stream)
+    return str(data["project"]["version"])
+
+
+def verify_installed_version() -> None:
+    expected = project_version()
+
+    try:
+        installed = version("lele-manager")
+    except PackageNotFoundError as exc:
+        raise SystemExit(
+            "ERRORE: lele-manager non risulta installato nell'ambiente di "
+            "build. Installa il checkout corrente prima della build nativa."
+        ) from exc
+
+    if installed != expected:
+        raise SystemExit(
+            "ERRORE: metadata lele-manager non allineata al checkout: "
+            f"installata={installed}, attesa={expected}. "
+            'Riallinea l\'ambiente con: python -m pip install -e ".[dev]"'
+        )
 
 
 def run(*args: str) -> None:
@@ -55,6 +83,9 @@ def build_native_bundle() -> None:
 
 
 def main() -> int:
+    print("==> Verifying installed application version")
+    verify_installed_version()
+
     print("==> Building compiled GUI")
     build_gui()
 

@@ -10,7 +10,17 @@ design resta disponibile in [`../gui-design.md`](../gui-design.md).
 
 ## Avviare la GUI
 
-Il normale flusso locale è:
+Per il normale utilizzo del prodotto installato, scaricare ed estrarre il
+pacchetto nativo per Linux, macOS o Windows e avviare **LeLe-Manager** dalla
+directory `LeLe-Manager` estratta. Non servono Python, Node.js, npm, ambiente
+virtuale, build del frontend o checkout del repository. Il launcher packaged
+prepara le directory runtime locali, avvia l'applicazione su loopback, attende
+`/health` e apre automaticamente `/app/`.
+
+Ogni archive nativo include `LEGGIMI_PRIMA.txt` con istruzioni di primo avvio
+specifiche per la piattaforma.
+
+Per lo sviluppo da checkout del repository usare:
 
 ```bash
 export LELE_VAULT_DIR="$HOME/LeLeVault"
@@ -18,7 +28,7 @@ export LELE_VAULT_DIR="$HOME/LeLeVault"
 ./scripts/lele-api-dev.sh
 ```
 
-Aprire:
+Quindi aprire:
 
 ```text
 http://127.0.0.1:8000/app/
