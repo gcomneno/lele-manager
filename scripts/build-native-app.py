@@ -19,7 +19,10 @@ def run(*args: str) -> None:
 
 
 def build_gui() -> None:
-    run(str(ROOT / "scripts" / "build-gui.sh"))
+    run(
+        sys.executable,
+        str(ROOT / "scripts" / "build-gui.py"),
+    )
 
 
 def clean_native_outputs() -> None:

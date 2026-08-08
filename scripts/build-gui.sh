@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FRONTEND="$ROOT/frontend"
-TARGET="$ROOT/src/lele_manager/gui/static"
+cd "$ROOT"
 
-echo "==> Building LeLe Manager GUI (Vite + Svelte)"
-cd "$FRONTEND"
-
-if [[ -f package-lock.json ]]; then
-  npm ci
-else
-  npm install
+PYTHON_BIN="python"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
 fi
 
-npm run build
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    echo "ERRORE: Python non trovato."
+else
+    "$PYTHON_BIN" "$ROOT/scripts/build-gui.py"
+fi
 
-echo "==> Copying dist → src/lele_manager/gui/static"
-rm -rf "$TARGET"
-mkdir -p "$TARGET"
-cp -r dist/* "$TARGET/"
-
-echo "OK: GUI build in $TARGET"
+printf '\nPrompt interattivo disponibile.\n'
