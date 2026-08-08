@@ -11,6 +11,8 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-08-08
+
 ### Added
 - **Commercial-grade product experience for v1.11.0:** coherent product shell
   and navigation hierarchy, Dashboard and explicit first-run states, read-only
@@ -311,7 +313,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.10.1...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/gcomneno/lele-manager/compare/v1.10.1...v1.11.0
 [1.10.1]: https://github.com/gcomneno/lele-manager/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/gcomneno/lele-manager/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/gcomneno/lele-manager/compare/v1.8.0...v1.9.0

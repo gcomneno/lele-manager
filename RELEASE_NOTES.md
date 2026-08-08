@@ -1,8 +1,5 @@
 ## v1.11.0 — Commercial-grade local-first product experience
 
-> Draft release notes. The v1.11.0 version/tag seal is intentionally not
-> applied by issue #152.
-
 LeLe Manager v1.11.0 completes the first commercial-grade product-experience
 tranche without changing the local-first architecture or the authority of the
 Markdown vault.
