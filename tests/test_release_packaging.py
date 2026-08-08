@@ -21,7 +21,7 @@ def test_ci_and_release_share_artifact_build_entrypoint() -> None:
 def test_release_workflow_prepares_node_before_build() -> None:
     release = read(".github/workflows/release.yml")
 
-    node_position = release.index("actions/setup-node@v4")
+    node_position = release.index("actions/setup-node@v6")
     build_position = release.index(BUILD_COMMAND)
 
     assert node_position < build_position
