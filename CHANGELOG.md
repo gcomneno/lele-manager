@@ -11,12 +11,34 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-08-08
+
 ### Added
-- **LeLe Manager PKPS consumer boundary:** local v1 GYTE lesson-package
-  import through the existing TritaLeLe candidate staging boundary. Directory
-  and single-root ZIP packages are strictly validated, retain immutable
-  provenance, are idempotent by package ID/content hash, and never write the
-  vault or derived artifacts before explicit approval.
+- **LeLe Manager PKPS consumer boundary:** local PKPS v1 GYTE lesson-package
+  import through the existing TritaLeLe staging boundary, with strict
+  validation for directories and single-root ZIP packages, immutable
+  provenance, idempotency by package ID/content hash, and no vault or derived
+  artifact writes before explicit approval.
+- **Native desktop packaging:** self-contained packages for Linux, macOS, and
+  Windows, with a local FastAPI launcher, health-endpoint readiness wait, and
+  automatic browser opening of the GUI.
+- Platform-specific `LEGGIMI_PRIMA.txt` guides for Linux, macOS, and Windows.
+
+### Changed
+- Introduced and consolidated the **LeLe Manager brand design system**.
+- Extended **Giada UI** foundation adoption across the GUI.
+- Completed GUI localization.
+- Added subtle, non-intrusive motion to the LeLe mascot.
+- GUI and native builds now use cross-platform Python entrypoints.
+- The Release workflow now builds native artifacts on Linux, macOS, and
+  Windows and requires explicit opt-in for manual PyPI publishing.
+- CI, release, and security workflows now use GitHub Actions versions
+  compatible with Node.js 24.
+
+### Compatibility
+- No intentional breaking changes were introduced in the public API or CLI.
+- Persistent data remains outside the native installation directory so
+  upgrades do not require moving the vault.
 
 ## [1.10.0] - 2026-08-04
 
@@ -246,7 +268,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.10.1...HEAD
+[1.10.1]: https://github.com/gcomneno/lele-manager/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/gcomneno/lele-manager/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/gcomneno/lele-manager/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/gcomneno/lele-manager/compare/v1.7.0...v1.8.0

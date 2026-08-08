@@ -63,3 +63,15 @@ def test_brand_design_docs_are_declared_in_sdist_manifest() -> None:
         "docs/it/brand-design-system.md",
     ):
         assert f"include {documentation_path}" in manifest
+
+def test_tag_release_publishes_exact_native_version_assets() -> None:
+    release = read(".github/workflows/release.yml")
+
+    assert "github-release:" in release
+    assert "actions/download-artifact@v6" in release
+    assert "pattern: lele-manager-*" in release
+    assert "merge-multiple: true" in release
+    assert 'version="${GITHUB_REF_NAME#v}"' in release
+    assert 'LeLe-Manager-v"${version}"-*' in release
+    assert 'gh release create "${GITHUB_REF_NAME}"' in release
+    assert "--verify-tag" in release
