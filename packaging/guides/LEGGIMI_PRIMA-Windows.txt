@@ -1,0 +1,29 @@
+LELE MANAGER — COME APRIRLO SU WINDOWS
+
+1. Apri la cartella che hai appena estratto.
+2. Apri la cartella LeLe-Manager.
+3. Cerca il file chiamato LeLe-Manager.exe.
+4. Fai doppio clic su LeLe-Manager.exe.
+5. Se Windows ti chiede conferma, scegli di eseguire il programma.
+6. Aspetta qualche secondo.
+7. LeLe Manager si aprirà automaticamente nel browser.
+
+Quando il programma è aperto puoi usare normalmente:
+- Esplora
+- Nuova LeLe
+- Vault
+
+IMPORTANTE
+
+Non devi installare Python.
+Non devi installare Node.js.
+Non devi aprire PowerShell o il Prompt dei comandi.
+Non devi configurare niente.
+
+SE IL BROWSER NON SI APRE
+
+Aspetta circa 10 secondi e prova di nuovo.
+
+Se Windows mostra un messaggio di sicurezza, leggilo prima di confermare.
+Se ancora non parte, annota quello che compare sullo schermo e chiedi aiuto
+alla persona che ti ha mandato LeLe Manager.

@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-APP_NAME="LeLe-Manager"
+PYTHON_BIN="python"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+fi
 
-echo "==> Building compiled GUI"
-"$ROOT/scripts/build-gui.sh"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    echo "ERRORE: Python non trovato."
+else
+    "$PYTHON_BIN" "$ROOT/scripts/build-native-app.py"
+fi
 
-echo "==> Cleaning previous native bundle"
-rm -rf "$ROOT/build/native" "$ROOT/dist/native"
-
-echo "==> Building native application bundle"
-python -m PyInstaller   --noconfirm   --clean   --onedir   --name "$APP_NAME"   --distpath "$ROOT/dist/native"   --workpath "$ROOT/build/native"   --specpath "$ROOT/build/native"   --collect-data lele_manager   "$ROOT/src/lele_manager/launcher.py"
-
-echo
-echo "OK: native application bundle:"
-echo "    $ROOT/dist/native/$APP_NAME"
+printf '\nPrompt interattivo disponibile.\n'

@@ -8,6 +8,7 @@ import shutil
 import sys
 import tarfile
 import tomllib
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,33 +26,62 @@ def project_version() -> str:
 
 def normalized_architecture() -> str:
     machine = platform.machine().lower()
-
     aliases = {
         "amd64": "x86_64",
         "x86_64": "x86_64",
         "aarch64": "arm64",
         "arm64": "arm64",
     }
-
     return aliases.get(machine, machine)
 
 
-def require_linux() -> None:
-    if sys.platform != "linux":
-        raise SystemExit(
-            "ERRORE: questo primo packaging step supporta soltanto Linux."
-        )
+def platform_contract() -> tuple[str, str, str]:
+    """Return release OS label, guide suffix, and archive format."""
+    if sys.platform.startswith("linux"):
+        return "Linux", "Linux", "tar.gz"
+
+    if sys.platform == "darwin":
+        return "macOS", "macOS", "zip"
+
+    if sys.platform == "win32":
+        return "Windows", "Windows", "zip"
+
+    raise SystemExit(f"ERRORE: piattaforma non supportata: {sys.platform}")
+
+
+def create_tar_gz(source: Path, archive: Path, package_name: str) -> None:
+    with tarfile.open(archive, "w:gz") as output:
+        output.add(source, arcname=package_name)
+
+
+def create_zip(source: Path, archive: Path, package_name: str) -> None:
+    with zipfile.ZipFile(
+        archive,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+    ) as output:
+        for path in source.rglob("*"):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(source)
+            output.write(path, Path(package_name) / relative)
 
 
 def main() -> int:
-    require_linux()
-
+    os_label, guide_suffix, archive_format = platform_contract()
     version = project_version()
     architecture = normalized_architecture()
 
     source = DIST_NATIVE / APP_NAME
-    executable = source / APP_NAME
-    guide = ROOT / "packaging" / "guides" / "LEGGIMI_PRIMA-Linux.txt"
+    executable_name = f"{APP_NAME}.exe" if os_label == "Windows" else APP_NAME
+    executable = source / executable_name
+    guide = (
+        ROOT
+        / "packaging"
+        / "guides"
+        / f"LEGGIMI_PRIMA-{guide_suffix}.txt"
+    )
 
     if not source.is_dir():
         raise SystemExit(
@@ -67,9 +97,11 @@ def main() -> int:
 
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
-    package_name = f"{APP_NAME}-v{version}-Linux-{architecture}"
+    package_name = f"{APP_NAME}-v{version}-{os_label}-{architecture}"
     staging = RELEASE_DIR / package_name
-    archive = RELEASE_DIR / f"{package_name}.tar.gz"
+
+    extension = ".tar.gz" if archive_format == "tar.gz" else ".zip"
+    archive = RELEASE_DIR / f"{package_name}{extension}"
 
     if staging.exists():
         shutil.rmtree(staging)
@@ -80,14 +112,17 @@ def main() -> int:
     shutil.copytree(source, staging / APP_NAME)
     shutil.copy2(guide, staging / "LEGGIMI_PRIMA.txt")
 
-    with tarfile.open(archive, "w:gz") as output:
-        output.add(staging, arcname=package_name)
+    if archive_format == "tar.gz":
+        create_tar_gz(staging, archive, package_name)
+    else:
+        create_zip(staging, archive, package_name)
 
     shutil.rmtree(staging)
 
     print(f"Versione:     {version}")
-    print(f"Piattaforma:  Linux")
+    print(f"Piattaforma:  {os_label}")
     print(f"Architettura: {architecture}")
+    print(f"Formato:      {archive_format}")
     print(f"Artefatto:    {archive}")
     print(f"Dimensione:   {archive.stat().st_size} byte")
     return 0
