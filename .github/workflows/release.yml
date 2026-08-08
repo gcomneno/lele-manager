@@ -5,6 +5,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      publish_pypi:
+        description: "Publish Python artifacts to PyPI"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -84,7 +90,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' && vars.PYPI_ENABLED == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_pypi && vars.PYPI_ENABLED == 'true' }}
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
