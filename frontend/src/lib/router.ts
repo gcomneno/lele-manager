@@ -1,4 +1,5 @@
 export type Route =
+  | { view: 'dashboard' }
   | { view: 'browse' }
   | { view: 'detail'; id: string }
   | { view: 'editor'; id?: string }
@@ -12,7 +13,8 @@ export type Route =
 export function parseRoute(hash = location.hash): Route {
   const path = hash.replace(/^#/, '') || '/'
 
-  if (path === '/' || path === '/browse') return { view: 'browse' }
+  if (path === '/') return { view: 'dashboard' }
+  if (path === '/browse') return { view: 'browse' }
   if (path === '/ops') return { view: 'ops' }
   if (path === '/duplicates') return { view: 'duplicates' }
   if (path === '/vault') return { view: 'vault' }
@@ -27,13 +29,15 @@ export function parseRoute(hash = location.hash): Route {
   const detailMatch = path.match(/^\/lesson\/(.+)$/)
   if (detailMatch) return { view: 'detail', id: decodeURIComponent(detailMatch[1]) }
 
-  return { view: 'browse' }
+  return { view: 'dashboard' }
 }
 
 export function routeToHash(route: Route): string {
   switch (route.view) {
-    case 'browse':
+    case 'dashboard':
       return '#/'
+    case 'browse':
+      return '#/browse'
     case 'ops':
       return '#/ops'
     case 'duplicates':

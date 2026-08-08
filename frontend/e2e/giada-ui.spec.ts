@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('renders Browse with direct Giada UI primitives', async ({ page }) => {
   await page.setViewportSize({ width: 1800, height: 900 })
-  await page.goto('/app/')
+  await page.goto('/app/#/browse')
 
   const panel = page.locator('.giu-panel')
   await expect(panel).toHaveCount(1)
@@ -159,7 +159,7 @@ test('renders Stats and Vault with Giada UI primitives', async ({
 test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   page,
 }) => {
-  await page.goto('/app/#/')
+  await page.goto('/app/#/browse')
 
   const firstCard = page.locator('.lesson-card').first()
   await expect(firstCard).toBeVisible({

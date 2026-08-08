@@ -45,18 +45,21 @@ dataset, topic, fonti, percorsi, ID, payload API o identità di navigazione.
 
 ## Flusso quotidiano
 
-1. Controllare health e diagnostica del vault in **Ops**.
-2. Cercare, filtrare e leggere le lesson esistenti.
-3. Creare o modificare lesson approvate tramite **Editor**.
-4. Revisionare duplicati esatti e near-duplicate tramite **Duplicates**.
-5. Ingerire appunti grezzi tramite **TritaLeLe**, mantenendo separate anteprima,
+1. Aprire **Dashboard** per vedere disponibilità dello spazio di lavoro, punti
+   che richiedono attenzione e prossima azione utile.
+2. Usare **Ops** quando servono diagnostica esplicita, import, training o refresh.
+3. Cercare, filtrare e leggere le lesson esistenti.
+4. Creare o modificare lesson approvate tramite **Editor**.
+5. Revisionare duplicati esatti e near-duplicate tramite **Duplicates**.
+6. Ingerire appunti grezzi tramite **TritaLeLe**, mantenendo separate anteprima,
    staging, revisione e approvazione.
-6. Usare **Vault**, **Stats** e **Timeline** per controllare la knowledge base.
+7. Usare **Vault**, **Stats** e **Timeline** per controllare la knowledge base.
 
 ## Viste della GUI
 
 | Vista | Scopo |
 |---|---|
+| Dashboard | Disponibilità dello spazio di lavoro, riepiloghi bounded e prossime azioni utili |
 | Browse | Ricerca, filtri ed esportazione delle lesson |
 | Detail | Lettura di una lesson e similarità spiegata |
 | Editor | Creazione o aggiornamento di lesson Markdown canoniche |
@@ -66,6 +69,19 @@ dataset, topic, fonti, percorsi, ID, payload API o identità di navigazione.
 | Vault | Albero Markdown canonico e import della proiezione |
 | Duplicates | Revisione non distruttiva di duplicati e near-duplicate |
 | Ops | Health, Vault Doctor, import, training e refresh |
+
+## Dashboard e stati di primo avvio
+
+`/app/` apre la Dashboard. Browse resta disponibile direttamente su
+`#/browse`.
+
+La Dashboard legge soltanto uno stato bounded dello spazio di lavoro. Distingue
+un primo avvio senza vault, un vault vuoto, uno spazio parzialmente pronto, uno
+spazio pronto ed errori di caricamento recuperabili. Non avvia automaticamente
+la revisione duplicati, Vault Doctor, import, refresh o training del modello.
+
+Il vault Markdown resta la fonte autorevole. Proiezioni dataset, cache e
+artefatti del topic model sono derivati e ricostruibili.
 
 ## Screenshot
 

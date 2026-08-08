@@ -21,7 +21,8 @@
     {
       labelKey: 'navGroupKnowledge' as const,
       links: [
-        { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/', icon: 'browse' as const },
+        { view: 'dashboard' as const, labelKey: 'navDashboard' as const, hash: '#/', icon: 'dashboard' as const },
+        { view: 'browse' as const, labelKey: 'navBrowse' as const, hash: '#/browse', icon: 'browse' as const },
         { view: 'timeline' as const, labelKey: 'navTimeline' as const, hash: '#/timeline', icon: 'timeline' as const },
         { view: 'stats' as const, labelKey: 'navStatistics' as const, hash: '#/stats', icon: 'stats' as const },
       ],
@@ -81,7 +82,7 @@
 
 <div class="shell">
   <aside class="sidebar">
-    <a class="brand" href="#/" aria-label={$messages.brandBrowseAccessible} onclick={(e) => { e.preventDefault(); navigate({ view: 'browse' }) }}>
+    <a class="brand" href="#/" aria-label={$messages.brandHomeAccessible} onclick={(e) => { e.preventDefault(); navigate({ view: 'dashboard' }) }}>
       <img src="/app/brand/lele-manager-mark.svg" alt="" aria-hidden="true" />
       <span>
         <strong>LeLe Manager</strong>
