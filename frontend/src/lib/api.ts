@@ -59,6 +59,10 @@ export interface HealthResponse {
   has_model: boolean
 }
 
+export interface RuntimeInfoResponse {
+  version: string
+}
+
 export interface TrainResponse {
   message: string
   n_lessons: number
@@ -344,6 +348,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<HealthResponse>('/health'),
+
+  runtimeInfo: () => request<RuntimeInfoResponse>('/runtime/info'),
 
   duplicates: ({ min_score, exact_only, limit }: DuplicateQuery) => {
     const params = new URLSearchParams({

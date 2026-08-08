@@ -11,6 +11,12 @@ export const en = {
   navDuplicates: 'Duplicates',
   navSystem: 'System',
 
+  navGroupKnowledge: 'Knowledge',
+  navGroupCapture: 'Capture',
+  navGroupManage: 'Manage',
+  shellVersion: 'Version',
+  shellWorkspace: 'Workspace',
+
   languageLabel: 'Language',
   languageEnglish: 'English',
   languageItalian: 'Italian',

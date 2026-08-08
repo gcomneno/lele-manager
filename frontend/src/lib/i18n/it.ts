@@ -13,6 +13,12 @@ export const it = {
   navDuplicates: 'Duplicati',
   navSystem: 'Sistema',
 
+  navGroupKnowledge: 'Conoscenza',
+  navGroupCapture: 'Acquisizione',
+  navGroupManage: 'Gestione',
+  shellVersion: 'Versione',
+  shellWorkspace: 'Spazio di lavoro',
+
   languageLabel: 'Lingua',
   languageEnglish: 'Inglese',
   languageItalian: 'Italiano',
