@@ -1,3 +1,42 @@
+## v1.11.1 — Graceful native launcher shutdown
+
+LeLe Manager v1.11.1 is a focused patch release fixing the shutdown behavior
+of the packaged native application.
+
+### Fixed
+
+When the native launcher was stopped with `Ctrl+C`, Uvicorn completed its
+shutdown correctly but the resulting `KeyboardInterrupt` propagated to the
+PyInstaller bootstrap. The application therefore printed a traceback and
+reported an unhandled exception even though shutdown had completed.
+
+The launcher now treats that user-requested interrupt as a clean shutdown and
+returns exit code 0. Other exceptions are not suppressed.
+
+### Verification
+
+The fix was reproduced and verified through the complete engineering loop:
+
+- regression test reproducing the v1.11.0 behavior;
+- Ruff passed;
+- mypy passed for 59 source files;
+- full Python suite: 596 passed, 7 skipped;
+- native Linux build passed;
+- native Linux packaging passed;
+- published-style native archive smoke passed;
+- the extracted packaged executable was started from an isolated temporary
+  runtime, received a real `SIGINT`, completed Uvicorn shutdown and exited 0;
+- no `Traceback`, unhandled `KeyboardInterrupt` or PyInstaller
+  `Failed to execute script` error remained.
+
+### Upgrade compatibility
+
+No intentional breaking changes are introduced. Persistent user data remains
+outside the native installation directory, so upgrading from v1.11.0 does not
+require moving the vault or application state.
+
+---
+
 ## v1.11.0 — Commercial-grade local-first product experience
 
 LeLe Manager v1.11.0 completes the first commercial-grade product-experience
