@@ -150,7 +150,11 @@ def main() -> int:
         log_level="info",
     )
     server = uvicorn.Server(config)
-    server.run()
+
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        return 0
 
     return 0
 
