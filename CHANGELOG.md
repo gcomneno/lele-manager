@@ -11,6 +11,17 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-08-09
+
+### Fixed
+- Native launcher shutdown now treats `Ctrl+C` as an intentional clean exit
+  after Uvicorn completes its shutdown, preventing the packaged PyInstaller
+  application from printing an unhandled `KeyboardInterrupt` traceback.
+
+### Compatibility
+- No intentional breaking changes are introduced in the public API, CLI,
+  Markdown vault authority, persistent local data or native package layout.
+
 ## [1.11.0] - 2026-08-08
 
 ### Added
@@ -313,7 +324,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.11.1...HEAD
+[1.11.1]: https://github.com/gcomneno/lele-manager/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/gcomneno/lele-manager/compare/v1.10.1...v1.11.0
 [1.10.1]: https://github.com/gcomneno/lele-manager/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/gcomneno/lele-manager/compare/v1.9.0...v1.10.0
