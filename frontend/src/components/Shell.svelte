@@ -659,7 +659,7 @@
     border-radius: 0 0 999px 999px;
     background: #f28da8;
     opacity: 0;
-    transform: translateY(-2px) scaleY(0.2);
+    transform: translateY(1px) scaleY(0.2);
     transform-origin: top center;
     pointer-events: none;
     animation: lele-signature-tongue 31s ease-in-out infinite;
@@ -707,13 +707,13 @@
     75%,
     100% {
       opacity: 0;
-      transform: translateY(-2px) scaleY(0.2);
+      transform: translateY(1px) scaleY(0.2);
     }
 
     69%,
     73% {
       opacity: 1;
-      transform: translateY(0) scaleY(1);
+      transform: translateY(3px) scaleY(1);
     }
   }
 
