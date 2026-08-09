@@ -367,30 +367,34 @@
       ></textarea>
     </label>
 
-    <div class="suggest-controls">
-      <label>
-        <FieldLabel label="top_k" />
-        <input
-          type="number"
-          min="1"
-          max="20"
-          bind:value={topK}
-          onchange={invalidateSimilarity}
-        />
-      </label>
+    <details class="advanced-options">
+      <summary>{$messages.editorAdvancedOptions}</summary>
 
-      <label>
-        <FieldLabel label="min_score" />
-        <input
-          type="number"
-          min="0"
-          max="1"
-          step="0.01"
-          bind:value={minScore}
-          onchange={invalidateSimilarity}
-        />
-      </label>
-    </div>
+      <div class="suggest-controls">
+        <label>
+          <FieldLabel label={$messages.editorMaximumResults} />
+          <input
+            type="number"
+            min="1"
+            max="20"
+            bind:value={topK}
+            onchange={invalidateSimilarity}
+          />
+        </label>
+
+        <label>
+          <FieldLabel label={$messages.editorMinimumSimilarity} />
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.01"
+            bind:value={minScore}
+            onchange={invalidateSimilarity}
+          />
+        </label>
+      </div>
+    </details>
   </Panel>
 
   {#if similarSearched}
@@ -450,10 +454,20 @@
     margin-top: 8px;
   }
 
+  .advanced-options {
+    margin-top: 12px;
+  }
+
+  summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
   .suggest-controls {
     display: flex;
     gap: 12px;
-    margin-top: 10px;
+    margin-top: 8px;
   }
 
   .suggest-controls label {
