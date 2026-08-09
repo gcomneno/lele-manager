@@ -111,3 +111,32 @@ def test_release_automation_port_rejects_invalid_values() -> None:
             assert launcher.AUTOMATION_PORT_ENV in str(exc)
         else:
             raise AssertionError(f"invalid automation port accepted: {raw}")
+
+
+def test_main_treats_keyboard_interrupt_as_clean_shutdown(monkeypatch) -> None:
+    class InterruptingServer:
+        def __init__(self, config) -> None:
+            self.config = config
+
+        def run(self) -> None:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        launcher,
+        "prepare_runtime",
+        lambda: (Path("/tmp/data"), Path("/tmp/model"), Path("/tmp/vault")),
+    )
+    monkeypatch.setattr(launcher, "resolve_automation_port", lambda: None)
+    monkeypatch.setattr(launcher, "find_available_port", lambda: 43210)
+    monkeypatch.setattr(launcher, "browser_opening_enabled", lambda: False)
+    monkeypatch.setattr(launcher.uvicorn, "Server", InterruptingServer)
+
+    try:
+        result = launcher.main()
+    except KeyboardInterrupt:
+        raise AssertionError(
+            "launcher.main() propagated KeyboardInterrupt instead of "
+            "treating Ctrl+C as a clean shutdown"
+        ) from None
+
+    assert result == 0
