@@ -111,6 +111,11 @@
     importanceLte = ''
   }
 
+  function submitSearch(event: SubmitEvent) {
+    event.preventDefault()
+    runSearch()
+  }
+
   onMount(() => {
     runSearch()
   })
@@ -118,72 +123,77 @@
 
 <div class="browse">
   <Panel title={$messages.routeBrowseTitle} class="filters">
-    <div class="grid browse-filter-grid" data-testid="browse-filter-grid">
-      <label>
-        <FieldLabel label={$messages.fieldQuery} />
-        <input bind:value={q} placeholder="pytest, git, pandas…" onkeydown={(e) => e.key === 'Enter' && runSearch()} />
-      </label>
-      <label>
-        <FieldLabel label={$messages.fieldTopic} />
-        <input bind:value={topic} placeholder="python" />
-      </label>
-      <label>
-        <FieldLabel label={$messages.fieldSource} />
-        <input bind:value={source} placeholder="note" />
-      </label>
-      <label>
-        <FieldLabel label={$messages.browseImportanceMin} />
-        <input type="number" min="1" max="5" bind:value={importanceGte} />
-      </label>
-      <label>
-        <FieldLabel label={$messages.browseImportanceMax} />
-        <input type="number" min="1" max="5" bind:value={importanceLte} />
-      </label>
-      <label>
-        <FieldLabel label={$messages.browseLimit} />
-        <input type="number" min="1" max="500" bind:value={limit} />
-      </label>
-    </div>
-    <FormActions
-      class="browse-actions"
-      style="--giu-form-actions-gap: var(--space-2); margin-top: var(--space-3)"
-    >
-      <Button
-        size="compact"
-        onclick={runSearch}
-        disabled={loading}
+    <form onsubmit={submitSearch}>
+      <div class="grid browse-filter-grid" data-testid="browse-filter-grid">
+        <label>
+          <FieldLabel label={$messages.fieldQuery} />
+          <input bind:value={q} placeholder="pytest, git, pandas…" />
+        </label>
+        <label>
+          <FieldLabel label={$messages.fieldTopic} />
+          <input bind:value={topic} placeholder="python" />
+        </label>
+        <label>
+          <FieldLabel label={$messages.fieldSource} />
+          <input bind:value={source} placeholder="note" />
+        </label>
+        <label>
+          <FieldLabel label={$messages.browseImportanceMin} />
+          <input type="number" min="1" max="5" bind:value={importanceGte} />
+        </label>
+        <label>
+          <FieldLabel label={$messages.browseImportanceMax} />
+          <input type="number" min="1" max="5" bind:value={importanceLte} />
+        </label>
+        <label>
+          <FieldLabel label={$messages.browseLimit} />
+          <input type="number" min="1" max="500" bind:value={limit} />
+        </label>
+      </div>
+      <FormActions
+        class="browse-actions"
+        style="--giu-form-actions-gap: var(--space-2); margin-top: var(--space-3)"
       >
-        {$messages.browseSearch}
-      </Button>
-      <Button
-        variant="secondary"
-        size="compact"
-        onclick={listAll}
-        disabled={loading}
-        class="lele-secondary-button"
-      >
-        {$messages.browseListAll}
-      </Button>
-      <Button
-        variant="secondary"
-        size="compact"
-        onclick={exportResults}
-        disabled={loading || exporting || lessons.length === 0}
-        class="lele-secondary-button"
-      >
-        {exporting
-          ? $messages.browseExporting
-          : $messages.browseExportMarkdown}
-      </Button>
-      <Button
-        variant="secondary"
-        size="compact"
-        onclick={reset}
-        class="lele-secondary-button"
-      >
-        {$messages.browseReset}
-      </Button>
-    </FormActions>
+        <Button
+          type="submit"
+          size="compact"
+          disabled={loading}
+        >
+          {$messages.browseSearch}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="compact"
+          onclick={listAll}
+          disabled={loading}
+          class="lele-secondary-button"
+        >
+          {$messages.browseListAll}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="compact"
+          onclick={exportResults}
+          disabled={loading || exporting || lessons.length === 0}
+          class="lele-secondary-button"
+        >
+          {exporting
+            ? $messages.browseExporting
+            : $messages.browseExportMarkdown}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="compact"
+          onclick={reset}
+          class="lele-secondary-button"
+        >
+          {$messages.browseReset}
+        </Button>
+      </FormActions>
+    </form>
 
     {#if status}
       <FormStatus
