@@ -267,8 +267,8 @@
                   <h4>{item.heading}</h4>
                   <dl class="identity">
                     <div><dt>{$messages.duplicatesPositionZero}</dt><dd>{item.position}</dd></div>
-                    <div><dt>ID</dt><dd>{item.id || '—'}</dd></div>
-                    <div><dt>{$messages.duplicatesPath}</dt><dd>{item.path}</dd></div>
+                    <div><dt>ID</dt><dd class="identity-value" title={item.id || undefined}>{item.id || '—'}</dd></div>
+                    <div><dt>{$messages.duplicatesPath}</dt><dd class="identity-value" title={item.path === '—' ? undefined : item.path}>{item.path}</dd></div>
                   </dl>
                   <h5>{$messages.duplicatesText}</h5>
                   <pre>{item.lesson.text}</pre>
@@ -319,6 +319,15 @@
   .lesson h4 { margin-bottom: 10px; }
   .lesson h5 { margin: 14px 0 6px; font-size: .83rem; color: var(--muted); }
   .identity, .metadata { display: grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap: 7px; margin: 0; }
+  .identity-value {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    height: 2.4em;
+    line-height: 1.2;
+  }
   pre { margin: 0; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f4ee; border-radius: 6px; font: .85rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
   @media (max-width: 850px) { .lessons { grid-template-columns: 1fr; } }
 </style>

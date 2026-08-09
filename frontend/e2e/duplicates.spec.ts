@@ -31,6 +31,31 @@ const repeatedIdReport = {
   ],
 }
 
+const unevenIdentityReport = {
+  lessons_analyzed: 2,
+  total_pairs: 1,
+  exact_pairs: 1,
+  near_pairs: 0,
+  min_score: 0.85,
+  exact_only: true,
+  pairs: [
+    {
+      left_id: 'short-id',
+      right_id: 'a-significantly-longer-lesson-identifier-that-needs-more-than-two-lines-to-render',
+      left_position: 1,
+      right_position: 2,
+      left_path: 'short.md',
+      right_path: 'a/significantly/longer/path/to/a/lesson/that-needs-more-than-two-lines-to-render.md',
+      kind: 'exact',
+      score: 1,
+      reasons: ['duplicate_id'],
+      shared_tags: [],
+      left_lesson: { id: 'short-id', text: 'Short identity lesson text.', title: 'Short' },
+      right_lesson: { id: 'a-significantly-longer-lesson-identifier-that-needs-more-than-two-lines-to-render', text: 'Long identity lesson text.', title: 'Long' },
+    },
+  ],
+}
+
 test.describe('duplicate review', () => {
   test('reviews an exact duplicate with both lessons visible', async ({ page }) => {
     await page.goto('/app/#/duplicates')
@@ -71,6 +96,29 @@ test.describe('duplicate review', () => {
     await expect(pair.getByText('4', { exact: true })).toBeVisible()
     await expect(pair.getByText('9', { exact: true })).toBeVisible()
     await expect(pair.getByText('same-id', { exact: true })).toHaveCount(2)
+  })
+
+  test('aligns lesson text after clamped identity values while retaining full values', async ({ page }) => {
+    await page.route('**/duplicates?*', async (route) => {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(unevenIdentityReport) })
+    })
+    await page.goto('/app/#/duplicates')
+    await page.getByRole('button', { name: 'Run review' }).click()
+
+    const pair = page.locator('.duplicate-pair')
+    const lessons = pair.locator('.lesson')
+    const identityValues = pair.locator('.identity-value')
+    const longId = unevenIdentityReport.pairs[0].right_id
+    const longPath = unevenIdentityReport.pairs[0].right_path
+
+    await expect(identityValues).toHaveCount(4)
+    await expect(identityValues.nth(2)).toHaveText(longId)
+    await expect(identityValues.nth(2)).toHaveAttribute('title', longId)
+    await expect(identityValues.nth(3)).toHaveText(longPath)
+    await expect(identityValues.nth(3)).toHaveAttribute('title', longPath)
+    await expect(lessons.nth(0).getByRole('heading', { name: 'Text' })).toHaveJSProperty('offsetTop', await lessons.nth(1).getByRole('heading', { name: 'Text' }).evaluate((element) => element.offsetTop))
+    await expect(identityValues.nth(2)).toHaveCSS('-webkit-line-clamp', '2')
+    await expect(identityValues.nth(3)).toHaveCSS('-webkit-line-clamp', '2')
   })
 
   test('runs exact-only review while the model is unavailable', async ({ page }) => {
