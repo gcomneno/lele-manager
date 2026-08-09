@@ -101,3 +101,19 @@ def test_native_build_rejects_stale_installed_version() -> None:
     assert 'version("lele-manager")' in script
     assert '"project"]["version"]' in script
     assert "metadata lele-manager non allineata" in script
+
+def test_pypi_publication_uses_dedicated_manual_trusted_workflow() -> None:
+    release = read(".github/workflows/release.yml")
+    pypi = read(".github/workflows/publish-pypi.yml")
+
+    assert "Publish to PyPI" not in release
+    assert "publish_pypi:" not in release
+
+    assert "workflow_dispatch:" in pypi
+    assert "version_tag:" in pypi
+    assert "push:" not in pypi
+
+    assert BUILD_COMMAND in pypi
+    assert "environment: pypi" in pypi
+    assert "id-token: write" in pypi
+    assert "pypa/gh-action-pypi-publish@release/v1" in pypi
