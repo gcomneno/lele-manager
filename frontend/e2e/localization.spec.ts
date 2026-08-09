@@ -680,6 +680,18 @@ test.describe('GUI localization', () => {
       page.locator('.similar-panel'),
     ).toHaveCount(0)
 
+    const advancedOptions = page.locator('.editor-pane details')
+    await expect(advancedOptions.locator('summary')).toHaveText(
+      'Advanced options',
+    )
+    await advancedOptions.locator('summary').click()
+    await expect(
+      page.getByLabel('Maximum results'),
+    ).toBeVisible()
+    await expect(
+      page.getByLabel('Minimum similarity'),
+    ).toBeVisible()
+
     await page
       .getByLabel('Language')
       .selectOption('it')
@@ -689,6 +701,16 @@ test.describe('GUI localization', () => {
         name: 'Verifica similarità',
         exact: true,
       }),
+    ).toBeVisible()
+
+    await expect(advancedOptions.locator('summary')).toHaveText(
+      'Opzioni avanzate',
+    )
+    await expect(
+      page.getByLabel('Risultati massimi'),
+    ).toBeVisible()
+    await expect(
+      page.getByLabel('Similarità minima'),
     ).toBeVisible()
 
     await expect(
