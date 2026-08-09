@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import threading
@@ -20,8 +21,22 @@ from lele_manager.core.vault import resolve_vault_dir
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 HEALTH_TIMEOUT_SECONDS = 30.0
+INSTANCE_PROBE_TIMEOUT_SECONDS = 0.5
+INSTANCE_PROBE_MAX_BODY_BYTES = 16 * 1024
 AUTOMATION_NO_BROWSER_ENV = "LELE_MANAGER_NO_BROWSER"
 AUTOMATION_PORT_ENV = "LELE_MANAGER_PORT"
+PRODUCT_NAME = "LeLe Manager"
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject redirects while probing an untrusted local port occupant."""
+
+    def redirect_request(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        return None
 
 
 def resolve_automation_port(
@@ -68,6 +83,64 @@ def find_available_port(
         except OSError:
             sock.bind((host, 0))
         return int(sock.getsockname()[1])
+
+
+def is_running_lele_manager(
+    port: int,
+    *,
+    timeout: float = INSTANCE_PROBE_TIMEOUT_SECONDS,
+) -> bool:
+    """Return whether a loopback port exposes LeLe Manager's product identity."""
+    about_url = f"http://{DEFAULT_HOST}:{port}/about"
+    request = urllib.request.Request(
+        about_url,
+        headers={"Accept": "application/json"},
+    )
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+
+    try:
+        # The URL is constructed from the fixed loopback host and supplied port.
+        with opener.open(request, timeout=timeout) as response:  # nosec B310
+            if not 200 <= response.status < 300:
+                return False
+            if response.headers.get_content_type() != "application/json":
+                return False
+
+            payload_bytes = response.read(INSTANCE_PROBE_MAX_BODY_BYTES + 1)
+            if len(payload_bytes) > INSTANCE_PROBE_MAX_BODY_BYTES:
+                return False
+
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (
+        urllib.error.URLError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ):
+        return False
+
+    return (
+        isinstance(payload, dict)
+        and payload.get("product_name") == PRODUCT_NAME
+    )
+
+
+def resolve_launch_target(
+    automation_port: int | None,
+) -> tuple[int, bool]:
+    """Choose the server port and whether an existing server can be reused.
+
+    The release-smoke port override deliberately retains its fixed-port
+    semantics. Normal launches reuse only a healthy local process that
+    explicitly identifies itself through LeLe Manager's ``/about`` contract.
+    """
+    if automation_port is not None:
+        return automation_port, False
+
+    if is_running_lele_manager(DEFAULT_PORT):
+        return DEFAULT_PORT, True
+
+    return find_available_port(), False
 
 
 def prepare_runtime() -> tuple[Path, Path, Path]:
@@ -126,14 +199,15 @@ def main() -> int:
     except ValueError as exc:
         raise SystemExit(f"ERRORE: {exc}") from exc
 
-    port = (
-        automation_port
-        if automation_port is not None
-        else find_available_port()
-    )
+    port, reuses_existing_instance = resolve_launch_target(automation_port)
     base_url = f"http://{DEFAULT_HOST}:{port}"
     health_url = f"{base_url}/health"
     app_url = f"{base_url}/app/"
+
+    if reuses_existing_instance:
+        if browser_opening_enabled():
+            webbrowser.open(app_url)
+        return 0
 
     if browser_opening_enabled():
         browser_thread = threading.Thread(
