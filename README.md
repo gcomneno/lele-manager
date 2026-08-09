@@ -85,6 +85,17 @@ the extracted application package.
 Each native archive includes `LEGGIMI_PRIMA.txt` with platform-specific
 first-run instructions.
 
+For Python and power users, LeLe Manager is also published on PyPI. Install it
+as an isolated application with `pipx`:
+
+```bash
+pipx install lele-manager
+```
+
+The PyPI package exposes both `lele-manager` for the local application launcher
+and `lele` for the CLI. Native GitHub Release packages remain the recommended
+installation path for normal end-user use.
+
 For development from source, clone the repository and create a virtual
 environment:
 
