@@ -1,6 +1,49 @@
+import json
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 import lele_manager.launcher as launcher
+
+
+@contextmanager
+def local_http_service(
+    *,
+    status: int = 200,
+    content_type: str = "application/json",
+    body: bytes = b'{"product_name": "LeLe Manager"}',
+):
+    """Run a real loopback HTTP service representing a port occupant."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path == "/about":
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer((launcher.DEFAULT_HOST, 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        yield int(server.server_address[1])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_prepare_runtime_creates_required_directories(
@@ -84,6 +127,61 @@ def test_find_available_port_falls_back_when_preferred_port_is_busy() -> None:
     assert selected != busy_port
     assert selected > 0
 
+
+def test_find_available_port_prefers_a_free_preferred_port() -> None:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as candidate:
+        candidate.bind((launcher.DEFAULT_HOST, 0))
+        preferred_port = int(candidate.getsockname()[1])
+
+    assert (
+        launcher.find_available_port(launcher.DEFAULT_HOST, preferred_port)
+        == preferred_port
+    )
+
+
+def test_instance_probe_recognizes_lele_manager_without_version_matching() -> None:
+    body = json.dumps(
+        {"product_name": "LeLe Manager", "version": "0.9.0"}
+    ).encode()
+
+    with local_http_service(body=body) as port:
+        assert launcher.is_running_lele_manager(port) is True
+
+
+@pytest.mark.parametrize(
+    ("status", "content_type", "body"),
+    [
+        (200, "text/html", b'{"product_name": "LeLe Manager"}'),
+        (200, "application/json", b"not-json"),
+        (200, "application/json", b'{"product_name": "Other app"}'),
+        (503, "application/json", b'{"product_name": "LeLe Manager"}'),
+    ],
+)
+def test_instance_probe_rejects_unexpected_port_occupants(
+    status: int,
+    content_type: str,
+    body: bytes,
+) -> None:
+    with local_http_service(
+        status=status,
+        content_type=content_type,
+        body=body,
+    ) as port:
+        assert launcher.is_running_lele_manager(port) is False
+
+
+def test_instance_probe_handles_unavailable_port() -> None:
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((launcher.DEFAULT_HOST, 0))
+        unavailable_port = int(sock.getsockname()[1])
+
+    assert launcher.is_running_lele_manager(unavailable_port) is False
+
+
 def test_release_automation_hooks_are_disabled_by_default() -> None:
     environment: dict[str, str] = {}
 
@@ -99,6 +197,16 @@ def test_release_automation_hooks_accept_explicit_smoke_values() -> None:
 
     assert launcher.resolve_automation_port(environment) == 43210
     assert launcher.browser_opening_enabled(environment) is False
+
+
+def test_automation_port_keeps_fixed_port_semantics(monkeypatch) -> None:
+    monkeypatch.setattr(
+        launcher,
+        "is_running_lele_manager",
+        lambda port: (_ for _ in ()).throw(AssertionError("unexpected probe")),
+    )
+
+    assert launcher.resolve_launch_target(43210) == (43210, False)
 
 
 def test_release_automation_port_rejects_invalid_values() -> None:
@@ -127,6 +235,7 @@ def test_main_treats_keyboard_interrupt_as_clean_shutdown(monkeypatch) -> None:
         lambda: (Path("/tmp/data"), Path("/tmp/model"), Path("/tmp/vault")),
     )
     monkeypatch.setattr(launcher, "resolve_automation_port", lambda: None)
+    monkeypatch.setattr(launcher, "is_running_lele_manager", lambda port: False)
     monkeypatch.setattr(launcher, "find_available_port", lambda: 43210)
     monkeypatch.setattr(launcher, "browser_opening_enabled", lambda: False)
     monkeypatch.setattr(launcher.uvicorn, "Server", InterruptingServer)
@@ -140,3 +249,86 @@ def test_main_treats_keyboard_interrupt_as_clean_shutdown(monkeypatch) -> None:
         ) from None
 
     assert result == 0
+
+
+def test_main_reuses_running_lele_manager_at_preferred_origin(monkeypatch) -> None:
+    opened: list[str] = []
+
+    class UnexpectedServer:
+        def __init__(self, config) -> None:
+            raise AssertionError("a reusable LeLe Manager must not be restarted")
+
+    with local_http_service() as preferred_port:
+        monkeypatch.setattr(launcher, "DEFAULT_PORT", preferred_port)
+        monkeypatch.setattr(
+            launcher,
+            "prepare_runtime",
+            lambda: (Path("/tmp/data"), Path("/tmp/model"), Path("/tmp/vault")),
+        )
+        monkeypatch.setattr(launcher, "resolve_automation_port", lambda: None)
+        monkeypatch.setattr(launcher.webbrowser, "open", opened.append)
+        monkeypatch.setattr(launcher.uvicorn, "Server", UnexpectedServer)
+
+        assert launcher.main() == 0
+
+    assert opened == [f"http://{launcher.DEFAULT_HOST}:{preferred_port}/app/"]
+
+
+def test_main_reuse_respects_browser_disabled_automation(monkeypatch) -> None:
+    class UnexpectedServer:
+        def __init__(self, config) -> None:
+            raise AssertionError("a reusable LeLe Manager must not be restarted")
+
+    with local_http_service() as preferred_port:
+        monkeypatch.setattr(launcher, "DEFAULT_PORT", preferred_port)
+        monkeypatch.setattr(
+            launcher,
+            "prepare_runtime",
+            lambda: (Path("/tmp/data"), Path("/tmp/model"), Path("/tmp/vault")),
+        )
+        monkeypatch.setattr(launcher, "resolve_automation_port", lambda: None)
+        monkeypatch.setattr(launcher, "browser_opening_enabled", lambda: False)
+        monkeypatch.setattr(
+            launcher.webbrowser,
+            "open",
+            lambda url: (_ for _ in ()).throw(AssertionError("browser opened")),
+        )
+        monkeypatch.setattr(launcher.uvicorn, "Server", UnexpectedServer)
+
+        assert launcher.main() == 0
+
+
+def test_main_does_not_attach_to_an_unrelated_preferred_port(monkeypatch) -> None:
+    captured_ports: list[int] = []
+
+    class InterruptingServer:
+        def __init__(self, config) -> None:
+            captured_ports.append(config.port)
+
+        def run(self) -> None:
+            raise KeyboardInterrupt
+
+    unrelated_body = json.dumps(
+        {"product_name": "Another local app", "status": "ok"}
+    ).encode()
+    with local_http_service(body=unrelated_body) as preferred_port:
+        fallback_port = preferred_port + 1
+        monkeypatch.setattr(launcher, "DEFAULT_PORT", preferred_port)
+        monkeypatch.setattr(
+            launcher,
+            "prepare_runtime",
+            lambda: (Path("/tmp/data"), Path("/tmp/model"), Path("/tmp/vault")),
+        )
+        monkeypatch.setattr(launcher, "resolve_automation_port", lambda: None)
+        monkeypatch.setattr(
+            launcher,
+            "find_available_port",
+            lambda: fallback_port,
+        )
+        monkeypatch.setattr(launcher, "browser_opening_enabled", lambda: False)
+        monkeypatch.setattr(launcher.uvicorn, "Server", InterruptingServer)
+
+        assert launcher.main() == 0
+        assert launcher.is_running_lele_manager(preferred_port) is False
+
+    assert captured_ports == [fallback_port]
