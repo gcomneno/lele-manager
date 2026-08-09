@@ -89,6 +89,17 @@ all'aggiornamento della cartella applicativa estratta.
 Ogni archive nativo include `LEGGIMI_PRIMA.txt` con istruzioni di primo avvio
 specifiche per la piattaforma.
 
+Per utenti Python e power user, LeLe Manager è pubblicato anche su PyPI. È
+consigliata l'installazione come applicazione isolata tramite `pipx`:
+
+```bash
+pipx install lele-manager
+```
+
+Il pacchetto PyPI espone sia `lele-manager` per avviare l'applicazione locale,
+sia `lele` per la CLI. I pacchetti nativi delle GitHub Release restano il
+percorso di installazione consigliato per il normale utilizzo utente.
+
 Per lo sviluppo dai sorgenti, clonare il repository e creare un ambiente
 virtuale:
 
