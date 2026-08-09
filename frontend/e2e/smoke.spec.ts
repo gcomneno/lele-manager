@@ -17,6 +17,10 @@ test.describe('GUI smoke', () => {
 
   test('editor: similarity check is explicit and invalidated by edits', async ({ page }) => {
     let suggestRequests = 0
+    const suggestPayloads: Array<{
+      top_k: number
+      min_score: number
+    }> = []
 
     page.on('request', (request) => {
       if (
@@ -24,6 +28,7 @@ test.describe('GUI smoke', () => {
         new URL(request.url()).pathname === '/editor/suggest'
       ) {
         suggestRequests += 1
+        suggestPayloads.push(request.postDataJSON())
       }
     })
 
@@ -47,6 +52,15 @@ test.describe('GUI smoke', () => {
     })
 
     await expect(checkButton).toBeDisabled()
+
+    const advancedOptions = editorPanel.locator('details')
+    await expect(advancedOptions).not.toHaveAttribute('open', '')
+    await expect(
+      editorPanel.getByLabel('Maximum results'),
+    ).not.toBeVisible()
+    await expect(
+      editorPanel.getByLabel('Minimum similarity'),
+    ).not.toBeVisible()
 
     // Prima della richiesta esplicita il widget non esiste.
     await expect(
@@ -83,6 +97,11 @@ test.describe('GUI smoke', () => {
         { timeout: 15_000 },
       )
       .toBe(1)
+
+    expect(suggestPayloads[0]).toMatchObject({
+      top_k: 5,
+      min_score: 0.1,
+    })
 
     const similarPanel = page.locator('.similar-panel')
 
@@ -128,6 +147,23 @@ test.describe('GUI smoke', () => {
     await page.waitForTimeout(700)
     expect(suggestRequests).toBe(1)
 
+    await advancedOptions.locator('summary').click()
+    await expect(advancedOptions).toHaveAttribute('open', '')
+
+    const maximumResults = editorPanel.getByLabel('Maximum results')
+    const minimumSimilarity = editorPanel.getByLabel('Minimum similarity')
+    await expect(maximumResults).toHaveAttribute('min', '1')
+    await expect(maximumResults).toHaveAttribute('max', '20')
+    await expect(minimumSimilarity).toHaveAttribute('min', '0')
+    await expect(minimumSimilarity).toHaveAttribute('max', '1')
+    await expect(minimumSimilarity).toHaveAttribute('step', '0.01')
+
+    await maximumResults.fill('3')
+    await minimumSimilarity.fill('0.25')
+
+    // Tuning changes invalidate the existing result just like content edits.
+    await expect(page.locator('.similar-panel')).toHaveCount(0)
+
     // Una nuova verifica è ancora esplicita.
     await checkButton.click()
 
@@ -137,6 +173,11 @@ test.describe('GUI smoke', () => {
         { timeout: 15_000 },
       )
       .toBe(2)
+
+    expect(suggestPayloads[1]).toMatchObject({
+      top_k: 3,
+      min_score: 0.25,
+    })
   })
 
   test('stats e timeline caricano senza errori', async ({ page }) => {
