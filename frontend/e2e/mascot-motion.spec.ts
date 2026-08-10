@@ -15,6 +15,14 @@ test.describe('LeLe mascot motion', () => {
     await expect(cameo).toHaveCSS('animation-delay', '8s')
     await expect(cameo).toHaveCSS('animation-iteration-count', '1')
     await expect(character.locator('img')).toHaveCount(7)
+    await expect(character.locator('img').nth(0)).toHaveAttribute(
+      'src',
+      '/app/brand/lele-cameo/01-enter.png',
+    )
+    await expect(character.locator('img').nth(6)).toHaveAttribute(
+      'src',
+      '/app/brand/lele-cameo/07-exit.png',
+    )
     await expect(balloon).toHaveText('LeLe!!')
   })
 
@@ -33,11 +41,19 @@ test('keeps the GiadaWare signature tongue decorative and motion-safe', async ({
 
   const tongue = page.getByTestId('giadaware-signature-tongue')
   const thought = page.getByTestId('giadaware-signature-thought')
+  const mascot = page.getByTestId('giadaware-signature-mascot')
 
   await expect(thought).toBeAttached()
   await expect(tongue).toHaveAttribute('aria-hidden', 'true')
   await expect(tongue).toHaveCSS('animation-name', /lele-signature-tongue$/)
+  await expect(tongue).toHaveCSS('animation-duration', '31s')
+  await expect(tongue).toHaveCSS('left', '18px')
+  await expect(mascot).toHaveCSS('animation-name', /lele-signature-think$/)
+  await expect(thought).toHaveCSS('animation-name', /lele-thought-bubble$/)
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(tongue).toHaveCSS('animation-name', 'none')
   await expect(tongue).toHaveCSS('opacity', '0')
+  await expect(mascot).toHaveCSS('animation-name', 'none')
+  await expect(thought).toHaveCSS('animation-name', 'none')
+  await expect(thought).toHaveCSS('opacity', '0')
 })
