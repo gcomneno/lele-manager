@@ -42,6 +42,39 @@ def test_stats_and_timeline_api(monkeypatch) -> None:
     assert any(b["key"] == "python" for b in buckets)
 
 
+def test_editor_metadata_options_are_complete_deterministic_and_read_only(monkeypatch) -> None:
+    df = pd.DataFrame(
+        [
+            {"id": "1", "topic": " Python ", "source": "note", "tags": ["pytest", "python"]},
+            {"id": "2", "topic": "python", "source": "Book", "tags": ["pytest", ""]},
+            {"id": "3", "topic": "git", "source": "note", "tags": ["git", "PyTest"]},
+            {"id": "4", "topic": " ", "source": None, "tags": None},
+            {"id": "5", "topic": float("nan"), "source": pd.NA, "tags": [pd.NA, " "]},
+            {"id": "6", "topic": pd.NA, "source": pd.NaT, "tags": [pd.NaT, float("nan")]},
+            {"id": "7", "topic": pd.NaT, "source": float("nan"), "tags": [" "]},
+        ]
+    )
+    monkeypatch.setattr(server_mod, "load_lessons_df", lambda: df)
+
+    response = TestClient(app).get("/editor/metadata-options")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "topics": [{"value": "Python", "count": 2}, {"value": "git", "count": 1}],
+        "tags": [{"value": "pytest", "count": 3}, {"value": "git", "count": 1}, {"value": "python", "count": 1}],
+        "sources": [{"value": "note", "count": 2}, {"value": "Book", "count": 1}],
+    }
+
+
+def test_editor_metadata_options_empty_projection(monkeypatch) -> None:
+    monkeypatch.setattr(server_mod, "load_lessons_df", lambda: pd.DataFrame())
+
+    response = TestClient(app).get("/editor/metadata-options")
+
+    assert response.status_code == 200
+    assert response.json() == {"topics": [], "tags": [], "sources": []}
+
+
 def test_ui_redirects_to_app() -> None:
     client = TestClient(app)
     resp = client.get("/ui", follow_redirects=False)

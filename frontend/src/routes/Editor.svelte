@@ -7,6 +7,7 @@
   } from 'giadaware-ui-components/studio'
   import {
     api,
+    type EditorMetadataOptionsResponse,
     type Lesson,
     type SimilarItem,
     type SimilarMeta,
@@ -22,11 +23,13 @@
 
   let { id }: Props = $props()
 
-  let topic = $state('python')
+  // New lessons start without a topic: topic is required, but never inferred.
+  let topic = $state('')
   let source = $state('note')
   let importance = $state(3)
   let date = $state(new Date().toISOString().slice(0, 10))
-  let tags = $state('')
+  let tags = $state<string[]>([])
+  let tagDraft = $state('')
   let title = $state('')
   let body = $state('')
   let lessonId = $state('')
@@ -41,16 +44,15 @@
   let saving = $state(false)
   let saveMsg = $state('')
   let saveSucceeded = $state(false)
+  let metadataOptions = $state<EditorMetadataOptionsResponse>({
+    topics: [], tags: [], sources: [],
+  })
+  let metadataOptionsError = $state('')
 
   let topK = $state(5)
   let minScore = $state(0.1)
 
   function composeText(): string {
-    const tagList = tags
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter(Boolean)
-
     const frontmatter = [
       '---',
       lessonId ? `id: ${lessonId}` : 'id: (auto)',
@@ -58,8 +60,8 @@
       `source: ${source}`,
       `importance: ${importance}`,
       `date: ${date}`,
-      tagList.length
-        ? `tags: [${tagList.join(', ')}]`
+      tags.length
+        ? `tags: [${tags.join(', ')}]`
         : 'tags: []',
       title
         ? `title: "${title.replace(/"/g, '\\"')}"`
@@ -77,12 +79,64 @@
   function suggestionSeed(): string {
     return [
       title.trim(),
-      tags.trim(),
+      tags.join(' '),
       body.trim(),
     ]
       .filter(Boolean)
       .join(' ')
       .trim()
+  }
+
+  async function loadMetadataOptions() {
+    metadataOptionsError = ''
+    try {
+      metadataOptions = await api.editorMetadataOptions()
+    } catch (e) {
+      metadataOptionsError = e instanceof Error ? e.message : String(e)
+    }
+  }
+
+  function normalized(value: string): string {
+    return value.trim().toLocaleLowerCase()
+  }
+
+  function addTag(value = tagDraft) {
+    const tag = value.trim()
+    if (!tag || tags.some((existing) => normalized(existing) === normalized(tag))) {
+      tagDraft = ''
+      return
+    }
+    tags = [...tags, tag]
+    tagDraft = ''
+    invalidateSimilarity()
+  }
+
+  function removeTag(index: number) {
+    tags = tags.filter((_, tagIndex) => tagIndex !== index)
+    invalidateSimilarity()
+  }
+
+  function onTagKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault()
+      addTag()
+    }
+  }
+
+  function suggestedTopic(): string | null {
+    // Advisory only: require two matches and a strict majority for one topic.
+    const values = similar.map((item) => item.topic?.trim()).filter((value): value is string => Boolean(value))
+    if (values.length < 2) return null
+    const counts = new Map<string, { value: string, count: number }>()
+    for (const value of values) {
+      const key = normalized(value)
+      const current = counts.get(key) ?? { value, count: 0 }
+      current.count += 1
+      counts.set(key, current)
+    }
+    const dominant = [...counts.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))[0]
+    return dominant && dominant.count > values.length / 2 && normalized(dominant.value) !== normalized(topic)
+      ? dominant.value : null
   }
 
   function invalidateSimilarity() {
@@ -153,7 +207,7 @@
       importance = lesson.importance ?? 3
       date = lesson.date ?? date
       title = lesson.title ?? ''
-      tags = (lesson.tags ?? []).join(', ')
+      tags = [...(lesson.tags ?? [])]
 
       const parsed = stripFrontmatter(lesson.text ?? '')
       body = parsed.body || lesson.text || ''
@@ -166,17 +220,17 @@
   }
 
   function buildPayload() {
-    const tagList = tags
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter(Boolean)
+    if (!Number.isInteger(importance) || importance < 1 || importance > 5) {
+      throw new Error($messages.editorImportanceInvalid)
+    }
 
     return {
       text: body,
       topic: topic.trim(),
+      // "note" is the documented server default and remains visibly selected.
       source: source.trim() || 'note',
-      importance: Number(importance) || 3,
-      tags: tagList,
+      importance,
+      tags: [...tags],
       date: date || null,
       title: title.trim() || null,
     }
@@ -237,6 +291,7 @@
   }
 
   $effect(() => {
+    loadMetadataOptions()
     if (id) {
       loadExisting(id)
     }
@@ -293,6 +348,14 @@
       />
     {/if}
 
+    {#if metadataOptionsError}
+      <FormStatus
+        message={$messages.editorMetadataSuggestionsUnavailable}
+        tone="warning"
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+    {/if}
+
     <div class="meta-grid">
       {#if id}
         <label>
@@ -308,27 +371,44 @@
         <FieldLabel label={$messages.fieldTopic} />
         <input
           bind:value={topic}
+          list="known-topics"
+          placeholder={$messages.editorTopicPlaceholder}
           oninput={invalidateSimilarity}
         />
+        <datalist id="known-topics">
+          {#each metadataOptions.topics as option}
+            <option value={option.value}>{option.value} ({option.count})</option>
+          {/each}
+        </datalist>
+        {#if topic.trim() && !metadataOptions.topics.some((option) => normalized(option.value) === normalized(topic))}
+          <span class="new-value">{$messages.editorUseNewTopic}: {topic.trim()}</span>
+        {/if}
       </label>
 
       <label>
         <FieldLabel label={$messages.fieldSource} />
         <input
           bind:value={source}
+          list="known-sources"
+          placeholder={$messages.editorSourcePlaceholder}
           oninput={invalidateSimilarity}
         />
+        <datalist id="known-sources">
+          {#each metadataOptions.sources as option}
+            <option value={option.value}>{option.value} ({option.count})</option>
+          {/each}
+        </datalist>
       </label>
 
       <label>
         <FieldLabel label={$messages.fieldImportance} />
-        <input
-          type="number"
-          min="1"
-          max="5"
-          bind:value={importance}
-          oninput={invalidateSimilarity}
-        />
+        <select bind:value={importance} onchange={invalidateSimilarity} aria-label={$messages.fieldImportance}>
+          <option value={1}>1 {$messages.editorImportanceLow}</option>
+          <option value={2}>2</option>
+          <option value={3}>3 {$messages.editorImportanceNormal}</option>
+          <option value={4}>4</option>
+          <option value={5}>5 {$messages.editorImportanceHigh}</option>
+        </select>
       </label>
 
       <label>
@@ -341,11 +421,23 @@
 
       <label>
         <FieldLabel label={$messages.fieldTags} />
-        <input
-          bind:value={tags}
-          placeholder="python, pytest"
-          oninput={invalidateSimilarity}
-        />
+        <div class="tag-input">
+          {#each tags as tag, index}
+            <span class="tag-chip">{tag}<button type="button" aria-label={`${$messages.editorRemoveTag}: ${tag}`} onclick={() => removeTag(index)}>×</button></span>
+          {/each}
+          <input
+            bind:value={tagDraft}
+            list="known-tags"
+            placeholder={$messages.editorTagsPlaceholder}
+            onkeydown={onTagKeydown}
+          />
+          <button type="button" class="add-tag" onclick={() => addTag()}>{$messages.editorAddTag}</button>
+        </div>
+        <datalist id="known-tags">
+          {#each metadataOptions.tags.filter((option) => normalized(option.value) !== normalized(topic)) as option}
+            <option value={option.value}>{option.value} ({option.count})</option>
+          {/each}
+        </datalist>
       </label>
 
       <label class="wide">
@@ -408,6 +500,15 @@
       searched={true}
     />
   {/if}
+
+  {#if suggestedTopic()}
+    <aside class="topic-suggestion">
+      {$messages.editorSuggestedTopic}: <strong>{suggestedTopic()}</strong>
+      <button type="button" onclick={() => { topic = suggestedTopic() ?? topic; invalidateSimilarity() }}>
+        {$messages.editorApplySuggestion}
+      </button>
+    </aside>
+  {/if}
 </div>
 
 <style>
@@ -440,6 +541,7 @@
   }
 
   input,
+  select,
   textarea {
     box-sizing: border-box;
     width: 100%;
@@ -449,6 +551,14 @@
     color: var(--text);
     background: white;
   }
+
+  .new-value { font-size: 0.75rem; color: var(--muted); }
+  .tag-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tag-input input { flex: 1 1 120px; width: auto; }
+  .tag-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: #f0ebe3; padding: 3px 7px; color: var(--text); }
+  .tag-chip button, .add-tag, .topic-suggestion button { border: 0; border-radius: 6px; background: var(--accent); color: white; cursor: pointer; padding: 3px 7px; }
+  .tag-chip button { padding: 0 4px; }
+  .topic-suggestion { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: #fffdf9; }
 
   .body-label {
     margin-top: 8px;
