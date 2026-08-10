@@ -51,17 +51,16 @@ The Linux archive deliberately remains portable and versioned for download.
 In addition, its archive root ships an executable `install.sh`. Running it
 explicitly (never as a side effect of starting the application) installs the
 one-dir PyInstaller bundle at
-`${XDG_DATA_HOME:-~/.local/share}/lele-manager/app` and creates the stable
+`${XDG_DATA_HOME:-~/.local/share}/lele-manager/install/app` and creates the stable
 `~/.local/bin/lele-manager` symlink. `LELE_MANAGER_INSTALL_BIN_DIR` is a
 narrow, documented absolute-path override for the launcher destination.
 
-The installed `app/` directory is version-independent and is swapped only
-after a complete staged copy has been validated. The surrounding
-`lele-manager` data directory is intentionally preserved because the runtime
-already uses it for persistent application data. Reinstalling or installing a
-new release therefore keeps the launcher path and user data stable. This
-contract does not register a `.desktop` file, icons, or any other desktop
-resource.
+The `lele-manager` directory is the persistent runtime-data namespace because
+the runtime already uses it for application data. Only its version-independent
+`install/app/` directory is installer-owned and swapped after a complete staged
+copy has been validated. Reinstalling or installing a new release therefore
+keeps the launcher path and user data stable. This contract does not register a
+`.desktop` file, icons, or any other desktop resource.
 
 ## Persistent user data
 
