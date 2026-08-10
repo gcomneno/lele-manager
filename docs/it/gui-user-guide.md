@@ -49,8 +49,8 @@ Markdown e riaddestrare il modello topic.
 ## Lingua della GUI
 
 LeLe Manager parte in **inglese** quando non è memorizzata una scelta esplicita
-della lingua. Il selettore si trova nella sidebar, immediatamente sopra la
-firma GiadaWare. Le lingue mantenute della GUI sono **English** e **Italiano**.
+della lingua. Il selettore si trova nell’header globale sempre raggiungibile.
+Le lingue mantenute della GUI sono **English** e **Italiano**.
 
 Il cambio di lingua aggiorna immediatamente la GUI senza ricaricare la pagina.
 La scelta esplicita viene conservata localmente nel browser con la chiave
@@ -61,6 +61,34 @@ lingua del browser è intenzionalmente assente.
 La localizzazione riguarda soltanto la presentazione della GUI. Non traduce né
 modifica LeLe scritte dall'utente, contenuto Markdown del vault, valori del
 dataset, topic, fonti, percorsi, ID, payload API o identità di navigazione.
+
+## Shell applicativa
+
+L’header globale contiene contesto e utilità dell’applicazione: nome dello
+spazio di lavoro corrente, stato compatto di API/dataset/modello di ricerca,
+controllo della lingua, **Cerca o comandi** e **Aiuto**. Non contiene
+deliberatamente azioni di pagina quali Salva, Elimina, refresh del modello o
+una CTA permanente di creazione. Versione e identità completa del prodotto
+restano autorevoli in **Informazioni**.
+
+Usa il pulsante di navigazione nell’header per mostrare o nascondere l’intera
+sidebar. Questa preferenza è conservata localmente come
+`lele-manager.sidebar-visible.v1` ed è indipendente dai gruppi comprimibili
+**Conoscenza**, **Acquisizione** e **Gestione**. Nascondere la sidebar non
+rimuove i controlli dell’header; quando la riapri, disclosure dei gruppi e
+destinazione corrente restano preservate.
+
+Usa **Cerca o comandi** o **Ctrl+K** per aprire rapidamente destinazioni reali,
+incluse Dashboard, Esplora, Cronologia, Statistiche, Raccolta, Vault,
+Duplicati, Sistema, Diagnostica, Informazioni e **Nuova LeLe**. La ricerca di
+LeLe apre Esplora e non crea un secondo sistema di ricerca. **Nuova LeLe**
+resta sotto **Acquisizione** nella navigazione ed è disponibile anche come
+comando esplicito.
+
+**Aiuto** offre guida utente, Diagnostica, il modulo GitHub mantenuto per le
+segnalazioni bug, Informazioni e il promemoria della scorciatoia. Non genera né
+invia dati diagnostici. Su schermi stretti l’header resta disponibile sopra una
+navigazione recuperabile ed evita overflow orizzontale.
 
 ## Flusso quotidiano
 
