@@ -32,10 +32,6 @@ test.describe('GUI localization', () => {
     ).toBeVisible()
 
     await expect(
-      page.getByTestId('new-lesson-cta'),
-    ).toHaveAccessibleName('New LeLe')
-
-    await expect(
       page.getByLabel('Language'),
     ).toHaveValue('en')
   })
@@ -67,10 +63,6 @@ test.describe('GUI localization', () => {
         exact: true,
       }),
     ).toBeVisible()
-
-    await expect(
-      page.getByTestId('new-lesson-cta'),
-    ).toHaveAccessibleName('Nuova LeLe')
 
     expect(
       await page.evaluate(() => {
@@ -110,10 +102,6 @@ test.describe('GUI localization', () => {
     await expect(
       page.getByLabel('Language'),
     ).toHaveValue('en')
-
-    await expect(
-      page.getByTestId('new-lesson-cta'),
-    ).toHaveAccessibleName('New LeLe')
 
     await page.reload()
 

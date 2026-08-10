@@ -8,6 +8,8 @@
     setLocale,
   } from '../lib/i18n'
   import HealthBar from './HealthBar.svelte'
+  import CommandPalette from './CommandPalette.svelte'
+  import HeaderHelp from './HeaderHelp.svelte'
   import NavIcon from './NavIcon.svelte'
 
   interface Props {
@@ -23,6 +25,8 @@
 
   const NAVIGATION_GROUPS_STORAGE_KEY =
     'lele-manager.navigation-groups.v1'
+  const SIDEBAR_VISIBILITY_STORAGE_KEY =
+    'lele-manager.sidebar-visible.v1'
 
   const navigationGroupIds: NavigationGroupId[] = [
     'knowledge',
@@ -68,8 +72,8 @@
     },
   ]
 
-  let appVersion = $state<string | null>(null)
   let workspaceName = $state<string | null>(null)
+  let sidebarVisible = $state(loadSidebarVisibility())
   let navigationGroupState = $state<NavigationGroupState>(
     loadNavigationGroupState(),
   )
@@ -82,19 +86,12 @@
   onMount(() => {
     let active = true
 
-    void Promise.allSettled([
-      api.runtimeInfo(),
-      api.vaultStatus(),
-    ]).then(([runtime, vault]) => {
+    void api.vaultStatus().then((vault) => {
       if (!active) return
 
-      if (runtime.status === 'fulfilled') {
-        appVersion = runtime.value.version
-      }
-
-      if (vault.status === 'fulfilled') {
-        workspaceName = basename(vault.value.vault_dir)
-      }
+      workspaceName = basename(vault.vault_dir)
+    }).catch(() => {
+      // Workspace context is best-effort and must never block the shell.
     })
 
     return () => {
@@ -161,6 +158,33 @@
     }
   }
 
+  function loadSidebarVisibility(): boolean {
+    if (typeof window === 'undefined') return true
+
+    try {
+      const persisted = window.localStorage.getItem(
+        SIDEBAR_VISIBILITY_STORAGE_KEY,
+      )
+      return persisted === 'false' ? false : true
+    } catch {
+      return true
+    }
+  }
+
+  function toggleSidebar() {
+    sidebarVisible = !sidebarVisible
+
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_VISIBILITY_STORAGE_KEY,
+        String(sidebarVisible),
+      )
+    } catch {
+      // Persistence is best-effort; the sidebar still works in this session.
+    }
+  }
+
   function expandActiveNavigationGroup() {
     const groupId = activeNavigationGroup()
 
@@ -187,8 +211,43 @@
 
 </script>
 
-<div class="shell">
-  <aside class="sidebar">
+<div class:sidebar-hidden={!sidebarVisible} class="shell">
+  <header class="global-header">
+    <button
+      class="sidebar-toggle"
+      type="button"
+      aria-label={sidebarVisible ? $messages.hideNavigation : $messages.showNavigation}
+      aria-expanded={sidebarVisible}
+      aria-controls="primary-sidebar"
+      data-testid="sidebar-toggle"
+      onclick={toggleSidebar}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+    </button>
+    <dl class="workspace-context" data-testid="header-workspace">
+      <dt>{$messages.shellWorkspace}</dt>
+      <dd data-testid="shell-workspace">{workspaceName ?? $messages.shellWorkspaceUnavailable}</dd>
+    </dl>
+    <div class="header-utilities">
+      <CommandPalette />
+      <HealthBar />
+      <label class="header-language" for="lele-manager-language">
+        <span>{$messages.languageLabel}</span>
+        <select
+          id="lele-manager-language"
+          data-testid="language-control"
+          value={$locale}
+          onchange={(event) => setLocale(event.currentTarget.value)}
+        >
+          <option value="en">{$messages.languageEnglish}</option>
+          <option value="it">{$messages.languageItalian}</option>
+        </select>
+      </label>
+      <HeaderHelp />
+    </div>
+  </header>
+
+  <aside id="primary-sidebar" class="sidebar" hidden={!sidebarVisible}>
     <a class="brand" href="#/" aria-label={$messages.brandHomeAccessible} onclick={(e) => { e.preventDefault(); navigate({ view: 'dashboard' }) }}>
       <img src="/app/brand/lele-manager-mark.svg" alt="" aria-hidden="true" />
       <span>
@@ -245,43 +304,6 @@
       {/each}
     </nav>
 
-    <dl class="shell-context" data-testid="shell-context">
-      {#if workspaceName}
-        <div>
-          <dt>{$messages.shellWorkspace}</dt>
-          <dd data-testid="shell-workspace">{workspaceName}</dd>
-        </div>
-      {/if}
-      {#if appVersion}
-        <div>
-          <dt>{$messages.shellVersion}</dt>
-          <dd data-testid="shell-version">{appVersion}</dd>
-        </div>
-      {/if}
-    </dl>
-    <div
-      class="language-control"
-      data-testid="language-control"
-    >
-      <label for="lele-manager-language">
-        {$messages.languageLabel}
-      </label>
-      <select
-        id="lele-manager-language"
-        value={$locale}
-        onchange={(event) => {
-          setLocale(event.currentTarget.value)
-        }}
-      >
-        <option value="en">
-          {$messages.languageEnglish}
-        </option>
-        <option value="it">
-          {$messages.languageItalian}
-        </option>
-      </select>
-    </div>
-
     <footer class="product-signature" data-testid="giadaware-signature">
       <span
         class="signature-mascot"
@@ -312,36 +334,7 @@
     </footer>
   </aside>
 
-  <div class="main">
-    <header>
-      <HealthBar />
-      <a
-        class="btn btn-primary new-lesson-cta"
-        href="#/editor"
-        aria-label={$messages.newLeleAccessible}
-        data-testid="new-lesson-cta"
-        onclick={(e) => {
-          e.preventDefault()
-          navigate({ view: 'editor' })
-        }}
-      >
-        <span class="new-lesson-visible" aria-hidden="true">
-          <span class="new-lesson-prefix">+ {$messages.newLelePrefix}</span>
-          <span class="lele-mascot-badge">
-            <span
-              class="lele-monkey-face"
-              data-testid="lele-monkey-motion"
-            >
-              <img
-                src="/app/brand/lele-cameo/05-walk-right-a.png"
-                alt=""
-              />
-            </span>
-            <span class="lele-balloon">LeLe</span>
-          </span>
-        </span>
-      </a>
-    </header>
+  <main class="main">
     <div class="content">
       {@render children()}
     </div>
@@ -399,23 +392,39 @@
         LeLe!!
       </span>
     </div>
-  </div>
+  </main>
 </div>
 
 <style>
   .shell {
     display: grid;
     grid-template-columns: 220px 1fr;
+    grid-template-areas:
+      'sidebar header'
+      'sidebar main';
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 100vh;
   }
 
+  .shell.sidebar-hidden {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'header'
+      'main';
+  }
+
   .sidebar {
+    grid-area: sidebar;
     background: var(--sidebar);
     color: var(--sidebar-text);
     padding: 20px 16px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  .sidebar[hidden] {
+    display: none;
   }
 
   .brand {
@@ -546,75 +555,10 @@
     opacity: 1;
   }
 
-  .shell-context {
-    display: grid;
-    gap: 6px;
-    margin: 0;
-    padding: 10px 4px 0;
-    border-top: 1px solid rgb(255 255 255 / 14%);
-  }
-
-  .shell-context div {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: baseline;
-  }
-
-  .shell-context dt,
-  .shell-context dd {
-    margin: 0;
-    min-width: 0;
-    font-size: 0.68rem;
-  }
-
-  .shell-context dt {
-    color: var(--color-text-inverse-muted);
-  }
-
-  .shell-context dd {
-    max-width: 110px;
-    overflow: hidden;
-    color: var(--sidebar-text);
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .language-control {
-    display: grid;
-    gap: 5px;
-    margin-top: auto;
-    padding: var(--space-4) 4px 0;
-    border-top: 1px solid rgb(255 255 255 / 14%);
-  }
-
-  .language-control label {
-    color: var(--color-text-inverse-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-  }
-
-  .language-control select {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 36px;
-    padding: 6px 28px 6px 9px;
-    border: 1px solid rgb(255 255 255 / 24%);
-    border-radius: var(--radius-sm);
-    color: var(--sidebar-text);
-    background: var(--sidebar);
-    font: inherit;
-  }
-
-  .language-control select:focus-visible {
-    outline: 0;
-    box-shadow: var(--focus-ring);
-  }
-
   .product-signature {
     display: grid;
     gap: 2px;
+    margin-top: auto;
     padding: var(--space-3) 4px 2px;
     color: var(--color-text-inverse-muted);
     font-size: var(--font-size-xs);
@@ -628,14 +572,15 @@
   }
 
   .main {
+    grid-area: main;
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
 
-  header {
+  .global-header {
+    grid-area: header;
     display: flex;
-    justify-content: space-between;
     align-items: center;
     gap: 12px;
     padding: 14px 20px;
@@ -644,6 +589,74 @@
     position: sticky;
     top: 0;
     z-index: 1;
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
+    width: 36px;
+    min-height: 36px;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .sidebar-toggle svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 2;
+  }
+
+  .workspace-context {
+    display: grid;
+    min-width: 0;
+    margin: 0;
+    line-height: 1.15;
+  }
+
+  .workspace-context dt {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .workspace-context dd {
+    max-width: 190px;
+    margin: 2px 0 0;
+    overflow: hidden;
+    font-size: var(--font-size-sm);
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-utilities {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-left: auto;
+  }
+
+  .header-language {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .header-language select {
+    min-height: 36px;
+    max-width: 102px;
+    padding: 5px 26px 5px 7px;
   }
 
   .content {
@@ -668,6 +681,11 @@
   @media (max-width: 800px) {
     .shell {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'header'
+        'sidebar'
+        'main';
+      grid-template-rows: auto auto minmax(0, 1fr);
       width: 100%;
       max-width: 100%;
       overflow-x: clip;
@@ -695,22 +713,33 @@
       align-self: stretch;
     }
 
-    .product-signature,
-    .shell-context {
+    .product-signature {
       display: none;
     }
 
-    .language-control {
-      flex: 0 0 140px;
-      margin-top: 0;
-      margin-left: auto;
-      padding: 0;
-      border-top: 0;
+    .global-header {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px;
     }
 
-    .language-control label {
-      color: var(--sidebar-text);
+    .workspace-context {
+      flex: 1 1 auto;
     }
+
+    .workspace-context dd { max-width: 160px; }
+
+    .header-utilities {
+      width: 100%;
+      flex: 1 1 100%;
+      justify-content: space-between;
+      gap: 6px;
+      margin-left: 0;
+    }
+
+    .header-language > span { display: none; }
+
+    .header-language select { max-width: 94px; }
 
     nav {
       box-sizing: border-box;
@@ -933,106 +962,14 @@
     line-height: 1.25;
   }
 
-  /* New lesson mascot call to action */
-  .new-lesson-visible {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-  }
-
-  .new-lesson-prefix {
-    line-height: 1;
-  }
-
-  .lele-mascot-badge {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    min-width: 58px;
-    height: 28px;
-  }
-
-  .lele-monkey-face {
-    position: relative;
-    display: inline-flex;
-    width: 25px;
-    height: 25px;
-    flex: 0 0 25px;
-    overflow: hidden;
-    border-radius: 50%;
-    transform-origin: 50% 70%;
-    animation: lele-monkey-idle 18s ease-in-out infinite;
-  }
-
-  .lele-mascot-badge img {
-    position: absolute;
-    top: -6px;
-    left: -13px;
-    display: block;
-    width: 48px;
-    height: 48px;
-    max-width: none;
-    flex: none;
-    transform-origin: 53% 39%;
-  }
-
-  .new-lesson-cta:hover .lele-monkey-face,
-  .new-lesson-cta:focus-visible .lele-monkey-face {
-    animation-play-state: paused;
-  }
-
-  .new-lesson-cta:hover .lele-monkey-face img,
-  .new-lesson-cta:focus-visible .lele-monkey-face img {
-    animation: lele-monkey-react 360ms ease-out 2;
-  }
-
-  @keyframes lele-monkey-idle {
-    0%,
-    90%,
-    100% {
-      transform: translateY(0) rotate(0deg);
-    }
-
-    92% {
-      transform: translateY(-2px) rotate(-5deg);
-    }
-
-    94% {
-      transform: translateY(-1px) rotate(4deg);
-    }
-
-    96% {
-      transform: translateY(0) rotate(0deg);
-    }
-  }
-
-  @keyframes lele-monkey-react {
-    0%,
-    100% {
-      transform: rotate(0deg) scale(1);
-    }
-
-    35% {
-      transform: translateY(-2px) rotate(-8deg) scale(1.08);
-    }
-
-    68% {
-      transform: translateY(-1px) rotate(5deg) scale(1.04);
-    }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .lele-monkey-face,
     .signature-mascot,
     .signature-thought,
     .signature-tongue,
     .lele-cameo,
     .lele-cameo-stage,
     .lele-cameo-frame,
-    .lele-cameo-balloon,
-    .new-lesson-cta:hover .lele-monkey-face img,
-    .new-lesson-cta:focus-visible .lele-monkey-face img {
+    .lele-cameo-balloon {
       animation: none;
       transform: none;
     }
@@ -1046,38 +983,6 @@
       display: none;
       opacity: 0;
     }
-  }
-
-  .lele-balloon {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 32px;
-    height: 21px;
-    margin-left: 3px;
-    padding: 0 6px;
-    border: 1px solid rgb(255 255 255 / 58%);
-    border-radius: 999px;
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-size: 11px;
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: 0.01em;
-  }
-
-  .lele-balloon::before {
-    position: absolute;
-    left: -5px;
-    bottom: 2px;
-    width: 7px;
-    height: 7px;
-    border-left: 1px solid rgb(255 255 255 / 58%);
-    border-bottom: 1px solid rgb(255 255 255 / 58%);
-    background: var(--color-surface);
-    content: '';
-    transform: rotate(45deg);
   }
 
   /* One-shot illustrated wandering monkey cameo */
@@ -1514,28 +1419,6 @@
     nav a {
       padding: 2px 10px;
       line-height: 1.15;
-    }
-
-    .shell-context {
-      gap: 2px;
-      padding-top: 5px;
-    }
-
-    .shell-context dt,
-    .shell-context dd {
-      font-size: 0.64rem;
-      line-height: 1.15;
-    }
-
-    .language-control {
-      gap: 2px;
-      padding-top: 5px;
-    }
-
-    .language-control select {
-      min-height: 30px;
-      padding-top: 3px;
-      padding-bottom: 3px;
     }
 
     .product-signature {
