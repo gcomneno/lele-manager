@@ -212,7 +212,32 @@ Playwright fixture. They contain no personal vault or runtime data.
 
 ![Canonical Markdown vault tree](images/gui/vault.png)
 
-![Read-only duplicate review](images/gui/duplicates.png)
+![Duplicate review](images/gui/duplicates.png)
+
+### Resolve duplicate candidates deliberately
+
+Duplicate detection is advisory: it never deletes, merges, or changes lesson
+metadata automatically. Each pair keeps both canonical Markdown sources visible
+and offers explicit actions. You can open either exact ID in the editor, keep
+one and permanently delete the other after a confirmation that names both
+lessons, mark the pair as **Not duplicates**, or open **Merge**.
+
+**Not duplicates** is durable local application state, not Markdown metadata.
+It hides the pair only while both lessons retain the same material content:
+body text, title, topic, source, importance, tags, and date. A material change
+makes a detected pair reviewable again. Decisions are currently scoped by the
+resolved vault path; this intentionally isolated temporary scope will migrate
+to registered vault identity in the future multi-vault work.
+
+Merge is a human-controlled editing flow. Choose the existing left or right ID
+that will survive, compare both read-only sources, manually edit the resulting
+lesson, then explicitly confirm saving it and deleting the other source. LeLe
+Manager never auto-concatenates or uses AI to synthesize a merge.
+
+Markdown is canonical. A delete or merge writes canonical sources first and
+refreshes the derived projection/search state afterward. If that refresh fails,
+the screen reports the canonical truth separately and does not pretend that the
+operation rolled back; refresh derived data from System when appropriate.
 
 ![Operations panel and healthy Vault Doctor report](images/gui/ops.png)
 

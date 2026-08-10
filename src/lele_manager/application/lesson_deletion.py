@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from lele_manager.application.candidate_approval import RefreshOutcome
-from lele_manager.core.vault import find_markdown_by_id
+from lele_manager.core.vault import find_markdown_paths_by_id
 
 
 @dataclass(frozen=True)
@@ -61,9 +61,12 @@ def delete_canonical_lesson_source(
     This intentionally performs no projection refresh so a batch can reconcile
     the real final vault state exactly once.
     """
-    markdown_path = find_markdown_by_id(vault_dir, lesson_id)
-    if markdown_path is None:
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    if not matches:
         raise LessonDeletionNotFoundError("canonical lesson was not found")
+    if len(matches) != 1:
+        raise LessonDeletionStorageError("canonical lesson identity is ambiguous")
+    markdown_path = matches[0]
 
     vault_root = vault_dir.resolve()
     resolved_path = markdown_path.resolve()
