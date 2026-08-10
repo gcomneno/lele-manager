@@ -10,6 +10,7 @@
     | 'duplicates'
     | 'system'
     | 'diagnostics'
+    | 'about'
 
   interface Props {
     name: IconName
@@ -28,6 +29,7 @@
   stroke-linecap="round"
   stroke-linejoin="round"
   aria-hidden="true"
+  data-icon={name}
 >
   {#if name === 'dashboard'}
     <rect x="4" y="4" width="6" height="6" rx="1" />
@@ -56,13 +58,17 @@
   {:else if name === 'duplicates'}
     <rect x="4" y="4" width="11" height="11" rx="2" />
     <rect x="9" y="9" width="11" height="11" rx="2" />
+  {:else if name === 'system'}
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
+    <path d="m5.6 5.6 1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
   {:else if name === 'diagnostics'}
     <circle cx="11" cy="11" r="6" />
     <path d="m16 16 4 4" />
     <path d="M8.5 11h5M11 8.5v5" />
-  {:else}
-    <circle cx="12" cy="12" r="3" />
-    <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
-    <path d="m5.6 5.6 1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+  {:else if name === 'about'}
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 11v5" />
+    <path d="M12 8h.01" />
   {/if}
 </svg>
