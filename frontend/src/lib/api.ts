@@ -213,6 +213,32 @@ export interface LessonDeleteResponse {
   refresh_outcome: { refreshed: boolean }
 }
 
+export interface BulkLessonDeleteRequest {
+  lesson_ids: string[]
+}
+
+export interface BulkLessonDeleteDeletedItem {
+  lesson_id: string
+  relative_vault_path: string
+}
+
+export interface BulkLessonDeleteFailedItem {
+  lesson_id: string
+  code: 'not_found' | 'storage_error'
+}
+
+export interface BulkRefreshOutcome {
+  attempted: boolean
+  refreshed: boolean
+}
+
+export interface BulkLessonDeleteResponse {
+  requested_count: number
+  deleted: BulkLessonDeleteDeletedItem[]
+  failed: BulkLessonDeleteFailedItem[]
+  refresh_outcome: BulkRefreshOutcome
+}
+
 export interface OpsRefreshResponse {
   import_result: VaultImportResponse
   train_result?: TrainResponse | null
@@ -553,6 +579,13 @@ export const api = {
   deleteLesson: (id: string) =>
     request<LessonDeleteResponse>(`/lessons/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    }),
+
+  bulkDeleteLessons: (lessonIds: string[]) =>
+    request<BulkLessonDeleteResponse>('/lessons/bulk-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lesson_ids: lessonIds } satisfies BulkLessonDeleteRequest),
     }),
 
   opsRefresh: (train = true) =>

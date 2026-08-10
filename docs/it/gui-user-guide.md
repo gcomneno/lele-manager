@@ -177,6 +177,20 @@ mantiene l’azione esplicita **Verifica similarità**. Elimina mostra sempre il
 titolo della lesson (oppure *Senza titolo*) e l’ID stabile per la conferma,
 prima di rimuovere permanentemente quel preciso file Markdown canonico.
 
+Browse supporta anche la selezione multipla esplicita dello snapshot dei
+risultati caricati. **Seleziona tutte le LeLe visibili** seleziona solo i
+risultati attualmente renderizzati e limitati; non seleziona mai lesson
+nascoste, non caricate o altre corrispondenze del vault/della ricerca. Una nuova
+esecuzione di Cerca o Lista tutte cancella la selezione, anche se alcuni ID sono
+comuni, e richiede di selezionare di nuovo i target. **Elimina selezionate**
+mostra titolo e ID stabile di ogni target prima della conferma. Elimina quelle
+fonti Markdown canoniche e aggiorna la proiezione derivata una sola volta per
+l’intero batch. Errori canonici per target e un errore finale di refresh
+derivato sono comunicati separatamente; le eliminazioni canoniche riuscite
+restano tali. Ispeziona selezione è intenzionalmente rimandato: le API di
+similarità mantenute non definiscono un contratto non ambiguo per un sottoinsieme
+selezionato. La risoluzione delle coppie duplicate resta un workflow separato.
+
 Dopo una normale eliminazione LeLe Manager ricostruisce automaticamente la
 proiezione e lo stato di ricerca derivati: non è necessario usare
 **Sistema → Aggiorna tutto**. Se l’eliminazione Markdown riesce ma il refresh
