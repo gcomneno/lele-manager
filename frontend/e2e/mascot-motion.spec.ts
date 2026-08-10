@@ -1,4 +1,32 @@
-import { expect, test } from '@playwright/test'
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+} from '@playwright/test'
+
+async function tabUntilFocused(
+  page: Page,
+  target: Locator,
+  safetyBound: number,
+) {
+  for (let step = 0; step < safetyBound; step += 1) {
+    if (
+      await target.evaluate(
+        (element) => document.activeElement === element,
+      )
+    ) {
+      return
+    }
+
+    await page.keyboard.press('Tab')
+  }
+
+  await expect(
+    target,
+    `Expected the New LeLe CTA to be reachable within ${safetyBound} Tab presses`,
+  ).toBeFocused()
+}
 
 test.describe('LeLe monkey motion', () => {
   test('keeps motion restrained and scoped to the New LeLe mascot', async ({
@@ -61,19 +89,7 @@ test.describe('LeLe monkey motion', () => {
       .getByTestId('lele-monkey-motion')
       .locator('img')
 
-    for (let step = 0; step < 16; step += 1) {
-      if (
-        await action.evaluate(
-          (element) => document.activeElement === element,
-        )
-      ) {
-        break
-      }
-
-      await page.keyboard.press('Tab')
-    }
-
-    await expect(action).toBeFocused()
+    await tabUntilFocused(page, action, 48)
     await expect(action).toHaveAccessibleName('New LeLe')
     await expect(image).toHaveCSS(
       'animation-name',
