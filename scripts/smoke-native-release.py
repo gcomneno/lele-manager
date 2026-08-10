@@ -177,6 +177,63 @@ def find_linux_icon(extraction_root: Path, version: str) -> Path:
     return candidates[0]
 
 
+def desktop_entry_value(desktop_entry: Path, key: str) -> str:
+    prefix = f"{key}="
+    for line in desktop_entry.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    raise RuntimeError(f"Voce desktop Linux priva di {key}.")
+
+
+def decode_desktop_string(value: str) -> str:
+    escapes = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+    decoded: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "\\":
+            decoded.append(char)
+            index += 1
+            continue
+        if index + 1 == len(value) or value[index + 1] not in escapes:
+            raise RuntimeError(f"Escape desktop non supportato: {value!r}")
+        decoded.append(escapes[value[index + 1]])
+        index += 2
+    return "".join(decoded)
+
+
+def decode_exec_program(value: str) -> str:
+    command_line = decode_desktop_string(value)
+    if len(command_line) < 2 or not (
+        command_line.startswith('"') and command_line.endswith('"')
+    ):
+        raise RuntimeError(f"Exec non e' un singolo token quotato: {value!r}")
+
+    decoded: list[str] = []
+    index = 1
+    while index < len(command_line) - 1:
+        char = command_line[index]
+        if char == "\\":
+            if (
+                index + 1 >= len(command_line) - 1
+                or command_line[index + 1] not in {'"', "`", "$", "\\"}
+            ):
+                raise RuntimeError(f"Escape Exec non valido: {value!r}")
+            decoded.append(command_line[index + 1])
+            index += 2
+        elif char == "%":
+            if index + 1 >= len(command_line) - 1 or command_line[index + 1] != "%":
+                raise RuntimeError(f"Field code Exec inatteso: {value!r}")
+            decoded.append("%")
+            index += 2
+        elif char == '"':
+            raise RuntimeError(f"Virgolette Exec non escaped: {value!r}")
+        else:
+            decoded.append(char)
+            index += 1
+    return "".join(decoded)
+
+
 def choose_free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -412,11 +469,21 @@ def run_linux_installed_smoke(
         "Icon=lele-manager",
         "Categories=Development;",
         "StartupNotify=true",
-        f'Exec="{launcher}"',
-        f'TryExec="{launcher}"',
     ):
         if entry not in desktop:
             raise RuntimeError(f"Voce desktop Linux non valida, manca: {entry}")
+    exec_program = decode_exec_program(desktop_entry_value(desktop_entry, "Exec"))
+    if exec_program != str(launcher):
+        raise RuntimeError(
+            "Exec desktop Linux non risolve al launcher stabile: "
+            f"{exec_program!r} != {str(launcher)!r}"
+        )
+    try_exec = decode_desktop_string(desktop_entry_value(desktop_entry, "TryExec"))
+    if try_exec != str(launcher):
+        raise RuntimeError(
+            "TryExec desktop Linux non rappresenta il launcher stabile: "
+            f"{try_exec!r} != {str(launcher)!r}"
+        )
 
     port = choose_free_loopback_port()
     base_url = f"http://127.0.0.1:{port}"

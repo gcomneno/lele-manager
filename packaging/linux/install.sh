@@ -46,18 +46,48 @@ require_safe_directory() {
     fi
 }
 
-desktop_escape_argument() {
+reject_invalid_desktop_path() {
     local value="$1"
 
     case "$value" in
         *$'\n'*|*$'\r'*) fail "il percorso del launcher non puo' contenere newline" ;;
+        *[[:cntrl:]]*) fail "il percorso del launcher non puo' contenere caratteri di controllo" ;;
+    esac
+}
+
+desktop_escape_exec_program() {
+    local value="$1"
+
+    reject_invalid_desktop_path "$value"
+    case "$value" in
+        *'='*) fail "il percorso del launcher non puo' contenere '=' per Exec" ;;
     esac
 
+    # Exec is a command line. Escape its quoted executable token first, then
+    # escape resulting backslashes for the desktop-entry string layer.
     value="${value//\\/\\\\}"
     value="${value//\"/\\\"}"
     value="${value//\`/\\\`}"
     value="${value//\$/\\\$}"
+    value="${value//%/%%}"
+    value="${value//\\/\\\\}"
     printf '"%s"' "$value"
+}
+
+desktop_escape_string_path() {
+    local value="$1"
+
+    reject_invalid_desktop_path "$value"
+    # TryExec is a desktop-entry string path, not an Exec command line.
+    value="${value//\\/\\\\}"
+    printf '%s' "$value"
+}
+
+desktop_path_is_simple_legacy_path() {
+    case "$1" in
+        *' '*|*'\\'*|*'"'*|*'$'*|*'`'*|*'%'*) return 1 ;;
+    esac
+    return 0
 }
 
 desktop_file_is_owned() {
@@ -69,6 +99,7 @@ desktop_file_is_owned() {
     grep -Fqx 'X-LeLe-Manager-Installer=true' "$path" && return 0
 
     # Adopt the narrowly recognizable pre-#178 manual workaround only.
+    desktop_path_is_simple_legacy_path "$launcher" || return 1
     grep -Fqx '[Desktop Entry]' "$path" &&
         grep -Fqx 'Type=Application' "$path" &&
         grep -Fqx 'Name=LeLe Manager' "$path" &&
@@ -115,6 +146,10 @@ APPLICATIONS_DIR="$DATA_HOME/applications"
 ICON_DIR="$DATA_HOME/icons/hicolor/scalable/apps"
 DESKTOP_ENTRY="$APPLICATIONS_DIR/$PRODUCT_NAME.desktop"
 INSTALLED_ICON="$ICON_DIR/$ICON_NAME"
+
+# Validate and serialize before altering any installed resources.
+LAUNCHER_EXEC="$(desktop_escape_exec_program "$LAUNCHER")"
+LAUNCHER_TRY_EXEC="$(desktop_escape_string_path "$LAUNCHER")"
 
 require_safe_directory "$DATA_HOME" "la directory dati XDG"
 require_safe_directory "$PRODUCT_ROOT" "la radice del prodotto"
@@ -176,13 +211,12 @@ STAGED_EXECUTABLE="$STAGING_DIR/app/$APP_NAME"
 
 cp "$SOURCE_ICON" "$ICON_TMP"
 [ -s "$ICON_TMP" ] || fail "copia staged senza icona Linux"
-LAUNCHER_EXEC="$(desktop_escape_argument "$LAUNCHER")"
 cat > "$DESKTOP_TMP" <<EOF
 [Desktop Entry]
 Type=Application
 Name=LeLe Manager
 Exec=$LAUNCHER_EXEC
-TryExec=$LAUNCHER_EXEC
+TryExec=$LAUNCHER_TRY_EXEC
 Icon=lele-manager
 Terminal=false
 Categories=Development;
