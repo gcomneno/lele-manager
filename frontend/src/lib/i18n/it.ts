@@ -180,6 +180,21 @@ export const it = {
   browseLessons: '{count} lezioni',
   browseEmpty: 'Nessuna LeLe trovata.',
 
+  lessonModify: 'Modifica',
+  lessonInspect: 'Ispeziona',
+  deleteLessonDelete: 'Elimina',
+  deleteLessonTitle: 'Eliminare la LeLe?',
+  deleteLessonId: 'ID',
+  deleteLessonUntitled: 'Senza titolo',
+  deleteLessonCanonical: 'Questa operazione elimina la LeLe Markdown canonica.',
+  deleteLessonIrreversible: "L'operazione non può essere annullata.",
+  deleteLessonCancel: 'Annulla',
+  deleteLessonDeleting: 'Eliminazione…',
+  lessonDeleted: 'LeLe eliminata.',
+  lessonDeletedRefreshFailed:
+    'La LeLe canonica è stata eliminata, ma non è stato possibile aggiornare i dati derivati. I risultati di ricerca e similarità potrebbero essere temporaneamente obsoleti.',
+  lessonDeleteFailed: 'Non è stato possibile eliminare la LeLe.',
+
   detailEdit: 'Modifica',
   detailSimilarLessons: 'LeLe simili',
 

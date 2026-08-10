@@ -27,6 +27,13 @@ from lele_manager.core.runtime_transparency import (
 from lele_manager.core.analytics import compute_metadata_options, compute_stats_summary, compute_timeline
 from lele_manager.application.dataframes import records_to_legacy_dataframe
 from lele_manager.application.external_lessons import external_lessons_feed
+from lele_manager.application.lesson_deletion import (
+    LessonDeletionNotFoundError,
+    LessonDeletionResult,
+    LessonDeletionStorageError,
+    PartialLessonDeletionRefreshError,
+    delete_canonical_lesson,
+)
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
@@ -450,6 +457,17 @@ class LessonVaultCreate(LessonVaultWrite):
         default=None,
         description="ID LeLe. Se omesso viene derivato da topic/data/titolo.",
     )
+
+
+class RefreshOutcomeResponse(BaseModel):
+    refreshed: bool
+
+
+class LessonDeleteResponse(BaseModel):
+    lesson_id: str
+    relative_vault_path: str
+    canonical_deleted: Literal[True]
+    refresh_outcome: RefreshOutcomeResponse
 
 
 class OpsRefreshResponse(BaseModel):
@@ -1609,6 +1627,62 @@ def _write_lesson_to_vault(
     )
 
 
+def _lesson_delete_response(result: LessonDeletionResult) -> LessonDeleteResponse:
+    return LessonDeleteResponse(
+        lesson_id=result.lesson_id,
+        relative_vault_path=result.relative_vault_path,
+        canonical_deleted=result.canonical_deleted,
+        refresh_outcome=RefreshOutcomeResponse(
+            refreshed=result.refresh_outcome.refreshed,
+        ),
+    )
+
+
+def _raise_lesson_deletion_error(error: Exception) -> None:
+    if isinstance(error, PartialLessonDeletionRefreshError):
+        result = error.result
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_deleted_refresh_failed",
+                "message": (
+                    "The canonical lesson was deleted, but derived data could not "
+                    "be refreshed."
+                ),
+                "recovery": {
+                    "canonical_deleted": True,
+                    "lesson_id": result.lesson_id,
+                    "relative_vault_path": result.relative_vault_path,
+                },
+            },
+        ) from error
+    if isinstance(error, LessonDeletionNotFoundError):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "lesson_not_found",
+                "message": "The canonical lesson was not found.",
+            },
+        ) from error
+    if isinstance(error, LessonDeletionStorageError):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_delete_storage_failed",
+                "message": "The canonical lesson could not be deleted.",
+            },
+        ) from error
+    if isinstance(error, FileNotFoundError):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "vault_not_found",
+                "message": "The configured Markdown vault was not found.",
+            },
+        ) from error
+    raise error
+
+
 @app.get("/vault/status", response_model=VaultStatusResponse)
 def vault_status() -> VaultStatusResponse:
     vault_dir = resolve_vault_dir()
@@ -1687,6 +1761,27 @@ def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return get_lesson(lesson_id)
+
+
+@app.delete("/lessons/{lesson_id:path}", response_model=LessonDeleteResponse)
+def delete_lesson(lesson_id: str) -> LessonDeleteResponse:
+    """Delete one canonical Markdown lesson, then refresh its projection."""
+    try:
+        result = delete_canonical_lesson(
+            vault_dir=require_vault_dir(),
+            lesson_id=lesson_id,
+            refresh=_sync_vault_import,
+            invalidate_cache=invalidate_similarity_cache,
+        )
+    except (
+        FileNotFoundError,
+        LessonDeletionNotFoundError,
+        LessonDeletionStorageError,
+        PartialLessonDeletionRefreshError,
+    ) as exc:
+        _raise_lesson_deletion_error(exc)
+        raise AssertionError("unreachable")
+    return _lesson_delete_response(result)
 
 
 @app.post("/ops/refresh", response_model=OpsRefreshResponse)

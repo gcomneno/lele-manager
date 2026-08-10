@@ -163,6 +163,20 @@ bounded from 1 to 5. Similarity can offer a topic only after an explicit check;
 applying it is a separate explicit action. Saving remains the only action that
 writes the canonical Markdown vault.
 
+## Managing an existing LeLe
+
+Browse and lesson Detail expose the same actions for an existing LeLe:
+**Modify**, **Inspect**, and **Delete**. Inspect opens the maintained explained
+similarity surface; Editor keeps its explicit **Check similarity** action while
+editing. Delete always shows the lesson title (or *Untitled*) and stable ID for
+confirmation before permanently removing that exact canonical Markdown file.
+
+After a normal delete, LeLe Manager automatically rebuilds the derived
+projection and search state; you do not need to use **System → Update all**.
+If the Markdown deletion succeeds but the derived refresh fails, the UI reports
+that partial outcome accurately: the canonical lesson is gone, while search and
+similarity may remain stale until a later refresh succeeds.
+
 ## Screenshots
 
 The screenshots in [`images/gui/`](images/gui/) are generated from the isolated
