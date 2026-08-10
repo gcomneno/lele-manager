@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         Thank you. Provide reproducible details and remove sensitive data.
+        If you attach a LeLe Manager diagnostic JSON file, review it first; do not paste secrets or unrelated logs.
   - type: textarea
     id: what-happened
     attributes:
@@ -31,6 +32,14 @@ body:
       label: Logs or output
       description: Paste relevant output without sensitive data.
       render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: LeLe Manager diagnostics (optional)
+      description: Review lele-manager-diagnostics-<version>.json before attaching it here. Do not paste secrets or unrelated logs.
+      placeholder: Drag the reviewed diagnostic JSON file here if you choose to share it.
     validations:
       required: false
   - type: input
