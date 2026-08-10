@@ -380,3 +380,222 @@ def test_delete_last_lesson_publishes_an_empty_projection(
     assert data.read_text(encoding="utf-8") == ""
     assert projection_store(data).snapshot().list() == ()
     assert TestClient(app).get("/lessons/only%2Flesson").status_code == 404
+
+
+def _write_bulk_delete_fixture(vault: Path) -> dict[str, Path]:
+    return {
+        lesson_id: write_lesson_markdown(
+            vault,
+            lesson_id=lesson_id,
+            body=f"Body for {lesson_id}.",
+            topic="bulk",
+            source="note",
+            importance=3,
+            tags=[],
+            date="2026-08-10",
+            title=lesson_id.rsplit("/", 1)[-1],
+        )
+        for lesson_id in ("bulk/a", "bulk/b", "bulk/c")
+    }
+
+
+def test_bulk_delete_removes_only_requested_sources_and_refreshes_once(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+    original_refresh = server_mod._sync_vault_import
+    refresh_count = 0
+
+    def checked_refresh() -> object:
+        nonlocal refresh_count
+        refresh_count += 1
+        assert not paths["bulk/a"].exists()
+        assert not paths["bulk/b"].exists()
+        assert paths["bulk/c"].exists()
+        return original_refresh()
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete", json={"lesson_ids": ["bulk/a", "bulk/b"]}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "requested_count": 2,
+        "deleted": [
+            {"lesson_id": "bulk/a", "relative_vault_path": "bulk/a.md"},
+            {"lesson_id": "bulk/b", "relative_vault_path": "bulk/b.md"},
+        ],
+        "failed": [],
+        "refresh_outcome": {"attempted": True, "refreshed": True},
+    }
+    assert refresh_count == 1
+    assert not paths["bulk/a"].exists()
+    assert not paths["bulk/b"].exists()
+    assert paths["bulk/c"].exists()
+    assert [row["id"] for row in projection_store(data).snapshot().list()] == ["bulk/c"]
+
+
+def test_bulk_delete_continues_after_not_found_and_storage_failure(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+    original_unlink = Path.unlink
+    original_refresh = server_mod._sync_vault_import
+    refresh_count = 0
+
+    def fail_b_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self == paths["bulk/b"].resolve():
+            raise OSError("read-only storage")
+        return original_unlink(self, *args, **kwargs)
+
+    def checked_refresh() -> object:
+        nonlocal refresh_count
+        refresh_count += 1
+        assert not paths["bulk/a"].exists()
+        assert not paths["bulk/c"].exists()
+        assert paths["bulk/b"].exists()
+        return original_refresh()
+
+    monkeypatch.setattr(Path, "unlink", fail_b_unlink)
+    monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete",
+        json={"lesson_ids": ["bulk/a", "bulk/missing", "bulk/b", "bulk/c"]},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["deleted"] == [
+        {"lesson_id": "bulk/a", "relative_vault_path": "bulk/a.md"},
+        {"lesson_id": "bulk/c", "relative_vault_path": "bulk/c.md"},
+    ]
+    assert response.json()["failed"] == [
+        {"lesson_id": "bulk/missing", "code": "not_found"},
+        {"lesson_id": "bulk/b", "code": "storage_error"},
+    ]
+    assert response.json()["refresh_outcome"] == {"attempted": True, "refreshed": True}
+    assert refresh_count == 1
+    assert paths["bulk/b"].exists()
+    assert [row["id"] for row in projection_store(data).snapshot().list()] == ["bulk/b"]
+
+
+def test_bulk_delete_all_canonical_failures_do_not_refresh(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+
+    def forbidden_refresh() -> None:
+        raise AssertionError("refresh must not run without canonical success")
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", forbidden_refresh)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete", json={"lesson_ids": ["bulk/missing"]}
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "requested_count": 1,
+        "deleted": [],
+        "failed": [{"lesson_id": "bulk/missing", "code": "not_found"}],
+        "refresh_outcome": {"attempted": False, "refreshed": False},
+    }
+    assert all(path.exists() for path in paths.values())
+
+
+def test_bulk_delete_refresh_failure_returns_exact_canonical_recovery(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+
+    def failed_refresh() -> None:
+        assert not paths["bulk/a"].exists()
+        assert not paths["bulk/b"].exists()
+        raise OSError("projection unavailable")
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", failed_refresh)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete",
+        json={"lesson_ids": ["bulk/a", "bulk/missing", "bulk/b"]},
+    )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "bulk_lessons_deleted_refresh_failed"
+    assert detail["recovery"] == {
+        "requested_count": 3,
+        "deleted": [
+            {"lesson_id": "bulk/a", "relative_vault_path": "bulk/a.md"},
+            {"lesson_id": "bulk/b", "relative_vault_path": "bulk/b.md"},
+        ],
+        "failed": [{"lesson_id": "bulk/missing", "code": "not_found"}],
+        "refresh_outcome": {"attempted": True, "refreshed": False},
+    }
+    assert not paths["bulk/a"].exists()
+    assert not paths["bulk/b"].exists()
+    assert paths["bulk/c"].exists()
+
+
+def test_bulk_delete_invalidates_similarity_cache_before_one_refresh(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+    events: list[str] = []
+    original_invalidate = server_mod.invalidate_similarity_cache
+    original_refresh = server_mod._sync_vault_import
+
+    def record_invalidation() -> None:
+        events.append("invalidate")
+        original_invalidate()
+
+    def checked_refresh() -> object:
+        events.append("refresh")
+        assert events.count("invalidate") == 2
+        assert not paths["bulk/a"].exists()
+        assert not paths["bulk/b"].exists()
+        return original_refresh()
+
+    monkeypatch.setattr(server_mod, "invalidate_similarity_cache", record_invalidation)
+    monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete", json={"lesson_ids": ["bulk/a", "bulk/b"]}
+    )
+    assert response.status_code == 200
+    assert events[:3] == ["invalidate", "invalidate", "refresh"]
+
+
+@pytest.mark.parametrize(
+    "lesson_ids",
+    [[], ["bulk/a", "bulk/a"], [" "], ["bulk/a"] * 501],
+)
+def test_bulk_delete_rejects_invalid_id_batches(
+    vault_env: tuple[Path, Path], lesson_ids: list[str]
+) -> None:
+    vault, _ = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete", json={"lesson_ids": lesson_ids}
+    )
+    assert response.status_code == 422
+    assert all(path.exists() for path in paths.values())
+
+
+def test_bulk_delete_can_publish_empty_projection(
+    vault_env: tuple[Path, Path],
+) -> None:
+    vault, data = vault_env
+    paths = _write_bulk_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+    response = TestClient(app).post(
+        "/lessons/bulk-delete", json={"lesson_ids": ["bulk/a", "bulk/b", "bulk/c"]}
+    )
+    assert response.status_code == 200
+    assert all(not path.exists() for path in paths.values())
+    assert projection_store(data).snapshot().list() == ()
