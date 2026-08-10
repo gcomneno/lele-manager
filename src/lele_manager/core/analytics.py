@@ -1,11 +1,22 @@
 from __future__ import annotations
 
 from collections import Counter
+import math
 from typing import Any, Dict, Iterable, List, Literal
 
 import pandas as pd
 
 GroupBy = Literal["year", "month", "topic"]
+
+
+def _is_missing_metadata_scalar(value: object) -> bool:
+    """Identify scalar pandas missing values accepted by metadata projections."""
+    return (
+        value is None
+        or value is pd.NA
+        or value is pd.NaT
+        or (isinstance(value, float) and math.isnan(value))
+    )
 
 
 def _iter_tags(df: pd.DataFrame) -> List[str]:
@@ -14,7 +25,12 @@ def _iter_tags(df: pd.DataFrame) -> List[str]:
         return tags
     for raw in df["tags"]:
         if isinstance(raw, list):
-            tags.extend(str(t).strip() for t in raw if str(t).strip())
+            tags.extend(
+                value
+                for tag in raw
+                if not _is_missing_metadata_scalar(tag)
+                if (value := str(tag).strip())
+            )
     return tags
 
 
@@ -27,7 +43,7 @@ def _metadata_facets(values: Iterable[object]) -> List[Dict[str, Any]]:
     counts: Dict[str, int] = {}
     spellings: Dict[str, str] = {}
     for raw in values:
-        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        if _is_missing_metadata_scalar(raw):
             continue
         value = str(raw).strip()
         if not value:
@@ -45,8 +61,8 @@ def _metadata_facets(values: Iterable[object]) -> List[Dict[str, Any]]:
 
 def compute_metadata_options(df: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
     """Complete authoring facets from the current derived lesson projection."""
-    topics = df["topic"] if "topic" in df.columns else []
-    sources = df["source"] if "source" in df.columns else []
+    topics: Iterable[object] = df["topic"] if "topic" in df.columns else []
+    sources: Iterable[object] = df["source"] if "source" in df.columns else []
     tags = _iter_tags(df)
     return {
         "topics": _metadata_facets(topics),
