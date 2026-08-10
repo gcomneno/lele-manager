@@ -49,6 +49,9 @@ def test_editor_metadata_options_are_complete_deterministic_and_read_only(monkey
             {"id": "2", "topic": "python", "source": "Book", "tags": ["pytest", ""]},
             {"id": "3", "topic": "git", "source": "note", "tags": ["git", "PyTest"]},
             {"id": "4", "topic": " ", "source": None, "tags": None},
+            {"id": "5", "topic": float("nan"), "source": pd.NA, "tags": [pd.NA, " "]},
+            {"id": "6", "topic": pd.NA, "source": pd.NaT, "tags": [pd.NaT, float("nan")]},
+            {"id": "7", "topic": pd.NaT, "source": float("nan"), "tags": [" "]},
         ]
     )
     monkeypatch.setattr(server_mod, "load_lessons_df", lambda: df)
