@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from lele_manager.api import server as server_mod
 from lele_manager.api.server import app
 from lele_manager.core.doctor import DoctorOperationalError
+from lele_manager.composition import projection_store
 from lele_manager.core.vault import (
     build_vault_tree,
     find_markdown_by_id,
@@ -208,3 +209,174 @@ def test_api_vault_doctor_returns_server_error_for_operational_failure(
 
     assert response.status_code == 500
     assert response.json()["detail"] == "vault inspection failed"
+
+
+def _write_delete_fixture(vault: Path) -> tuple[Path, Path]:
+    target = write_lesson_markdown(
+        vault,
+        lesson_id="distributed-systems/2026-08-10.retry-semantics",
+        body="Retry only when the canonical operation did not happen.",
+        topic="distributed-systems",
+        source="note",
+        importance=4,
+        tags=["retry"],
+        date="2026-08-10",
+        title="Retry semantics",
+        relative_path="archive/source-of-truth.md",
+    )
+    other = write_lesson_markdown(
+        vault,
+        lesson_id="distributed-systems/2026-08-10.other",
+        body="The other lesson remains.",
+        topic="distributed-systems",
+        source="note",
+        importance=3,
+        tags=["other"],
+        date="2026-08-10",
+        title="Other lesson",
+    )
+    return target, other
+
+
+def test_delete_lesson_removes_exact_canonical_file_then_refreshes_projection(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    target, other = _write_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+    refresh_called = False
+    original_refresh = server_mod._sync_vault_import
+
+    def checked_refresh() -> object:
+        nonlocal refresh_called
+        refresh_called = True
+        assert not target.exists()
+        return original_refresh()
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
+    response = TestClient(app).delete(
+        "/lessons/distributed-systems%2F2026-08-10.retry-semantics"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "lesson_id": "distributed-systems/2026-08-10.retry-semantics",
+        "relative_vault_path": "archive/source-of-truth.md",
+        "canonical_deleted": True,
+        "refresh_outcome": {"refreshed": True},
+    }
+    assert refresh_called
+    assert not target.exists()
+    assert other.exists()
+    assert [row["id"] for row in projection_store(data).snapshot().list()] == [
+        "distributed-systems/2026-08-10.other"
+    ]
+    assert TestClient(app).get(
+        "/lessons/distributed-systems%2F2026-08-10.retry-semantics/similar"
+    ).status_code == 404
+
+
+def test_delete_lesson_wrong_id_does_not_mutate_or_refresh(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    target, other = _write_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+    before = data.read_bytes()
+
+    def forbidden_refresh() -> None:
+        raise AssertionError("refresh must not run for a wrong ID")
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", forbidden_refresh)
+    response = TestClient(app).delete("/lessons/distributed-systems%2Fmissing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "lesson_not_found"
+    assert target.exists()
+    assert other.exists()
+    assert data.read_bytes() == before
+
+
+def test_delete_lesson_reports_partial_refresh_after_canonical_delete(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    target, other = _write_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+
+    def failed_refresh() -> None:
+        assert not target.exists()
+        raise OSError("projection unavailable")
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", failed_refresh)
+    response = TestClient(app).delete(
+        "/lessons/distributed-systems%2F2026-08-10.retry-semantics"
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "lesson_deleted_refresh_failed"
+    assert detail["recovery"] == {
+        "canonical_deleted": True,
+        "lesson_id": "distributed-systems/2026-08-10.retry-semantics",
+        "relative_vault_path": "archive/source-of-truth.md",
+    }
+    assert not target.exists()
+    assert other.exists()
+    # No rollback/recreation and no projection-only repair happened.
+    assert "retry-semantics" in data.read_text(encoding="utf-8")
+
+
+def test_delete_lesson_storage_failure_does_not_refresh_or_claim_success(
+    vault_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault, data = vault_env
+    target, _ = _write_delete_fixture(vault)
+    import_vault_to_jsonl(vault, data)
+
+    def fail_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self == target.resolve():
+            raise OSError("read-only storage")
+        return original_unlink(self, *args, **kwargs)
+
+    def forbidden_refresh() -> None:
+        raise AssertionError("refresh must not run after canonical delete failure")
+
+    original_unlink = Path.unlink
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    monkeypatch.setattr(server_mod, "_sync_vault_import", forbidden_refresh)
+    response = TestClient(app).delete(
+        "/lessons/distributed-systems%2F2026-08-10.retry-semantics"
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "lesson_delete_storage_failed"
+    assert "recovery" not in response.json()["detail"]
+    assert target.exists()
+
+
+def test_delete_last_lesson_publishes_an_empty_projection(
+    vault_env: tuple[Path, Path],
+) -> None:
+    vault, data = vault_env
+    target = write_lesson_markdown(
+        vault,
+        lesson_id="only/lesson",
+        body="Only lesson.",
+        topic="only",
+        source="note",
+        importance=3,
+        tags=[],
+        date="2026-08-10",
+    )
+    import_vault_to_jsonl(vault, data)
+
+    response = TestClient(app).delete("/lessons/only%2Flesson")
+
+    assert response.status_code == 200, response.text
+    assert not target.exists()
+    assert list(vault.rglob("*.md")) == []
+    assert data.is_file()
+    assert data.read_text(encoding="utf-8") == ""
+    assert projection_store(data).snapshot().list() == ()
+    assert TestClient(app).get("/lessons/only%2Flesson").status_code == 404
