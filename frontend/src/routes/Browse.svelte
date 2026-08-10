@@ -4,9 +4,11 @@
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
   import { deleteLessonWithOutcome } from '../lib/lessonDeletion'
+  import { bulkDeleteLessonsWithOutcome } from '../lib/bulkLessonDeletion'
   import { consumeLessonDeletionNotice } from '../lib/lessonDeletionNotice'
   import LessonCard from '../components/LessonCard.svelte'
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
+  import BulkDeleteLessonsDialog from '../components/BulkDeleteLessonsDialog.svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
     Button,
@@ -23,6 +25,7 @@
   let limit = $state(20)
 
   let lessons = $state<Lesson[]>([])
+  let selectedIds = $state<Set<string>>(new Set())
   let loading = $state(false)
   let exporting = $state(false)
   let error = $state('')
@@ -30,6 +33,38 @@
   let deleteTarget = $state<Lesson | null>(null)
   let deleteNotice = $state('')
   let deleteNoticeTone = $state<'success' | 'warning'>('success')
+  let bulkDeleteTargets = $state<Lesson[]>([])
+  let bulkNotice = $state('')
+  let bulkNoticeTone = $state<'success' | 'warning' | 'error'>('success')
+  let bulkFailedIds = $state<string[]>([])
+
+  function clearSelection() {
+    selectedIds = new Set()
+  }
+
+  function replaceResults(nextLessons: Lesson[]) {
+    lessons = nextLessons
+    // A result set is a destructive-selection snapshot boundary. Even IDs in
+    // both snapshots must be explicitly selected again after a new query.
+    clearSelection()
+    bulkNotice = ''
+    bulkFailedIds = []
+  }
+
+  function toggleSelection(lessonId: string, checked: boolean) {
+    const next = new Set(selectedIds)
+    if (checked) next.add(lessonId)
+    else next.delete(lessonId)
+    selectedIds = next
+  }
+
+  function selectAllVisible() {
+    selectedIds = new Set(lessons.map((lesson) => lesson.id))
+  }
+
+  function selectedVisibleLessons() {
+    return lessons.filter((lesson) => selectedIds.has(lesson.id))
+  }
 
   function buildSearchBody(): ExportSearchRequest {
     return {
@@ -76,13 +111,13 @@
     error = ''
     status = $messages.browseSearching
     try {
-      lessons = await api.searchLessons(buildSearchBody())
+      replaceResults(await api.searchLessons(buildSearchBody()))
       status = formatMessage(
         $messages.browseResults,
         { count: lessons.length },
       )
     } catch (e) {
-      lessons = []
+      replaceResults([])
       status = ''
       error = e instanceof Error ? e.message : String(e)
     } finally {
@@ -95,13 +130,13 @@
     error = ''
     status = $messages.commonLoading
     try {
-      lessons = await api.listLessons(Number(limit) || 50)
+      replaceResults(await api.listLessons(Number(limit) || 50))
       status = formatMessage(
         $messages.browseLessons,
         { count: lessons.length },
       )
     } catch (e) {
-      lessons = []
+      replaceResults([])
       status = ''
       error = e instanceof Error ? e.message : String(e)
     } finally {
@@ -127,6 +162,7 @@
     try {
       const outcome = await deleteLessonWithOutcome(lesson.id)
       lessons = lessons.filter((item) => item.id !== lesson.id)
+      toggleSelection(lesson.id, false)
       if (outcome.kind === 'refreshed') {
         deleteNotice = $messages.lessonDeleted
         deleteNoticeTone = 'success'
@@ -138,6 +174,59 @@
     } catch {
       error = $messages.lessonDeleteFailed
       deleteTarget = null
+    }
+  }
+
+  function openBulkDeleteDialog() {
+    bulkDeleteTargets = selectedVisibleLessons()
+  }
+
+  function selectedTitle(lessonId: string) {
+    const lesson = lessons.find((item) => item.id === lessonId)
+    return lesson?.title?.trim() || $messages.deleteLessonUntitled
+  }
+
+  async function deleteSelected(targets: Lesson[]) {
+    error = ''
+    bulkNotice = ''
+    bulkFailedIds = []
+    try {
+      const outcome = await bulkDeleteLessonsWithOutcome(targets.map((lesson) => lesson.id))
+      const response = outcome.response
+      const deletedIds = new Set(response.deleted.map((item) => item.lesson_id))
+      const failedIds = new Set(response.failed.map((item) => item.lesson_id))
+      lessons = lessons.filter((lesson) => !deletedIds.has(lesson.id))
+      selectedIds = new Set(
+        [...selectedIds].filter((id) => failedIds.has(id) && lessons.some((lesson) => lesson.id === id)),
+      )
+      bulkFailedIds = response.failed.map((item) => item.lesson_id)
+
+      if (outcome.kind === 'refresh-failed') {
+        bulkNoticeTone = 'warning'
+        bulkNotice = [
+          $messages.bulkRefreshFailed,
+          response.failed.length
+            ? formatMessage($messages.bulkDeletedMixed, { deleted: response.deleted.length, failed: response.failed.length })
+            : formatMessage($messages.bulkDeleted, { count: response.deleted.length }),
+          $messages.bulkRefreshStale,
+        ].join(' ')
+      } else if (response.deleted.length && response.failed.length) {
+        bulkNoticeTone = 'warning'
+        bulkNotice = formatMessage($messages.bulkDeletedMixed, {
+          deleted: response.deleted.length,
+          failed: response.failed.length,
+        })
+      } else if (response.deleted.length) {
+        bulkNoticeTone = 'success'
+        bulkNotice = formatMessage($messages.bulkDeleted, { count: response.deleted.length })
+      } else {
+        bulkNoticeTone = 'error'
+        bulkNotice = $messages.bulkNothingDeleted
+      }
+      bulkDeleteTargets = []
+    } catch {
+      error = $messages.lessonDeleteFailed
+      bulkDeleteTargets = []
     }
   }
 
@@ -252,6 +341,24 @@
         style="--giu-form-status-padding: var(--space-2) var(--space-3)"
       />
     {/if}
+
+    {#if bulkNotice}
+      <FormStatus
+        message={bulkNotice}
+        tone={bulkNoticeTone}
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+      {#if bulkFailedIds.length}
+        <div class="bulk-failed-targets" role="status">
+          <strong>{$messages.bulkFailedTargets}</strong>
+          <ul>
+            {#each bulkFailedIds as lessonId (lessonId)}
+              <li>{selectedTitle(lessonId)} <span>{lessonId}</span></li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+    {/if}
   </Panel>
 
   <section class="results">
@@ -260,8 +367,32 @@
     {:else if lessons.length === 0}
       <p class="meta">{$messages.browseEmpty}</p>
     {:else}
+      <div class="selection-controls">
+        <Button type="button" variant="secondary" size="compact" class="lele-secondary-button" onclick={selectAllVisible}>
+          {$messages.browseSelectAllVisible}
+        </Button>
+        {#if selectedIds.size > 0}
+          <Button type="button" variant="secondary" size="compact" class="lele-secondary-button" onclick={clearSelection}>
+            {$messages.browseClearSelection}
+          </Button>
+          <div class="bulk-action-bar" aria-live="polite">
+            <strong>{selectedIds.size === 1 ? $messages.browseSelectedOne : formatMessage($messages.browseSelectedMany, { count: selectedIds.size })}</strong>
+            <button type="button" class="delete-action" onclick={openBulkDeleteDialog}>
+              {$messages.bulkDeleteSelected}
+            </button>
+          </div>
+        {/if}
+      </div>
       {#each lessons as lesson}
-        <div class="lesson-result" data-testid={`lesson-result-${lesson.id}`}>
+        <div class:selected={selectedIds.has(lesson.id)} class="lesson-result" data-testid={`lesson-result-${lesson.id}`}>
+          <label class="lesson-selection">
+            <input
+              type="checkbox"
+              checked={selectedIds.has(lesson.id)}
+              onchange={(event) => toggleSelection(lesson.id, event.currentTarget.checked)}
+            />
+            <span>{formatMessage($messages.browseSelectLesson, { title: lesson.title?.trim() || $messages.deleteLessonUntitled, id: lesson.id })}</span>
+          </label>
           <LessonCard
             {lesson}
             onclick={() => navigate({ view: 'detail', id: lesson.id })}
@@ -305,6 +436,12 @@
   onconfirm={deleteLesson}
 />
 
+<BulkDeleteLessonsDialog
+  lessons={bulkDeleteTargets}
+  oncancel={() => { bulkDeleteTargets = [] }}
+  onconfirm={deleteSelected}
+/>
+
 <style>
   .browse {
     display: grid;
@@ -340,7 +477,18 @@
   .lesson-result {
     display: grid;
     gap: var(--space-2);
+    border-radius: var(--radius-sm);
   }
+
+  .lesson-result.selected { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .lesson-selection { display: flex; align-items: center; gap: var(--space-2); padding-inline: var(--space-2); color: var(--color-text); cursor: pointer; }
+  .lesson-selection input { width: 1rem; height: 1rem; accent-color: var(--accent); }
+  .selection-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .bulk-action-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .bulk-failed-targets { padding: var(--space-2) var(--space-3); }
+  .bulk-failed-targets ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+  .bulk-failed-targets span { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
 
   .lesson-actions {
     display: flex;

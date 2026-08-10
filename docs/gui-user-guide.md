@@ -171,6 +171,18 @@ similarity surface; Editor keeps its explicit **Check similarity** action while
 editing. Delete always shows the lesson title (or *Untitled*) and stable ID for
 confirmation before permanently removing that exact canonical Markdown file.
 
+Browse also supports explicit multi-selection for the current loaded result
+snapshot. **Select all visible** selects only the currently rendered, limit-bound
+results; it never selects hidden, unloaded, or other vault/search matches. A new
+Search or List all execution clears the selection, even where IDs overlap, so
+you must select targets again. **Delete selected** shows every selected title
+and stable ID before confirmation. It deletes those canonical Markdown sources,
+then refreshes the derived projection once for the whole batch. Per-target
+canonical failures and a final derived-refresh failure are reported separately;
+canonical successes remain deleted. Inspect selection is intentionally deferred:
+the maintained similarity APIs do not define an unambiguous selected-subset
+contract. Duplicate-pair resolution remains a separate workflow.
+
 After a normal delete, LeLe Manager automatically rebuilds the derived
 projection and search state; you do not need to use **System → Update all**.
 If the Markdown deletion succeeds but the derived refresh fails, the UI reports

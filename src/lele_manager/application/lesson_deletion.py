@@ -1,4 +1,4 @@
-"""Delete one canonical lesson, then reconcile its derived projection."""
+"""Canonical lesson deletion primitives and single-delete compatibility API."""
 
 from __future__ import annotations
 
@@ -41,14 +41,26 @@ class PartialLessonDeletionRefreshError(LessonDeletionError):
         )
 
 
-def delete_canonical_lesson(
+@dataclass(frozen=True)
+class CanonicalLessonDeletionResult:
+    """A source-of-truth deletion completed before derived reconciliation."""
+
+    lesson_id: str
+    relative_vault_path: str
+    canonical_deleted: Literal[True] = True
+
+
+def delete_canonical_lesson_source(
     *,
     vault_dir: Path,
     lesson_id: str,
-    refresh: Callable[[], object],
     invalidate_cache: Callable[[], None],
-) -> LessonDeletionResult:
-    """Delete exactly one resolved Markdown lesson before refreshing derivatives."""
+) -> CanonicalLessonDeletionResult:
+    """Resolve and unlink exactly one in-vault Markdown source safely.
+
+    This intentionally performs no projection refresh so a batch can reconcile
+    the real final vault state exactly once.
+    """
     markdown_path = find_markdown_by_id(vault_dir, lesson_id)
     if markdown_path is None:
         raise LessonDeletionNotFoundError("canonical lesson was not found")
@@ -65,12 +77,31 @@ def delete_canonical_lesson(
     except OSError as exc:
         raise LessonDeletionStorageError("canonical lesson could not be deleted") from exc
 
-    # Clearing the in-memory index now prevents a prior cache from continuing
-    # to serve a lesson that no longer exists in the source of truth.
+    # Do this immediately: a stale in-memory similarity index must never keep
+    # a deleted canonical source alive until a later request.
     invalidate_cache()
-    result = LessonDeletionResult(
+    return CanonicalLessonDeletionResult(
         lesson_id=lesson_id,
         relative_vault_path=relative_path,
+    )
+
+
+def delete_canonical_lesson(
+    *,
+    vault_dir: Path,
+    lesson_id: str,
+    refresh: Callable[[], object],
+    invalidate_cache: Callable[[], None],
+) -> LessonDeletionResult:
+    """Delete exactly one resolved Markdown lesson before refreshing derivatives."""
+    canonical_result = delete_canonical_lesson_source(
+        vault_dir=vault_dir,
+        lesson_id=lesson_id,
+        invalidate_cache=invalidate_cache,
+    )
+    result = LessonDeletionResult(
+        lesson_id=canonical_result.lesson_id,
+        relative_vault_path=canonical_result.relative_vault_path,
         canonical_deleted=True,
         refresh_outcome=RefreshOutcome(refreshed=True),
     )

@@ -7,7 +7,7 @@ import pandas as pd
 from importlib.metadata import PackageNotFoundError, version
 from typing import List, Literal, Optional
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
 from datetime import datetime, timezone
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -28,10 +28,12 @@ from lele_manager.core.analytics import compute_metadata_options, compute_stats_
 from lele_manager.application.dataframes import records_to_legacy_dataframe
 from lele_manager.application.external_lessons import external_lessons_feed
 from lele_manager.application.lesson_deletion import (
+    CanonicalLessonDeletionResult,
     LessonDeletionNotFoundError,
     LessonDeletionResult,
     LessonDeletionStorageError,
     PartialLessonDeletionRefreshError,
+    delete_canonical_lesson_source,
     delete_canonical_lesson,
 )
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
@@ -468,6 +470,42 @@ class LessonDeleteResponse(BaseModel):
     relative_vault_path: str
     canonical_deleted: Literal[True]
     refresh_outcome: RefreshOutcomeResponse
+
+
+class BulkLessonDeleteRequest(BaseModel):
+    """Explicit, bounded IDs from the current Browse result snapshot."""
+
+    lesson_ids: List[str] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_lesson_ids(self) -> "BulkLessonDeleteRequest":
+        if any(not lesson_id.strip() for lesson_id in self.lesson_ids):
+            raise ValueError("lesson_ids must not contain blank IDs")
+        if len(set(self.lesson_ids)) != len(self.lesson_ids):
+            raise ValueError("lesson_ids must not contain duplicate IDs")
+        return self
+
+
+class BulkLessonDeleteDeletedItem(BaseModel):
+    lesson_id: str
+    relative_vault_path: str
+
+
+class BulkLessonDeleteFailedItem(BaseModel):
+    lesson_id: str
+    code: Literal["not_found", "storage_error"]
+
+
+class BulkRefreshOutcomeResponse(BaseModel):
+    attempted: bool
+    refreshed: bool
+
+
+class BulkLessonDeleteResponse(BaseModel):
+    requested_count: int
+    deleted: List[BulkLessonDeleteDeletedItem]
+    failed: List[BulkLessonDeleteFailedItem]
+    refresh_outcome: BulkRefreshOutcomeResponse
 
 
 class OpsRefreshResponse(BaseModel):
@@ -1638,6 +1676,31 @@ def _lesson_delete_response(result: LessonDeletionResult) -> LessonDeleteRespons
     )
 
 
+def _bulk_delete_response(
+    *,
+    requested_count: int,
+    deleted: list[CanonicalLessonDeletionResult],
+    failed: list[BulkLessonDeleteFailedItem],
+    refresh_attempted: bool,
+    refreshed: bool,
+) -> BulkLessonDeleteResponse:
+    return BulkLessonDeleteResponse(
+        requested_count=requested_count,
+        deleted=[
+            BulkLessonDeleteDeletedItem(
+                lesson_id=item.lesson_id,
+                relative_vault_path=item.relative_vault_path,
+            )
+            for item in deleted
+        ],
+        failed=failed,
+        refresh_outcome=BulkRefreshOutcomeResponse(
+            attempted=refresh_attempted,
+            refreshed=refreshed,
+        ),
+    )
+
+
 def _raise_lesson_deletion_error(error: Exception) -> None:
     if isinstance(error, PartialLessonDeletionRefreshError):
         result = error.result
@@ -1782,6 +1845,77 @@ def delete_lesson(lesson_id: str) -> LessonDeleteResponse:
         _raise_lesson_deletion_error(exc)
         raise AssertionError("unreachable")
     return _lesson_delete_response(result)
+
+
+@app.post("/lessons/bulk-delete", response_model=BulkLessonDeleteResponse)
+def bulk_delete_lessons(body: BulkLessonDeleteRequest) -> BulkLessonDeleteResponse:
+    """Delete only the submitted canonical sources, then reconcile once.
+
+    This is deliberately a non-transactional batch: individual canonical
+    failures are reported while later requested targets continue to run.
+    """
+    try:
+        vault_dir = require_vault_dir()
+    except FileNotFoundError as exc:
+        _raise_lesson_deletion_error(exc)
+        raise AssertionError("unreachable")
+
+    deleted: list[CanonicalLessonDeletionResult] = []
+    failed: list[BulkLessonDeleteFailedItem] = []
+    for lesson_id in body.lesson_ids:
+        try:
+            deleted.append(
+                delete_canonical_lesson_source(
+                    vault_dir=vault_dir,
+                    lesson_id=lesson_id,
+                    invalidate_cache=invalidate_similarity_cache,
+                )
+            )
+        except LessonDeletionNotFoundError:
+            failed.append(BulkLessonDeleteFailedItem(lesson_id=lesson_id, code="not_found"))
+        except LessonDeletionStorageError:
+            failed.append(
+                BulkLessonDeleteFailedItem(lesson_id=lesson_id, code="storage_error")
+            )
+
+    if not deleted:
+        return _bulk_delete_response(
+            requested_count=len(body.lesson_ids),
+            deleted=deleted,
+            failed=failed,
+            refresh_attempted=False,
+            refreshed=False,
+        )
+
+    try:
+        _sync_vault_import()
+    except Exception as exc:
+        recovery = _bulk_delete_response(
+            requested_count=len(body.lesson_ids),
+            deleted=deleted,
+            failed=failed,
+            refresh_attempted=True,
+            refreshed=False,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "bulk_lessons_deleted_refresh_failed",
+                "message": (
+                    "Canonical lessons were deleted, but derived data could not be "
+                    "refreshed."
+                ),
+                "recovery": recovery.model_dump(),
+            },
+        ) from exc
+
+    return _bulk_delete_response(
+        requested_count=len(body.lesson_ids),
+        deleted=deleted,
+        failed=failed,
+        refresh_attempted=True,
+        refreshed=True,
+    )
 
 
 @app.post("/ops/refresh", response_model=OpsRefreshResponse)
