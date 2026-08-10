@@ -42,7 +42,7 @@ test.describe('brand foundation', () => {
       ['Vault', '#/vault'],
       ['Duplicates', '#/duplicates'],
       ['System', '#/ops'],
-      ['Settings', '#/settings'],
+      ['Diagnostics', '#/settings'],
       ['About', '#/about'],
     ] as const
 

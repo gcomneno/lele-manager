@@ -21,6 +21,7 @@
   let copyMessage = $state('')
   let diagnostics = $state<DiagnosticsPreviewResponse | null>(null)
   let diagnosticsText = $state('')
+  let diagnosticsCopyMessage = $state('')
   let diagnosticsLoading = $state(false)
   let diagnosticsError = $state('')
 
@@ -83,6 +84,7 @@
     diagnosticsError = ''
     diagnostics = null
     diagnosticsText = ''
+    diagnosticsCopyMessage = ''
 
     try {
       const payload = await api.diagnosticsPreview()
@@ -92,6 +94,21 @@
       diagnosticsError = err instanceof Error ? err.message : String(err)
     } finally {
       diagnosticsLoading = false
+    }
+  }
+
+  async function copyDiagnostics() {
+    if (!diagnosticsText) return
+
+    diagnosticsCopyMessage = ''
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable')
+      }
+      await navigator.clipboard.writeText(diagnosticsText)
+      diagnosticsCopyMessage = $messages.diagnosticsCopied
+    } catch {
+      diagnosticsCopyMessage = $messages.diagnosticsCopyFailed
     }
   }
 
@@ -123,20 +140,89 @@
       tone="error"
     />
   {:else if runtime}
-    <div class="runtime-summary">
+    <section aria-labelledby="diagnostics-status">
+      <div class="section-heading">
+        <h2 id="diagnostics-status">{$messages.settingsStatus}</h2>
+      </div>
+      <div class="runtime-summary">
       <Surface>
         <span class="label">{$messages.settingsVersion}</span>
         <strong>{runtime.version}</strong>
       </Surface>
       <Surface>
         <span class="label">{$messages.settingsHealth}</span>
-        <strong>{runtime.health.status}</strong>
-        <span class="meta">
-          dataset {runtime.health.has_data ? '✓' : '–'} ·
-          model {runtime.health.has_model ? '✓' : '–'}
-        </span>
+        <strong>{runtime.health.status === 'ok' ? $messages.settingsAvailable : runtime.health.status}</strong>
       </Surface>
-    </div>
+      <Surface>
+        <span class="label">{$messages.settingsDataset}</span>
+        <strong>{runtime.health.has_data ? $messages.settingsAvailable : $messages.settingsNotAvailable}</strong>
+      </Surface>
+      <Surface>
+        <span class="label">{$messages.settingsSearchModel}</span>
+        <strong>{runtime.health.has_model ? $messages.settingsReady : $messages.settingsNotAvailable}</strong>
+      </Surface>
+      </div>
+    </section>
+
+    <section class="diagnostics" aria-labelledby="diagnostic-package">
+      <div class="section-heading">
+        <h2 id="diagnostic-package">{$messages.diagnosticsTitle}</h2>
+        <p class="meta">{$messages.diagnosticsIntro}</p>
+      </div>
+
+      <FormActions style="--giu-form-actions-gap: var(--space-2)">
+        <Button size="compact" onclick={generateDiagnostics} disabled={diagnosticsLoading}>
+          {diagnosticsLoading ? $messages.diagnosticsGenerating : $messages.diagnosticsGenerate}
+        </Button>
+        <Button variant="secondary" size="compact" onclick={copyDiagnostics} disabled={!diagnosticsText}>
+          {$messages.diagnosticsCopy}
+        </Button>
+        <Button variant="secondary" size="compact" onclick={saveDiagnostics} disabled={!diagnosticsText}>
+          {$messages.diagnosticsExport}
+        </Button>
+      </FormActions>
+
+      {#if diagnosticsError}
+        <FormStatus message={formatMessage($messages.diagnosticsError, { error: diagnosticsError })} tone="error" />
+      {/if}
+
+      {#if diagnosticsCopyMessage}
+        <FormStatus
+          message={diagnosticsCopyMessage}
+          tone={diagnosticsCopyMessage === $messages.diagnosticsCopied ? 'success' : 'error'}
+        />
+      {/if}
+
+      {#if diagnosticsText}
+        <div class="diagnostic-preview" data-testid="diagnostic-preview">
+          <h3>{$messages.diagnosticsPreviewTitle}</h3>
+          <p class="meta">{$messages.diagnosticsPreviewHelp}</p>
+          <pre>{diagnosticsText}</pre>
+        </div>
+      {/if}
+    </section>
+
+    <section class="support" aria-labelledby="diagnostics-support">
+      <div class="section-heading">
+        <h2 id="diagnostics-support">{$messages.diagnosticsSupportTitle}</h2>
+        <p class="meta">{$messages.diagnosticsSupportIntro}</p>
+        <p class="meta">
+          {#if diagnostics}
+            {formatMessage($messages.diagnosticsSupportAttach, { filename: `lele-manager-diagnostics-${diagnostics.version}.json` })}
+          {:else}
+            {$messages.diagnosticsSupportBeforeGenerate}
+          {/if}
+        </p>
+      </div>
+      <a
+        class="support-action"
+        href="https://github.com/gcomneno/lele-manager/issues/new?template=bug_report.yml"
+        target="_blank"
+        rel="noreferrer"
+      >
+        {$messages.diagnosticsSupportAction}
+      </a>
+    </section>
 
     {#if copyMessage}
       <FormStatus
@@ -145,13 +231,15 @@
       />
     {/if}
 
-    <section aria-labelledby="settings-runtime-paths">
-      <div class="section-heading">
-        <h2 id="settings-runtime-paths">{$messages.settingsRuntimePaths}</h2>
-        <p class="meta">{$messages.settingsRuntimePathsDescription}</p>
-      </div>
+    <details class="technical-details" data-testid="technical-details">
+      <summary>{$messages.diagnosticsTechnicalDetails}</summary>
+      <section aria-labelledby="settings-runtime-paths">
+        <div class="section-heading">
+          <h2 id="settings-runtime-paths">{$messages.settingsRuntimePaths}</h2>
+          <p class="meta">{$messages.settingsRuntimePathsDescription}</p>
+        </div>
 
-      <div class="path-list">
+        <div class="path-list">
         {#each runtime.paths as item}
           <Surface>
             <div class="path-heading">
@@ -193,63 +281,9 @@
             </FormActions>
           </Surface>
         {/each}
-      </div>
-    </section>
-
-    <section
-      class="diagnostics"
-      aria-labelledby="settings-diagnostics"
-    >
-      <div class="section-heading">
-        <h2 id="settings-diagnostics">{$messages.diagnosticsTitle}</h2>
-        <p class="meta">{$messages.diagnosticsIntro}</p>
-      </div>
-
-      <FormActions
-        style="--giu-form-actions-gap: var(--space-2)"
-      >
-        <Button
-          size="compact"
-          onclick={generateDiagnostics}
-          disabled={diagnosticsLoading}
-        >
-          {diagnosticsLoading
-            ? $messages.diagnosticsGenerating
-            : $messages.diagnosticsGenerate}
-        </Button>
-
-        {#if diagnosticsText}
-          <Button
-            variant="secondary"
-            size="compact"
-            onclick={saveDiagnostics}
-          >
-            {$messages.diagnosticsExport}
-          </Button>
-        {/if}
-      </FormActions>
-
-      {#if diagnosticsError}
-        <FormStatus
-          message={formatMessage(
-            $messages.diagnosticsError,
-            { error: diagnosticsError },
-          )}
-          tone="error"
-        />
-      {/if}
-
-      {#if diagnosticsText}
-        <div
-          class="diagnostic-preview"
-          data-testid="diagnostic-preview"
-        >
-          <h3>{$messages.diagnosticsPreviewTitle}</h3>
-          <p class="meta">{$messages.diagnosticsPreviewHelp}</p>
-          <pre>{diagnosticsText}</pre>
         </div>
-      {/if}
-    </section>
+      </section>
+    </details>
   {/if}
 </Panel>
 
@@ -328,6 +362,37 @@
 
   .diagnostics {
     margin-top: var(--space-6);
+  }
+
+  .support,
+  .technical-details {
+    margin-top: var(--space-6);
+  }
+
+  .technical-details summary {
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .technical-details section {
+    margin-top: var(--space-4);
+  }
+
+  .support-action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--color-brand-600);
+    color: var(--color-text-inverse);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .support-action:focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
   }
 
   .diagnostic-preview {

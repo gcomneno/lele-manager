@@ -9,6 +9,7 @@
     | 'vault'
     | 'duplicates'
     | 'system'
+    | 'diagnostics'
 
   interface Props {
     name: IconName
@@ -55,6 +56,10 @@
   {:else if name === 'duplicates'}
     <rect x="4" y="4" width="11" height="11" rx="2" />
     <rect x="9" y="9" width="11" height="11" rx="2" />
+  {:else if name === 'diagnostics'}
+    <circle cx="11" cy="11" r="6" />
+    <path d="m16 16 4 4" />
+    <path d="M8.5 11h5M11 8.5v5" />
   {:else}
     <circle cx="12" cy="12" r="3" />
     <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
