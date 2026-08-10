@@ -163,6 +163,77 @@ def find_linux_installer(extraction_root: Path, version: str) -> Path:
     return candidates[0]
 
 
+def find_linux_icon(extraction_root: Path, version: str) -> Path:
+    candidates = sorted(
+        extraction_root.glob(
+            f"{APP_NAME}-v{version}-Linux-*/lele-manager.svg"
+        )
+    )
+    if len(candidates) != 1 or not candidates[0].is_file():
+        raise RuntimeError(
+            "Icona Linux packaged non trovata in modo univoco: "
+            f"{candidates}"
+        )
+    return candidates[0]
+
+
+def desktop_entry_value(desktop_entry: Path, key: str) -> str:
+    prefix = f"{key}="
+    for line in desktop_entry.read_text(encoding="utf-8").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    raise RuntimeError(f"Voce desktop Linux priva di {key}.")
+
+
+def decode_desktop_string(value: str) -> str:
+    escapes = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+    decoded: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "\\":
+            decoded.append(char)
+            index += 1
+            continue
+        if index + 1 == len(value) or value[index + 1] not in escapes:
+            raise RuntimeError(f"Escape desktop non supportato: {value!r}")
+        decoded.append(escapes[value[index + 1]])
+        index += 2
+    return "".join(decoded)
+
+
+def decode_exec_program(value: str) -> str:
+    command_line = decode_desktop_string(value)
+    if len(command_line) < 2 or not (
+        command_line.startswith('"') and command_line.endswith('"')
+    ):
+        raise RuntimeError(f"Exec non e' un singolo token quotato: {value!r}")
+
+    decoded: list[str] = []
+    index = 1
+    while index < len(command_line) - 1:
+        char = command_line[index]
+        if char == "\\":
+            if (
+                index + 1 >= len(command_line) - 1
+                or command_line[index + 1] not in {'"', "`", "$", "\\"}
+            ):
+                raise RuntimeError(f"Escape Exec non valido: {value!r}")
+            decoded.append(command_line[index + 1])
+            index += 2
+        elif char == "%":
+            if index + 1 >= len(command_line) - 1 or command_line[index + 1] != "%":
+                raise RuntimeError(f"Field code Exec inatteso: {value!r}")
+            decoded.append("%")
+            index += 2
+        elif char == '"':
+            raise RuntimeError(f"Virgolette Exec non escaped: {value!r}")
+        else:
+            decoded.append(char)
+            index += 1
+    return "".join(decoded)
+
+
 def choose_free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -333,6 +404,7 @@ def validate_running_release(
 
 def run_linux_installed_smoke(
     installer: Path,
+    packaged_icon: Path,
     version: str,
     temporary_root: Path,
     environment: dict[str, str],
@@ -380,6 +452,38 @@ def run_linux_installed_smoke(
             "Bundle Linux installato assente: "
             f"{installed_executable}"
         )
+    desktop_entry = install_data_home / "applications" / "lele-manager.desktop"
+    installed_icon = (
+        install_data_home / "icons/hicolor/scalable/apps/lele-manager.svg"
+    )
+    if not desktop_entry.is_file():
+        raise RuntimeError(f"Voce desktop Linux installata assente: {desktop_entry}")
+    if not installed_icon.is_file() or installed_icon.read_bytes() != packaged_icon.read_bytes():
+        raise RuntimeError("Icona Linux installata assente o diversa da quella packaged.")
+    desktop = desktop_entry.read_text(encoding="utf-8")
+    for entry in (
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=LeLe Manager",
+        "Terminal=false",
+        "Icon=lele-manager",
+        "Categories=Development;",
+        "StartupNotify=true",
+    ):
+        if entry not in desktop:
+            raise RuntimeError(f"Voce desktop Linux non valida, manca: {entry}")
+    exec_program = decode_exec_program(desktop_entry_value(desktop_entry, "Exec"))
+    if exec_program != str(launcher):
+        raise RuntimeError(
+            "Exec desktop Linux non risolve al launcher stabile: "
+            f"{exec_program!r} != {str(launcher)!r}"
+        )
+    try_exec = decode_desktop_string(desktop_entry_value(desktop_entry, "TryExec"))
+    if try_exec != str(launcher):
+        raise RuntimeError(
+            "TryExec desktop Linux non rappresenta il launcher stabile: "
+            f"{try_exec!r} != {str(launcher)!r}"
+        )
 
     port = choose_free_loopback_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -406,7 +510,7 @@ def run_linux_installed_smoke(
         finally:
             terminate_process(process)
 
-    print("OK: installer Linux e launcher stabile verificati.")
+    print("OK: installer Linux, launcher stabile e integrazione desktop verificati.")
 
 
 def main() -> int:
@@ -439,6 +543,7 @@ def main() -> int:
         )
         if os_label == "Linux":
             installer = find_linux_installer(extraction_root, version)
+            packaged_icon = find_linux_icon(extraction_root, version)
             print(f"Installer:    {installer}")
 
         port = choose_free_loopback_port()
@@ -483,6 +588,7 @@ def main() -> int:
         if os_label == "Linux":
             run_linux_installed_smoke(
                 installer,
+                packaged_icon,
                 version,
                 temp_root,
                 environment,

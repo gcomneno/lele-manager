@@ -89,9 +89,16 @@ all'aggiornamento della cartella applicativa estratta.
 Su Linux l'archive include anche `./install.sh` per un'installazione locale
 utente esplicita. L'installer colloca l'app nativa in
 `${XDG_DATA_HOME:-~/.local/share}/lele-manager/install/app` e crea il launcher
-stabile `~/.local/bin/lele-manager`. La directory `lele-manager` resta lo
-spazio dei dati runtime persistenti; solo `install/` e' gestita e sostituibile
-dall'installer. L'archive estratto resta utilizzabile in modo portabile.
+stabile `~/.local/bin/lele-manager`, la voce del menu applicazioni in
+`${XDG_DATA_HOME:-~/.local/share}/applications/lele-manager.desktop` e l'icona
+ufficiale in `${XDG_DATA_HOME:-~/.local/share}/icons/hicolor/scalable/apps/lele-manager.svg`.
+La voce menu avvia sempre il launcher stabile, quindi e' adatta a preferiti e
+dock e resta valida dopo gli aggiornamenti. La directory `lele-manager` resta
+lo spazio dei dati runtime persistenti; solo `install/` e' gestita e sostituibile
+dall'installer. L'archive estratto resta utilizzabile in modo portabile e non
+registra risorse desktop.
+I percorsi del launcher con spazi sono supportati; i caratteri newline sono
+rifiutati perche' non rappresentabili nel comando di una voce desktop.
 
 Ogni archive nativo include `LEGGIMI_PRIMA.txt` con istruzioni di primo avvio
 specifiche per la piattaforma.
