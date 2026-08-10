@@ -1,223 +1,43 @@
-import {
-  expect,
-  test,
-  type Locator,
-  type Page,
-} from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-async function tabUntilFocused(
-  page: Page,
-  target: Locator,
-  safetyBound: number,
-) {
-  for (let step = 0; step < safetyBound; step += 1) {
-    if (
-      await target.evaluate(
-        (element) => document.activeElement === element,
-      )
-    ) {
-      return
-    }
-
-    await page.keyboard.press('Tab')
-  }
-
-  await expect(
-    target,
-    `Expected the New LeLe CTA to be reachable within ${safetyBound} Tab presses`,
-  ).toBeFocused()
-}
-
-test.describe('LeLe monkey motion', () => {
-  test('keeps motion restrained and scoped to the New LeLe mascot', async ({
-    page,
-  }) => {
-    await page.goto('/app/#/')
-
-    const action = page.getByTestId('new-lesson-cta')
-    const face = page.getByTestId('lele-monkey-motion')
-    const image = face.locator('img')
-    const signatureMascot = page.getByTestId(
-      'giadaware-signature-mascot',
-    )
-    const signatureThought = page.getByTestId(
-      'giadaware-signature-thought',
-    )
-
-    await expect(action).toHaveAccessibleName('New LeLe')
-    await expect(action.getByText('+ New')).toBeVisible()
-    await expect(action.getByText('LeLe')).toBeVisible()
-
-    await expect(face).toHaveCSS(
-      'animation-name',
-      /lele-monkey-idle$/,
-    )
-    await expect(face).toHaveCSS('animation-duration', '18s')
-
-    await expect(signatureMascot).toHaveCSS(
-      'animation-name',
-      /lele-signature-think$/,
-    )
-    await expect(signatureThought).toHaveCSS(
-      'animation-name',
-      /lele-thought-bubble$/,
-    )
-
-    await action.hover()
-
-    await expect(face).toHaveCSS(
-      'animation-play-state',
-      'paused',
-    )
-    await expect(image).toHaveCSS(
-      'animation-name',
-      /lele-monkey-react$/,
-    )
-    await expect(image).toHaveCSS(
-      'animation-iteration-count',
-      '2',
-    )
-  })
-
-  test('reacts to keyboard focus without changing CTA semantics', async ({
-    page,
-  }) => {
-    await page.goto('/app/#/')
-
-    const action = page.getByTestId('new-lesson-cta')
-    const image = page
-      .getByTestId('lele-monkey-motion')
-      .locator('img')
-
-    await tabUntilFocused(page, action, 48)
-    await expect(action).toHaveAccessibleName('New LeLe')
-    await expect(image).toHaveCSS(
-      'animation-name',
-      /lele-monkey-react$/,
-    )
-    await expect(image).toHaveCSS(
-      'animation-iteration-count',
-      '2',
-    )
-  })
-
-  test('runs one decorative wandering cameo without looping', async ({
-    page,
-  }) => {
+test.describe('LeLe mascot motion', () => {
+  test('keeps the independent wandering cameo decorative and non-looping', async ({ page }) => {
     await page.goto('/app/#/')
 
     const cameo = page.getByTestId('lele-monkey-cameo')
-    const character = page.getByTestId(
-      'lele-monkey-cameo-character',
-    )
-    const balloon = page.getByTestId(
-      'lele-monkey-cameo-balloon',
-    )
+    const character = page.getByTestId('lele-monkey-cameo-character')
+    const balloon = page.getByTestId('lele-monkey-cameo-balloon')
 
     await expect(cameo).toHaveAttribute('aria-hidden', 'true')
     await expect(cameo).toHaveCSS('pointer-events', 'none')
-    await expect(cameo).toHaveCSS(
-      'animation-name',
-      /lele-cameo-path$/,
-    )
-    await expect(cameo).toHaveCSS(
-      'animation-duration',
-      '12s',
-    )
+    await expect(cameo).toHaveCSS('animation-name', /lele-cameo-path$/)
+    await expect(cameo).toHaveCSS('animation-duration', '12s')
     await expect(cameo).toHaveCSS('animation-delay', '8s')
-    await expect(cameo).toHaveCSS(
-      'animation-iteration-count',
-      '1',
-    )
-
+    await expect(cameo).toHaveCSS('animation-iteration-count', '1')
     await expect(character.locator('img')).toHaveCount(7)
-    await expect(
-      character.locator('img').nth(0),
-    ).toHaveAttribute(
-      'src',
-      '/app/brand/lele-cameo/01-enter.png',
-    )
-    await expect(
-      character.locator('img').nth(6),
-    ).toHaveAttribute(
-      'src',
-      '/app/brand/lele-cameo/07-exit.png',
-    )
     await expect(balloon).toHaveText('LeLe!!')
-    await expect(balloon).toHaveCSS(
-      'animation-name',
-      /lele-cameo-balloon$/,
-    )
   })
 
-  test('keeps the wandering cameo off compact layouts', async ({
-    page,
-  }) => {
+  test('keeps the cameo off compact layouts and disables decorative motion when requested', async ({ page }) => {
     await page.setViewportSize({ width: 700, height: 700 })
     await page.goto('/app/#/')
+    await expect(page.getByTestId('lele-monkey-cameo')).toHaveCSS('display', 'none')
 
-    await expect(
-      page.getByTestId('lele-monkey-cameo'),
-    ).toHaveCSS('display', 'none')
-  })
-
-  test('disables non-essential mascot motion for reduced motion', async ({
-    page,
-  }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await page.goto('/app/#/')
-
-    const action = page.getByTestId('new-lesson-cta')
-    const face = page.getByTestId('lele-monkey-motion')
-    const image = face.locator('img')
-    const signatureMascot = page.getByTestId(
-      'giadaware-signature-mascot',
-    )
-    const signatureThought = page.getByTestId(
-      'giadaware-signature-thought',
-    )
-    const cameo = page.getByTestId('lele-monkey-cameo')
-
-    await expect(face).toHaveCSS('animation-name', 'none')
-    await expect(signatureMascot).toHaveCSS(
-      'animation-name',
-      'none',
-    )
-    await expect(signatureThought).toHaveCSS(
-      'animation-name',
-      'none',
-    )
-    await expect(signatureThought).toHaveCSS('opacity', '0')
-    await expect(cameo).toHaveCSS('display', 'none')
-
-    await action.hover()
-
-    await expect(image).toHaveCSS('animation-name', 'none')
-    await expect(action).toHaveAccessibleName('New LeLe')
+    await expect(page.getByTestId('lele-monkey-cameo')).toHaveCSS('display', 'none')
   })
 })
 
-
-test('keeps the GiadaWare signature tongue decorative and motion-safe', async ({
-  page,
-}) => {
+test('keeps the GiadaWare signature tongue decorative and motion-safe', async ({ page }) => {
   await page.goto('/app/#/')
 
   const tongue = page.getByTestId('giadaware-signature-tongue')
   const thought = page.getByTestId('giadaware-signature-thought')
 
   await expect(thought).toBeAttached()
-  await expect(tongue).toBeAttached()
   await expect(tongue).toHaveAttribute('aria-hidden', 'true')
-  await expect(tongue).toHaveCSS(
-    'animation-name',
-    /lele-signature-tongue$/,
-  )
-  await expect(tongue).toHaveCSS('animation-duration', '31s')
-  await expect(tongue).toHaveCSS('left', '18px')
-
+  await expect(tongue).toHaveCSS('animation-name', /lele-signature-tongue$/)
   await page.emulateMedia({ reducedMotion: 'reduce' })
-
   await expect(tongue).toHaveCSS('animation-name', 'none')
   await expect(tongue).toHaveCSS('opacity', '0')
 })

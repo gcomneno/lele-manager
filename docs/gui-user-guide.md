@@ -48,8 +48,8 @@ imported and the topic model retrained.
 ## GUI language
 
 LeLe Manager starts in **English** when no explicit language choice is stored.
-The language selector is in the sidebar, immediately above the GiadaWare
-signature. The maintained GUI languages are **English** and **Italiano**.
+The language selector is in the always-reachable global header. The maintained
+GUI languages are **English** and **Italiano**.
 
 Changing language updates the GUI immediately without reloading the page. The
 explicit choice is stored locally in the browser under
@@ -60,6 +60,31 @@ used.
 GUI localization affects product presentation only. It does not translate or
 modify user-authored LeLe, Markdown vault content, dataset values, topic names,
 source names, paths, IDs, API payloads or navigation identities.
+
+## Application shell
+
+The global header contains application-wide context and utilities: the current
+workspace name, compact API/dataset/search-model status, language control,
+**Search or commands**, and **Help**. It deliberately does not contain page
+actions such as Save, Delete, model refresh, or a permanent creation CTA.
+Version and full product identity remain authoritative in **About**.
+
+Use the navigation button in the header to show or hide the complete sidebar.
+This preference is stored locally as `lele-manager.sidebar-visible.v1` and is
+independent from the collapsible **Knowledge**, **Capture**, and **Manage**
+groups. Hiding the sidebar never removes the header controls; showing it again
+preserves group disclosure and the current navigation item.
+
+Use **Search or commands** or **Ctrl+K** to quickly open real destinations,
+including Dashboard, Browse, Timeline, Statistics, Collection, Vault,
+Duplicates, System, Diagnostics, About, and **New LeLe**. Search LeLe opens
+Browse; it does not create a second search system. **New LeLe** remains under
+**Capture** in navigation and is also available as an explicit command.
+
+**Help** provides the user guide, Diagnostics, the maintained GitHub bug-report
+form, About, and the command shortcut reminder. It neither generates nor sends
+diagnostic data. On narrow screens the header stays available above recoverable
+navigation and avoids horizontal overflow.
 
 ## Daily workflow
 
