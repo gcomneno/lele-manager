@@ -221,6 +221,17 @@ export interface TopicCount {
   count: number
 }
 
+export interface MetadataOption {
+  value: string
+  count: number
+}
+
+export interface EditorMetadataOptionsResponse {
+  topics: MetadataOption[]
+  tags: MetadataOption[]
+  sources: MetadataOption[]
+}
+
 export interface StatsSummaryResponse {
   n_lessons: number
   n_topics: number
@@ -502,6 +513,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, top_k: topK, min_score: minScore }),
     }),
+
+  editorMetadataOptions: () =>
+    request<EditorMetadataOptionsResponse>('/editor/metadata-options'),
 
   trainTopic: () =>
     request<TrainResponse>('/train/topic', { method: 'POST' }),

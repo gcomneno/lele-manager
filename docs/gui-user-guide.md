@@ -153,6 +153,16 @@ reference, repository, issue tracker, releases, changelog and documentation
 links, plus the local-first statement. LeLe Manager itself introduces no
 account, telemetry, cloud storage or remote knowledge service.
 
+## Metadata authoring
+
+Editor loads local, read-only suggestions for known topics, tags, and sources
+from the current lesson projection. They are conveniences: you may write a new
+topic, tag, or source, and suggestions never change metadata automatically.
+Tags are added and removed as visible chips, while Importance is explicitly
+bounded from 1 to 5. Similarity can offer a topic only after an explicit check;
+applying it is a separate explicit action. Saving remains the only action that
+writes the canonical Markdown vault.
+
 ## Screenshots
 
 The screenshots in [`images/gui/`](images/gui/) are generated from the isolated
