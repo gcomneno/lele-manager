@@ -370,16 +370,27 @@ test.describe('GUI localization', () => {
     await resetLocale(page)
     await page.goto('/app/#/browse')
 
-    const firstCard = page.locator('.lesson-card').first()
+    const lessonId = 'e2e/python-lesson'
+    const lessonCard = page
+      .getByTestId(`lesson-result-${lessonId}`)
+      .locator('.lesson-card')
 
-    await expect(firstCard).toBeVisible({
+    await expect(lessonCard).toBeVisible({
       timeout: 15_000,
     })
 
-    await firstCard.click()
+    await lessonCard.click()
+    await expect(page).toHaveURL(
+      new RegExp(`#\\/lesson\\/${encodeURIComponent(lessonId)}$`),
+    )
+
+    const detailPanel = page.getByRole('region', {
+      name: lessonId,
+      exact: true,
+    })
 
     await expect(
-      page.getByRole('button', {
+      detailPanel.getByRole('button', {
         name: 'Modify',
         exact: true,
       }),
@@ -397,7 +408,7 @@ test.describe('GUI localization', () => {
       .selectOption('it')
 
     await expect(
-      page.getByRole('button', {
+      detailPanel.getByRole('button', {
         name: 'Modifica',
         exact: true,
       }),
