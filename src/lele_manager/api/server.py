@@ -5,7 +5,7 @@ import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Mapping, Optional, cast
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
@@ -19,7 +19,19 @@ from lele_manager.application.lesson_candidate import (
     CandidateRepositoryError,
     CandidateState,
 )
-from lele_manager.core.paths import candidates_path
+from lele_manager.core.paths import candidates_path, duplicate_decisions_path
+from lele_manager.core.duplicate_decisions import (
+    DuplicateDecisionStore,
+    DuplicateDecisionStoreError,
+    current_vault_scope,
+    material_fingerprint,
+)
+from lele_manager.application.lesson_writing import (
+    CanonicalLessonWriteAmbiguousError,
+    CanonicalLessonWriteNotFoundError,
+    CanonicalLessonWriteStorageError,
+    write_canonical_lesson_source,
+)
 from lele_manager.core.runtime_transparency import (
     RuntimePathDescription,
     describe_runtime_paths,
@@ -50,12 +62,14 @@ from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
     build_vault_tree,
     find_markdown_by_id,
+    find_markdown_paths_by_id,
     import_vault_to_jsonl,
     require_vault_dir,
     resolve_vault_dir,
     default_relative_path,
     write_lesson_markdown,
 )
+from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
 from lele_manager.ml.similarity import LessonSimilarityIndex
 from lele_manager.ml.topic_model import (
     load_topic_model,
@@ -69,6 +83,7 @@ from lele_manager.api.tritalele import router as tritalele_router
 # Override espliciti (usati nei test via monkeypatch) — se None si usa default_*_path()
 DATA_PATH: Path | None = None
 MODEL_PATH: Path | None = None
+DUPLICATE_DECISIONS_PATH: Path | None = None
 
 
 def get_data_path() -> Path:
@@ -77,6 +92,14 @@ def get_data_path() -> Path:
 
 def get_model_path() -> Path:
     return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
+
+
+def get_duplicate_decisions_path() -> Path:
+    return (
+        DUPLICATE_DECISIONS_PATH
+        if DUPLICATE_DECISIONS_PATH is not None
+        else duplicate_decisions_path()
+    )
 
 
 def resolve_gui_dir() -> Path | None:
@@ -294,6 +317,10 @@ class DuplicatePairResponse(BaseModel):
     score: float
     reasons: List[str]
     shared_tags: List[str]
+    left_fingerprint: str
+    right_fingerprint: str
+    resolution_available: bool
+    resolution_problem: Optional[str] = None
     left_lesson: DuplicateLessonSnapshot
     right_lesson: DuplicateLessonSnapshot
 
@@ -305,7 +332,52 @@ class DuplicateReportResponse(BaseModel):
     near_pairs: int
     min_score: float
     exact_only: bool
+    suppressed_pairs: int = 0
     pairs: List[DuplicatePairResponse]
+
+
+class DuplicateNotDuplicatesRequest(BaseModel):
+    left_id: str = Field(min_length=1)
+    right_id: str = Field(min_length=1)
+    left_fingerprint: str = Field(min_length=1)
+    right_fingerprint: str = Field(min_length=1)
+
+
+class DuplicateDecisionResponse(BaseModel):
+    left_id: str
+    right_id: str
+    left_fingerprint: str
+    right_fingerprint: str
+    decided_at: str
+
+
+class DuplicateMergeRefreshOutcomeResponse(BaseModel):
+    attempted: bool
+    refreshed: bool
+
+
+class DuplicateMergeRequest(BaseModel):
+    survivor_id: str = Field(min_length=1)
+    superseded_id: str = Field(min_length=1)
+    expected_survivor_fingerprint: str = Field(min_length=1)
+    expected_superseded_fingerprint: str = Field(min_length=1)
+    result: "LessonVaultWrite"
+
+    @model_validator(mode="after")
+    def validate_distinct_ids(self) -> "DuplicateMergeRequest":
+        if self.survivor_id == self.superseded_id:
+            raise ValueError("survivor_id and superseded_id must be distinct")
+        return self
+
+
+class DuplicateMergeResponse(BaseModel):
+    completed: bool
+    survivor_id: str
+    survivor_written: bool
+    superseded_id: str
+    superseded_deleted: bool
+    refresh_outcome: DuplicateMergeRefreshOutcomeResponse
+    failure: Optional[dict[str, str]] = None
 
 
 class TrainResponse(BaseModel):
@@ -812,7 +884,7 @@ def _to_optional_str(value) -> Optional[str]:
     return str(value)
 
 
-def _row_to_search_result(row: dict) -> LessonSearchResult:
+def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
     """Converte una riga (dict) del DataFrame in LessonSearchResult, con la stessa
     normalizzazione usata in GET /lessons.
     """
@@ -858,7 +930,7 @@ def _row_to_search_result(row: dict) -> LessonSearchResult:
     )
 
 
-def _row_to_duplicate_snapshot(row: dict) -> DuplicateLessonSnapshot:
+def _row_to_duplicate_snapshot(row: Mapping[Any, Any]) -> DuplicateLessonSnapshot:
     """Return display data for a duplicate pair without using its (non-unique) ID."""
     lesson = _row_to_search_result(row)
     return DuplicateLessonSnapshot(
@@ -866,6 +938,60 @@ def _row_to_duplicate_snapshot(row: dict) -> DuplicateLessonSnapshot:
         created_at=_to_optional_str(row.get("created_at")),
         path=_to_optional_str(row.get("path")),
     )
+
+
+class _CanonicalDuplicateIdentityError(Exception):
+    pass
+
+
+def _canonical_duplicate_lesson(vault_dir: Path, lesson_id: str) -> dict:
+    """Read one unambiguous canonical source for stale-write validation."""
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    if not matches:
+        raise _CanonicalDuplicateIdentityError("not_found")
+    if len(matches) != 1:
+        raise _CanonicalDuplicateIdentityError("ambiguous")
+    try:
+        frontmatter, body = parse_markdown_with_frontmatter(
+            matches[0].read_text(encoding="utf-8")
+        )
+    except OSError as exc:
+        raise _CanonicalDuplicateIdentityError("storage") from exc
+    actual_id = frontmatter.get("id") or lesson_id
+    if not isinstance(actual_id, str) or actual_id.strip() != lesson_id:
+        raise _CanonicalDuplicateIdentityError("ambiguous")
+    return {
+        "id": lesson_id,
+        "text": body,
+        "title": frontmatter.get("title"),
+        "topic": frontmatter.get("topic"),
+        "source": frontmatter.get("source"),
+        "importance": frontmatter.get("importance"),
+        "tags": frontmatter.get("tags"),
+        "date": frontmatter.get("date"),
+    }
+
+
+def _duplicate_pair_safety(
+    left_id: str, right_id: str, vault_dir: Path | None = None,
+) -> tuple[bool, str | None]:
+    if not left_id or not right_id:
+        return False, "Canonical identity is missing; repair the vault before resolving this pair."
+    if left_id == right_id:
+        return False, "Both sides have the same ID; repair duplicate canonical IDs before resolving this pair."
+    if vault_dir is not None:
+        if not vault_dir.is_dir():
+            return False, "The configured Markdown vault is unavailable; duplicate resolution needs canonical sources."
+        if len(find_markdown_paths_by_id(vault_dir, left_id)) != 1 or len(find_markdown_paths_by_id(vault_dir, right_id)) != 1:
+            return False, "Canonical identity is ambiguous; repair it in Vault Doctor before resolving this pair."
+    return True, None
+
+
+def _duplicate_error(status: int, code: str, message: str, recovery: dict | None = None) -> HTTPException:
+    detail: dict[str, object] = {"code": code, "message": message}
+    if recovery is not None:
+        detail["recovery"] = recovery
+    return HTTPException(status_code=status, detail=detail)
 
 
 # -----------------------------------------------------------------------------
@@ -969,6 +1095,7 @@ def _runtime_paths_for_api() -> List[RuntimePathResponse]:
         "application_data",
         "lesson_projection",
         "candidate_staging",
+        "duplicate_decisions",
         "cache",
         "topic_model",
     ):
@@ -1162,7 +1289,7 @@ def duplicates(
         description="Rileva solo duplicati esatti senza richiedere il modello.",
     ),
 ) -> DuplicateReportResponse:
-    """Analizza globalmente il dataset senza modificarlo."""
+    """Analyse all candidates, suppress valid decisions, then apply display limit."""
     df = load_lessons_df()
     transformer = None
     feature_matrix = None
@@ -1176,22 +1303,155 @@ def duplicates(
         feature_matrix=feature_matrix,
         min_score=min_score,
         exact_only=exact_only,
-        limit=limit,
+        limit=None,
     )
-    payload = report.to_dict()
-    payload["pairs"] = [
-        {
+    vault_dir = resolve_vault_dir()
+    store = DuplicateDecisionStore(get_duplicate_decisions_path())
+    scope = current_vault_scope(vault_dir)
+    suppressed_pairs = 0
+    unresolved: list[DuplicatePairResponse] = []
+    for pair in report.pairs:
+        left_row = cast(Mapping[str, Any], df.iloc[pair.left_position].to_dict())
+        right_row = cast(Mapping[str, Any], df.iloc[pair.right_position].to_dict())
+        left_fingerprint = material_fingerprint(left_row)
+        right_fingerprint = material_fingerprint(right_row)
+        resolution_available, resolution_problem = _duplicate_pair_safety(
+            pair.left_id, pair.right_id, vault_dir,
+        )
+        suppressed = False
+        if pair.left_id and pair.right_id and pair.left_id != pair.right_id:
+            try:
+                suppressed = store.is_suppressed(
+                    scope=scope, left_id=pair.left_id, left_fingerprint=left_fingerprint,
+                    right_id=pair.right_id, right_fingerprint=right_fingerprint,
+                )
+            except DuplicateDecisionStoreError:
+                # A corrupt workflow-state file must never make review unusable
+                # nor silently overwrite itself on this read-only operation.
+                suppressed = False
+        if suppressed:
+            suppressed_pairs += 1
+            continue
+        unresolved.append(DuplicatePairResponse(**{
             **pair.to_dict(),
-            "left_lesson": _row_to_duplicate_snapshot(
-                df.iloc[pair.left_position].to_dict()
-            ).model_dump(),
-            "right_lesson": _row_to_duplicate_snapshot(
-                df.iloc[pair.right_position].to_dict()
-            ).model_dump(),
+            "left_fingerprint": left_fingerprint,
+            "right_fingerprint": right_fingerprint,
+            "resolution_available": resolution_available,
+            "resolution_problem": resolution_problem,
+            "left_lesson": _row_to_duplicate_snapshot(left_row).model_dump(),
+            "right_lesson": _row_to_duplicate_snapshot(right_row).model_dump(),
+        }))
+    shown = unresolved if limit is None else unresolved[:limit]
+    exact_pairs = sum(item.kind == "exact" for item in unresolved)
+    return DuplicateReportResponse(
+        lessons_analyzed=report.lessons_analyzed,
+        total_pairs=len(unresolved), exact_pairs=exact_pairs,
+        near_pairs=len(unresolved) - exact_pairs, min_score=min_score,
+        exact_only=exact_only, suppressed_pairs=suppressed_pairs, pairs=shown,
+    )
+
+
+@app.post("/duplicates/not-duplicates", response_model=DuplicateDecisionResponse)
+def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisionResponse:
+    available, problem = _duplicate_pair_safety(body.left_id, body.right_id)
+    if not available:
+        raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
+    try:
+        vault_dir = require_vault_dir()
+        left = _canonical_duplicate_lesson(vault_dir, body.left_id)
+        right = _canonical_duplicate_lesson(vault_dir, body.right_id)
+    except FileNotFoundError as exc:
+        raise _duplicate_error(404, "vault_not_found", "The configured Markdown vault was not found.") from exc
+    except _CanonicalDuplicateIdentityError as exc:
+        if str(exc) == "not_found":
+            raise _duplicate_error(404, "duplicate_pair_not_found", "One canonical lesson was not found.") from exc
+        raise _duplicate_error(409, "duplicate_pair_ambiguous", "Canonical identity must be repaired before resolving this pair.") from exc
+    if material_fingerprint(left) != body.left_fingerprint or material_fingerprint(right) != body.right_fingerprint:
+        raise _duplicate_error(409, "duplicate_pair_stale", "One or both canonical lessons changed; refresh duplicate review.")
+    try:
+        decision = DuplicateDecisionStore(get_duplicate_decisions_path()).save_not_duplicates(
+            scope=current_vault_scope(vault_dir), left_id=body.left_id,
+            left_fingerprint=body.left_fingerprint, right_id=body.right_id,
+            right_fingerprint=body.right_fingerprint,
+        )
+    except DuplicateDecisionStoreError as exc:
+        raise _duplicate_error(503, "duplicate_decision_store_failed", "The duplicate decision could not be saved.") from exc
+    return DuplicateDecisionResponse(**decision.__dict__)
+
+
+@app.post("/duplicates/merge", response_model=DuplicateMergeResponse)
+def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
+    """Write a human-reviewed survivor, delete only then, and refresh once."""
+    available, problem = _duplicate_pair_safety(body.survivor_id, body.superseded_id)
+    if not available:
+        raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
+    try:
+        vault_dir = require_vault_dir()
+        survivor = _canonical_duplicate_lesson(vault_dir, body.survivor_id)
+        superseded = _canonical_duplicate_lesson(vault_dir, body.superseded_id)
+    except FileNotFoundError as exc:
+        raise _duplicate_error(404, "vault_not_found", "The configured Markdown vault was not found.") from exc
+    except _CanonicalDuplicateIdentityError as exc:
+        code = "duplicate_pair_not_found" if str(exc) == "not_found" else "duplicate_pair_ambiguous"
+        raise _duplicate_error(409 if code.endswith("ambiguous") else 404, code, "Canonical identity must be repaired before merging this pair.") from exc
+    if (
+        material_fingerprint(survivor) != body.expected_survivor_fingerprint
+        or material_fingerprint(superseded) != body.expected_superseded_fingerprint
+    ):
+        raise _duplicate_error(409, "duplicate_pair_stale", "One or both canonical lessons changed; refresh duplicate review.")
+
+    result = body.result
+    try:
+        write_canonical_lesson_source(
+            vault_dir=vault_dir, lesson_id=body.survivor_id, body=result.text,
+            topic=result.topic.strip(), source=result.source.strip() or "note",
+            importance=int(result.importance),
+            tags=[str(tag).strip() for tag in (result.tags or []) if str(tag).strip()],
+            date=_lesson_date_or_today(result.date),
+            title=result.title.strip() if result.title else None,
+            invalidate_cache=invalidate_similarity_cache,
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise _duplicate_error(404, "duplicate_pair_not_found", "The surviving canonical lesson was not found.") from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise _duplicate_error(409, "duplicate_pair_ambiguous", "Canonical identity must be repaired before merging this pair.") from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise _duplicate_error(503, "duplicate_merge_write_failed", "The resulting canonical lesson could not be saved.") from exc
+
+    superseded_deleted = False
+    failure: dict[str, str] | None = None
+    try:
+        delete_canonical_lesson_source(
+            vault_dir=vault_dir, lesson_id=body.superseded_id,
+            invalidate_cache=invalidate_similarity_cache,
+        )
+        superseded_deleted = True
+    except (LessonDeletionNotFoundError, LessonDeletionStorageError):
+        failure = {
+            "code": "duplicate_merge_superseded_delete_failed",
+            "message": "The result was saved, but the superseded canonical lesson could not be deleted.",
         }
-        for pair in report.pairs
-    ]
-    return DuplicateReportResponse(**payload)
+
+    response = DuplicateMergeResponse(
+        completed=superseded_deleted,
+        survivor_id=body.survivor_id,
+        survivor_written=True,
+        superseded_id=body.superseded_id,
+        superseded_deleted=superseded_deleted,
+        refresh_outcome=DuplicateMergeRefreshOutcomeResponse(attempted=True, refreshed=False),
+        failure=failure,
+    )
+    try:
+        _sync_vault_import()
+    except Exception as exc:
+        raise _duplicate_error(
+            503, "duplicate_merge_refresh_failed",
+            "Canonical merge changes succeeded, but derived data could not be refreshed.",
+            response.model_dump(),
+        ) from exc
+    return response.model_copy(
+        update={"refresh_outcome": DuplicateMergeRefreshOutcomeResponse(attempted=True, refreshed=True)}
+    )
 
 
 @app.get("/lessons", response_model=List[LessonSearchResult])

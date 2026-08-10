@@ -6,8 +6,10 @@
     FormActions,
     Panel,
   } from 'giadaware-ui-components/studio'
-  import { api, type DuplicateLessonSnapshot, type DuplicatePair, type DuplicateReportResponse } from '../lib/api'
+  import { ApiError, api, type DuplicateLessonSnapshot, type DuplicatePair, type DuplicateReportResponse } from '../lib/api'
   import { formatMessage, messages } from '../lib/i18n'
+  import { navigate } from '../lib/router'
+  import { deleteLessonWithOutcome } from '../lib/lessonDeletion'
 
   interface LessonSide {
     heading: string
@@ -30,6 +32,20 @@
   let appliedQuery = $state<AppliedDuplicateQuery | null>(null)
   let loading = $state(false)
   let error = $state('')
+  let notice = $state('')
+  let staleReview = $state(false)
+  let selectedPair = $state<DuplicatePair | null>(null)
+  let dialog = $state<'delete-left' | 'delete-right' | 'not-duplicates' | 'merge' | null>(null)
+  let submitting = $state(false)
+  let mergeConfirm = $state(false)
+  let mergeSurvivor = $state<'left' | 'right'>('left')
+  let mergeText = $state('')
+  let mergeTitle = $state('')
+  let mergeTopic = $state('')
+  let mergeSource = $state('note')
+  let mergeImportance = $state(3)
+  let mergeTags = $state('')
+  let mergeDate = $state('')
 
   function requestLimit(): number | null {
     const parsed = Number(limit)
@@ -101,6 +117,8 @@
     report = null
     appliedQuery = null
     error = ''
+    notice = ''
+    staleReview = false
 
     const parsedLimit = requestLimit()
     if (parsedLimit == null) {
@@ -128,7 +146,164 @@
       loading = false
     }
   }
+
+  async function rerunApplied() {
+    if (!appliedQuery) return
+    loading = true
+    error = ''
+    staleReview = false
+    try {
+      report = await api.duplicates({
+        min_score: appliedQuery.minScore,
+        exact_only: appliedQuery.exactOnly,
+        limit: appliedQuery.limit,
+      })
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+    } finally {
+      loading = false
+    }
+  }
+
+  function closeDialog(force = false) {
+    if (submitting && !force) return
+    selectedPair = null
+    dialog = null
+    mergeConfirm = false
+  }
+
+  function selectedSide(side: 'left' | 'right') {
+    if (!selectedPair) return null
+    return side === 'left'
+      ? { id: selectedPair.left_id, lesson: selectedPair.left_lesson, fingerprint: selectedPair.left_fingerprint }
+      : { id: selectedPair.right_id, lesson: selectedPair.right_lesson, fingerprint: selectedPair.right_fingerprint }
+  }
+
+  function openResolution(pair: DuplicatePair, next: NonNullable<typeof dialog>) {
+    if (!pair.resolution_available) return
+    selectedPair = pair
+    dialog = next
+    notice = ''
+    if (next === 'merge') {
+      mergeSurvivor = 'left'
+      const lesson = pair.left_lesson
+      mergeText = lesson.text ?? ''
+      mergeTitle = lesson.title ?? ''
+      mergeTopic = lesson.topic ?? ''
+      mergeSource = lesson.source ?? 'note'
+      mergeImportance = lesson.importance ?? 3
+      mergeTags = (lesson.tags ?? []).join(', ')
+      mergeDate = lesson.date ?? ''
+      mergeConfirm = false
+    }
+  }
+
+  function chooseMergeSurvivor(side: 'left' | 'right') {
+    // Preserve the draft while switching: both sources remain visible for manual comparison.
+    mergeSurvivor = side
+  }
+
+  function pruneDeleted(lessonId: string) {
+    if (!report) return
+    report = { ...report, pairs: report.pairs.filter((pair) => pair.left_id !== lessonId && pair.right_id !== lessonId) }
+  }
+
+  async function confirmDelete() {
+    if (!selectedPair || !dialog || (dialog !== 'delete-left' && dialog !== 'delete-right')) return
+    const deleting = dialog === 'delete-left' ? selectedPair.left_id : selectedPair.right_id
+    submitting = true
+    try {
+      const outcome = await deleteLessonWithOutcome(deleting)
+      closeDialog(true)
+      if (outcome.kind === 'refresh-failed') {
+        pruneDeleted(deleting)
+        staleReview = true
+        notice = $messages.duplicatesCanonicalDeletedStale
+      } else {
+        notice = formatMessage($messages.lessonDeleted, {})
+        await rerunApplied()
+      }
+    } catch {
+      notice = $messages.duplicatesDeleteFailed
+      closeDialog(true)
+    } finally {
+      submitting = false
+    }
+  }
+
+  async function confirmNotDuplicates() {
+    if (!selectedPair) return
+    submitting = true
+    try {
+      await api.markNotDuplicates(selectedPair)
+      closeDialog(true)
+      await rerunApplied()
+    } catch (e) {
+      closeDialog(true)
+      if (e instanceof ApiError && e.code === 'duplicate_pair_stale') {
+        notice = $messages.duplicatesStale
+        await rerunApplied()
+      } else {
+        notice = e instanceof Error ? e.message : String(e)
+      }
+    } finally {
+      submitting = false
+    }
+  }
+
+  async function confirmMerge() {
+    if (!selectedPair) return
+    const survivor = selectedSide(mergeSurvivor)
+    const superseded = selectedSide(mergeSurvivor === 'left' ? 'right' : 'left')
+    if (!survivor || !superseded) return
+    submitting = true
+    try {
+      const result = await api.mergeDuplicates({
+        survivor_id: survivor.id,
+        superseded_id: superseded.id,
+        expected_survivor_fingerprint: survivor.fingerprint,
+        expected_superseded_fingerprint: superseded.fingerprint,
+        result: {
+          text: mergeText,
+          title: mergeTitle || null,
+          topic: mergeTopic,
+          source: mergeSource || 'note',
+          importance: Number(mergeImportance),
+          tags: mergeTags.split(',').map((tag) => tag.trim()).filter(Boolean),
+          date: mergeDate || null,
+        },
+      })
+      closeDialog(true)
+      if (result.completed) {
+        notice = formatMessage($messages.duplicatesMerged, { survivor: result.survivor_id, superseded: result.superseded_id })
+      } else {
+        notice = `${$messages.duplicatesMergeIncomplete} ${$messages.duplicatesMergePartial}`
+      }
+      await rerunApplied()
+    } catch (e) {
+      closeDialog(true)
+      if (e instanceof ApiError && e.code === 'duplicate_merge_refresh_failed') {
+        const recovery = e.recovery
+        if (recovery?.superseded_deleted === true && typeof recovery.superseded_id === 'string') pruneDeleted(recovery.superseded_id)
+        staleReview = true
+        notice = $messages.duplicatesMergeRefreshFailed
+      } else if (e instanceof ApiError && e.code === 'duplicate_pair_stale') {
+        notice = $messages.duplicatesStale
+        await rerunApplied()
+      } else {
+        notice = e instanceof Error ? e.message : String(e)
+      }
+    } finally {
+      submitting = false
+    }
+  }
+
+  function escapeDialog(event: KeyboardEvent) {
+    if (event.key === 'Escape' && dialog) closeDialog()
+  }
 </script>
+
+<svelte:window onkeydown={escapeDialog} />
 
 <section class="duplicates">
   <Panel title={$messages.duplicatesTitle} class="controls">
@@ -228,8 +403,13 @@
         <div><dt>{$messages.duplicatesAppliedLimit}</dt><dd>{appliedQuery.limit}</dd></div>
         <div><dt>{$messages.duplicatesAppliedExactOnly}</dt><dd>{appliedQuery.exactOnly ? $messages.commonYes : $messages.commonNo}</dd></div>
         <div><dt>{$messages.duplicatesPairsShown}</dt><dd>{report.pairs.length}</dd></div>
+        <div><dt>{$messages.duplicatesSuppressedPairs}</dt><dd>{report.suppressed_pairs}</dd></div>
       </dl>
     </Panel>
+
+    {#if notice}
+      <FormStatus message={notice} tone={staleReview ? 'warning' : 'success'} style="--giu-form-status-padding: var(--space-2) var(--space-3)" />
+    {/if}
 
     {#if report.pairs.length === 0}
       <section class="card empty-state">
@@ -285,6 +465,18 @@
                 </section>
               {/each}
             </div>
+            {#if pair.resolution_available}
+              <div class="resolution-actions" aria-label="Duplicate resolution actions">
+                <button type="button" onclick={() => navigate({ view: 'editor', id: pair.left_id })}>{$messages.duplicatesEditLeft}</button>
+                <button type="button" onclick={() => navigate({ view: 'editor', id: pair.right_id })}>{$messages.duplicatesEditRight}</button>
+                <button type="button" onclick={() => openResolution(pair, 'delete-right')}>{$messages.duplicatesKeepLeftDeleteRight}</button>
+                <button type="button" onclick={() => openResolution(pair, 'delete-left')}>{$messages.duplicatesKeepRightDeleteLeft}</button>
+                <button type="button" onclick={() => openResolution(pair, 'not-duplicates')}>{$messages.duplicatesNotDuplicates}</button>
+                <button type="button" onclick={() => openResolution(pair, 'merge')}>{$messages.duplicatesMerge}</button>
+              </div>
+            {:else}
+              <FormStatus message={pair.resolution_problem || $messages.duplicatesUnsafeIdentity} tone="warning" style="--giu-form-status-padding: var(--space-2) var(--space-3)" />
+            {/if}
           </article>
         {/each}
       </section>
@@ -293,6 +485,42 @@
     <p class="meta">{$messages.duplicatesInitialHelp}</p>
   {/if}
 </section>
+
+{#if selectedPair && dialog === 'not-duplicates'}
+  <div class="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="not-duplicates-title">
+    <div class="dialog-card"><h2 id="not-duplicates-title">{$messages.duplicatesNotDuplicatesTitle}</h2>
+      <p>{selectedPair.left_lesson.title || '—'} <code>{selectedPair.left_id}</code></p>
+      <p>{selectedPair.right_lesson.title || '—'} <code>{selectedPair.right_id}</code></p>
+      <p>{$messages.duplicatesNotDuplicatesHelp}</p>
+      <div class="dialog-actions"><button type="button" disabled={submitting} onclick={() => closeDialog()}>{$messages.duplicatesCancel}</button><button type="button" disabled={submitting} onclick={() => void confirmNotDuplicates()}>{$messages.duplicatesMark}</button></div>
+    </div>
+  </div>
+{/if}
+
+{#if selectedPair && (dialog === 'delete-left' || dialog === 'delete-right')}
+  {@const kept = selectedSide(dialog === 'delete-left' ? 'right' : 'left')}
+  {@const deleted = selectedSide(dialog === 'delete-left' ? 'left' : 'right')}
+  <div class="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-resolution-title">
+    <div class="dialog-card"><h2 id="delete-resolution-title">{$messages.duplicatesConfirmDeleteTitle}</h2>
+      <h3>{$messages.duplicatesKeep}</h3><p>{kept?.lesson.title || '—'} <code>{kept?.id}</code></p>
+      <h3>{$messages.duplicatesDeletePermanently}</h3><p>{deleted?.lesson.title || '—'} <code>{deleted?.id}</code></p>
+      <div class="dialog-actions"><button type="button" disabled={submitting} onclick={() => closeDialog()}>{$messages.duplicatesCancel}</button><button class="danger" type="button" disabled={submitting} onclick={() => void confirmDelete()}>{submitting ? $messages.duplicatesDeleting : $messages.duplicatesDeletePermanently}</button></div>
+    </div>
+  </div>
+{/if}
+
+{#if selectedPair && dialog === 'merge'}
+  {@const survivor = selectedSide(mergeSurvivor)}
+  {@const superseded = selectedSide(mergeSurvivor === 'left' ? 'right' : 'left')}
+  <div class="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="merge-title">
+    <div class="dialog-card merge-card"><h2 id="merge-title">{$messages.duplicatesMergeTitle}</h2>
+      <div class="merge-sources"><section><h3>{$messages.duplicatesSourceLeft}</h3><p>{selectedPair.left_lesson.title || '—'} <code>{selectedPair.left_id}</code></p><pre>{selectedPair.left_lesson.text}</pre></section><section><h3>{$messages.duplicatesSourceRight}</h3><p>{selectedPair.right_lesson.title || '—'} <code>{selectedPair.right_id}</code></p><pre>{selectedPair.right_lesson.text}</pre></section></div>
+      <fieldset><legend>{$messages.duplicatesResult}</legend><label><input type="radio" name="merge-survivor" checked={mergeSurvivor === 'left'} onchange={() => chooseMergeSurvivor('left')} /> {$messages.duplicatesUseLeft} <code>{selectedPair.left_id}</code></label><label><input type="radio" name="merge-survivor" checked={mergeSurvivor === 'right'} onchange={() => chooseMergeSurvivor('right')} /> {$messages.duplicatesUseRight} <code>{selectedPair.right_id}</code></label></fieldset>
+      <div class="merge-fields"><label>{$messages.fieldTitle}<input bind:value={mergeTitle} /></label><label>{$messages.fieldTopic}<input bind:value={mergeTopic} required /></label><label>{$messages.fieldSource}<input bind:value={mergeSource} /></label><label>{$messages.fieldImportance}<select bind:value={mergeImportance}>{#each [1, 2, 3, 4, 5] as value}<option value={value}>{value}</option>{/each}</select></label><label>{$messages.fieldTags}<input bind:value={mergeTags} /></label><label>{$messages.fieldDate}<input bind:value={mergeDate} /></label><label class="wide">{$messages.duplicatesResult}<textarea rows="8" bind:value={mergeText}></textarea></label></div>
+      {#if mergeConfirm}<section class="merge-confirm"><h3>{$messages.duplicatesConfirmMergeTitle}</h3><p>{$messages.duplicatesSurviving}: <code>{survivor?.id}</code></p><p>{$messages.duplicatesSuperseded}: <code>{superseded?.id}</code></p><button type="button" disabled={submitting} onclick={() => void confirmMerge()}>{submitting ? $messages.duplicatesDeleting : $messages.duplicatesSaveMerge}</button></section>{:else}<div class="dialog-actions"><button type="button" onclick={() => closeDialog()}>{$messages.duplicatesCancel}</button><button type="button" onclick={() => { mergeConfirm = true }} disabled={!mergeText.trim() || !mergeTopic.trim()}>{$messages.duplicatesSaveMerge}</button></div>{/if}
+    </div>
+  </div>
+{/if}
 
 <style>
   .duplicates, .pair-list { display: grid; gap: 16px; }
@@ -329,5 +557,14 @@
     line-height: 1.2;
   }
   pre { margin: 0; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f4ee; border-radius: 6px; font: .85rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  @media (max-width: 850px) { .lessons { grid-template-columns: 1fr; } }
+  .resolution-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .resolution-actions button, .dialog-actions button, .merge-confirm button { border: 1px solid var(--border); border-radius: 6px; background: var(--color-surface); color: var(--text); padding: 7px 10px; }
+  .resolution-actions button:focus-visible, .dialog-actions button:focus-visible, .merge-confirm button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .resolution-dialog { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgb(36 28 22 / 42%); }
+  .dialog-card { width: min(650px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 20px; border-radius: 10px; background: var(--color-surface); box-shadow: 0 18px 48px rgb(36 28 22 / 28%); }
+  .dialog-card h2, .dialog-card h3 { margin-top: 0; } .dialog-card code { overflow-wrap: anywhere; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }.danger { background: #a22 !important; color: white !important; border-color: #a22 !important; }
+  .merge-card { width: min(1000px, 100%); }.merge-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }.merge-sources section { min-width: 0; border: 1px solid var(--border); padding: 10px; border-radius: 7px; }.merge-sources pre { max-height: 220px; overflow: auto; }
+  fieldset { margin: 14px 0; display: flex; flex-wrap: wrap; gap: 12px; }.merge-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }.merge-fields label { display: grid; gap: 4px; }.merge-fields input, .merge-fields select, .merge-fields textarea { width: 100%; box-sizing: border-box; padding: 7px; }.merge-fields .wide { grid-column: 1 / -1; }.merge-confirm { margin-top: 16px; border: 1px solid #a22; padding: 12px; border-radius: 7px; }
+  @media (max-width: 850px) { .lessons, .merge-sources { grid-template-columns: 1fr; } .merge-fields { grid-template-columns: 1fr; } }
 </style>

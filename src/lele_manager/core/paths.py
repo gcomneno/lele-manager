@@ -19,6 +19,7 @@ ENV_MODEL_PATH_DEPRECATED = "LELE_MODEL_PATH"
 
 DEFAULT_DB_FILENAME = "lessons.jsonl"
 DEFAULT_CANDIDATES_FILENAME = "candidates.json"
+DEFAULT_DUPLICATE_DECISIONS_FILENAME = "duplicate-decisions.json"
 DEFAULT_TOPIC_MODEL_FILENAME = "topic_model.joblib"
 
 
@@ -94,6 +95,15 @@ def lessons_path() -> Path:
 def candidates_path() -> Path:
     """Full path to the local TritaLeLe candidate staging document."""
     return data_dir() / DEFAULT_CANDIDATES_FILENAME
+
+
+def duplicate_decisions_path() -> Path:
+    """Return the durable duplicate-review decision document.
+
+    This is application workflow state, deliberately separate from canonical
+    Markdown and the rebuildable lesson projection.
+    """
+    return data_dir() / DEFAULT_DUPLICATE_DECISIONS_FILENAME
 
 
 def topic_model_path() -> Path:
