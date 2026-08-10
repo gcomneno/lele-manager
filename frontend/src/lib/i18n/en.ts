@@ -368,6 +368,8 @@ export const en = {
   duplicatesMergeIncomplete: 'Merge incomplete',
   duplicatesMergePartial: 'The resulting canonical LeLe was saved, but the superseded LeLe could not be deleted.',
   duplicatesMergeRefreshFailed: 'Canonical merge changes succeeded, but derived data could not be refreshed. Duplicate review may be stale.',
+  duplicatesMergePartialRefreshFailed: 'The resulting canonical LeLe was saved. The superseded LeLe could not be deleted, and derived data could not be refreshed. Duplicate review may be stale.',
+  duplicatesMergeFailed: 'The merge could not be completed. Review the canonical lessons before trying again.',
   duplicatesMerged: 'LeLe merged. {survivor} kept; {superseded} deleted.',
 
   opsTitle: 'Status and maintenance',

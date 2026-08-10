@@ -8,6 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from lele_manager.api import server
+from lele_manager.application.lesson_deletion import LessonDeletionStorageError
+from lele_manager.application.lesson_writing import CanonicalLessonWriteStorageError
 from lele_manager.core.duplicate_decisions import (
     DuplicateDecisionStore,
     current_vault_scope,
@@ -115,6 +117,44 @@ def test_not_duplicates_rejects_stale_canonical_fingerprint(
     assert data.exists()
 
 
+def test_materially_changed_lesson_reappears_after_a_suppressed_decision(
+    duplicate_env: tuple[Path, Path],
+) -> None:
+    vault, data = duplicate_env
+    client = TestClient(server.app)
+    pair = _report(client)["pairs"][0]
+    marked = client.post("/duplicates/not-duplicates", json=pair)
+    assert marked.status_code == 200, marked.text
+    assert _report(client)["total_pairs"] == 0
+
+    # Keep the exact body but change canonical title: fingerprints, not the
+    # detector, decide whether the old suppression is still valid.
+    write_lesson_markdown(
+        vault, lesson_id="alpha/a", body="The exact reviewed knowledge.", topic="alpha", source="note",
+        importance=3, tags=["one", "two"], date="2026-08-10", title="Materially changed A",
+    )
+    import_vault_to_jsonl(vault, data)
+    reappeared = _report(client)
+    assert reappeared["total_pairs"] == 1
+    assert reappeared["suppressed_pairs"] == 0
+
+
+def test_malformed_decision_store_keeps_review_read_only_and_refuses_writes(
+    duplicate_env: tuple[Path, Path],
+) -> None:
+    _, _ = duplicate_env
+    path = server.get_duplicate_decisions_path()
+    path.parent.mkdir(parents=True)
+    corrupt = b"{not-json"
+    path.write_bytes(corrupt)
+    client = TestClient(server.app)
+    pair = _report(client)["pairs"][0]
+    response = client.post("/duplicates/not-duplicates", json=pair)
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "duplicate_decision_store_failed"
+    assert path.read_bytes() == corrupt
+
+
 def test_merge_writes_selected_survivor_then_deletes_other_once(
     duplicate_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -143,6 +183,137 @@ def test_merge_writes_selected_survivor_then_deletes_other_once(
     survivor = find_markdown_by_id(vault, "alpha/b")
     assert survivor is not None and "Human reviewed merged result." in survivor.read_text(encoding="utf-8")
     assert "alpha/b" in data.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("survivor_id", "superseded_id", "survivor_fingerprint_key", "superseded_fingerprint_key"),
+    [
+        ("alpha/a", "alpha/b", "left_fingerprint", "right_fingerprint"),
+        ("alpha/b", "alpha/a", "right_fingerprint", "left_fingerprint"),
+    ],
+)
+def test_merge_preserves_the_explicit_survivor_path(
+    duplicate_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch,
+    survivor_id: str, superseded_id: str, survivor_fingerprint_key: str, superseded_fingerprint_key: str,
+) -> None:
+    vault, _ = duplicate_env
+    client = TestClient(server.app)
+    pair = _report(client)["pairs"][0]
+    refreshes = 0
+    original_refresh = server._sync_vault_import
+
+    def refresh_once() -> object:
+        nonlocal refreshes
+        refreshes += 1
+        return original_refresh()
+
+    monkeypatch.setattr(server, "_sync_vault_import", refresh_once)
+    response = client.post("/duplicates/merge", json={
+        "survivor_id": survivor_id, "superseded_id": superseded_id,
+        "expected_survivor_fingerprint": pair[survivor_fingerprint_key],
+        "expected_superseded_fingerprint": pair[superseded_fingerprint_key],
+        "result": {"text": f"Reviewed {survivor_id}", "title": "Reviewed", "topic": "alpha", "source": "note", "importance": 3, "tags": ["one"], "date": "2026-08-10"},
+    })
+    assert response.status_code == 200, response.text
+    assert find_markdown_by_id(vault, survivor_id) is not None
+    assert find_markdown_by_id(vault, superseded_id) is None
+    assert refreshes == 1
+
+
+def test_merge_write_failure_does_not_delete_or_refresh(
+    duplicate_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vault, _ = duplicate_env
+    client = TestClient(server.app)
+    pair = _report(client)["pairs"][0]
+    before = find_markdown_by_id(vault, "alpha/a").read_bytes()
+    deletes = 0
+    refreshes = 0
+
+    def fail_write(**_: object) -> Path:
+        raise CanonicalLessonWriteStorageError("write failed")
+
+    def counted_delete(**_: object) -> object:
+        nonlocal deletes
+        deletes += 1
+        raise AssertionError("delete must not follow a failed write")
+
+    def counted_refresh() -> None:
+        nonlocal refreshes
+        refreshes += 1
+
+    monkeypatch.setattr(server, "write_canonical_lesson_source", fail_write)
+    monkeypatch.setattr(server, "delete_canonical_lesson_source", counted_delete)
+    monkeypatch.setattr(server, "_sync_vault_import", counted_refresh)
+    response = client.post("/duplicates/merge", json={
+        "survivor_id": "alpha/a", "superseded_id": "alpha/b",
+        "expected_survivor_fingerprint": pair["left_fingerprint"], "expected_superseded_fingerprint": pair["right_fingerprint"],
+        "result": {"text": "new", "topic": "alpha", "source": "note", "importance": 3, "tags": [], "date": "2026-08-10"},
+    })
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "duplicate_merge_write_failed"
+    assert find_markdown_by_id(vault, "alpha/a").read_bytes() == before
+    assert find_markdown_by_id(vault, "alpha/b") is not None
+    assert deletes == 0 and refreshes == 0
+
+
+@pytest.mark.parametrize("refresh_fails", [False, True])
+def test_merge_delete_failure_keeps_written_survivor_and_reports_truth(
+    duplicate_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, refresh_fails: bool,
+) -> None:
+    vault, _ = duplicate_env
+    client = TestClient(server.app)
+    pair = _report(client)["pairs"][0]
+    refreshes = 0
+
+    def fail_delete(**_: object) -> object:
+        raise LessonDeletionStorageError("delete failed")
+
+    def refresh() -> None:
+        nonlocal refreshes
+        refreshes += 1
+        if refresh_fails:
+            raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(server, "delete_canonical_lesson_source", fail_delete)
+    monkeypatch.setattr(server, "_sync_vault_import", refresh)
+    response = client.post("/duplicates/merge", json={
+        "survivor_id": "alpha/a", "superseded_id": "alpha/b",
+        "expected_survivor_fingerprint": pair["left_fingerprint"], "expected_superseded_fingerprint": pair["right_fingerprint"],
+        "result": {"text": "Reviewed survivor", "topic": "alpha", "source": "note", "importance": 3, "tags": [], "date": "2026-08-10"},
+    })
+    assert response.status_code == (503 if refresh_fails else 200)
+    payload = response.json()["detail"]["recovery"] if refresh_fails else response.json()
+    assert payload["completed"] is False
+    assert payload["survivor_written"] is True
+    assert payload["superseded_deleted"] is False
+    assert payload["failure"]["code"] == "duplicate_merge_superseded_delete_failed"
+    assert payload["refresh_outcome"] == {"attempted": True, "refreshed": not refresh_fails}
+    assert "Reviewed survivor" in find_markdown_by_id(vault, "alpha/a").read_text(encoding="utf-8")
+    assert find_markdown_by_id(vault, "alpha/b") is not None
+    assert refreshes == 1
+
+
+def test_merge_refresh_failure_after_full_canonical_success(
+    duplicate_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    vault, _ = duplicate_env
+    client = TestClient(server.app)
+    pair = _report(client)["pairs"][0]
+    monkeypatch.setattr(server, "_sync_vault_import", lambda: (_ for _ in ()).throw(RuntimeError("refresh failed")))
+    response = client.post("/duplicates/merge", json={
+        "survivor_id": "alpha/b", "superseded_id": "alpha/a",
+        "expected_survivor_fingerprint": pair["right_fingerprint"], "expected_superseded_fingerprint": pair["left_fingerprint"],
+        "result": {"text": "Reviewed right", "topic": "alpha", "source": "note", "importance": 3, "tags": [], "date": "2026-08-10"},
+    })
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "duplicate_merge_refresh_failed"
+    assert detail["recovery"]["survivor_written"] is True
+    assert detail["recovery"]["superseded_deleted"] is True
+    assert detail["recovery"]["refresh_outcome"] == {"attempted": True, "refreshed": False}
+    assert "Reviewed right" in find_markdown_by_id(vault, "alpha/b").read_text(encoding="utf-8")
+    assert find_markdown_by_id(vault, "alpha/a") is None
 
 
 def test_merge_stale_request_does_not_write_or_delete(duplicate_env: tuple[Path, Path]) -> None:
