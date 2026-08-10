@@ -17,8 +17,28 @@
 
   let { route, children }: Props = $props()
 
+  type NavigationGroupId = 'knowledge' | 'capture' | 'manage'
+
+  type NavigationGroupState = Record<NavigationGroupId, boolean>
+
+  const NAVIGATION_GROUPS_STORAGE_KEY =
+    'lele-manager.navigation-groups.v1'
+
+  const navigationGroupIds: NavigationGroupId[] = [
+    'knowledge',
+    'capture',
+    'manage',
+  ]
+
+  const defaultNavigationGroupState: NavigationGroupState = {
+    knowledge: true,
+    capture: true,
+    manage: true,
+  }
+
   const navigationGroups = [
     {
+      id: 'knowledge' as const,
       labelKey: 'navGroupKnowledge' as const,
       links: [
         { view: 'dashboard' as const, labelKey: 'navDashboard' as const, hash: '#/', icon: 'dashboard' as const },
@@ -28,6 +48,7 @@
       ],
     },
     {
+      id: 'capture' as const,
       labelKey: 'navGroupCapture' as const,
       links: [
         { view: 'editor' as const, labelKey: 'navNewLele' as const, hash: '#/editor', icon: 'new' as const },
@@ -35,6 +56,7 @@
       ],
     },
     {
+      id: 'manage' as const,
       labelKey: 'navGroupManage' as const,
       links: [
         { view: 'vault' as const, labelKey: 'navVault' as const, hash: '#/vault', icon: 'vault' as const },
@@ -48,6 +70,9 @@
 
   let appVersion = $state<string | null>(null)
   let workspaceName = $state<string | null>(null)
+  let navigationGroupState = $state<NavigationGroupState>(
+    loadNavigationGroupState(),
+  )
 
   function basename(path: string): string {
     const parts = path.split(/[\\/]+/).filter(Boolean)
@@ -80,6 +105,86 @@
   function isActive(view: Route['view']) {
     return route.view === view || (view === 'editor' && route.view === 'editor')
   }
+
+  function activeNavigationGroup(): NavigationGroupId | undefined {
+    return navigationGroups.find((group) =>
+      group.links.some((link) => isActive(link.view)),
+    )?.id
+  }
+
+  function loadNavigationGroupState(): NavigationGroupState {
+    if (typeof window === 'undefined') {
+      return { ...defaultNavigationGroupState }
+    }
+
+    try {
+      const persisted = JSON.parse(
+        window.localStorage.getItem(NAVIGATION_GROUPS_STORAGE_KEY) ?? 'null',
+      )
+
+      if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) {
+        return { ...defaultNavigationGroupState }
+      }
+
+      if (Object.keys(persisted).some((key) => !navigationGroupIds.includes(
+        key as NavigationGroupId,
+      ))) {
+        return { ...defaultNavigationGroupState }
+      }
+
+      return {
+        knowledge: typeof persisted.knowledge === 'boolean'
+          ? persisted.knowledge
+          : defaultNavigationGroupState.knowledge,
+        capture: typeof persisted.capture === 'boolean'
+          ? persisted.capture
+          : defaultNavigationGroupState.capture,
+        manage: typeof persisted.manage === 'boolean'
+          ? persisted.manage
+          : defaultNavigationGroupState.manage,
+      }
+    } catch {
+      return { ...defaultNavigationGroupState }
+    }
+  }
+
+  function persistNavigationGroupState() {
+    if (typeof window === 'undefined') return
+
+    try {
+      window.localStorage.setItem(
+        NAVIGATION_GROUPS_STORAGE_KEY,
+        JSON.stringify(navigationGroupState),
+      )
+    } catch {
+      // Persistence is best-effort; disclosure still works in this session.
+    }
+  }
+
+  function expandActiveNavigationGroup() {
+    const groupId = activeNavigationGroup()
+
+    if (groupId && !navigationGroupState[groupId]) {
+      navigationGroupState[groupId] = true
+      persistNavigationGroupState()
+    }
+  }
+
+  function toggleNavigationGroup(groupId: NavigationGroupId) {
+    if (groupId === activeNavigationGroup()) {
+      expandActiveNavigationGroup()
+      return
+    }
+
+    navigationGroupState[groupId] = !navigationGroupState[groupId]
+    persistNavigationGroupState()
+  }
+
+  $effect(() => {
+    route.view
+    expandActiveNavigationGroup()
+  })
+
 </script>
 
 <div class="shell">
@@ -97,10 +202,28 @@
           class="nav-group"
           aria-label={$messages[group.labelKey]}
         >
-          <span class="nav-group-title">
-            {$messages[group.labelKey]}
-          </span>
-          <div class="nav-group-links">
+          <button
+            class="nav-group-title"
+            type="button"
+            aria-expanded={navigationGroupState[group.id]}
+            aria-controls={`navigation-group-${group.id}`}
+            onclick={() => toggleNavigationGroup(group.id)}
+          >
+            <span>{$messages[group.labelKey]}</span>
+            <svg
+              class:expanded={navigationGroupState[group.id]}
+              class="nav-group-chevron"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="m4 6 4 4 4-4" />
+            </svg>
+          </button>
+          <div
+            id={`navigation-group-${group.id}`}
+            class="nav-group-links"
+            hidden={!navigationGroupState[group.id]}
+          >
             {#each group.links as link}
               <a
                 href={link.hash}
@@ -340,19 +463,59 @@
   }
 
   .nav-group-title {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
     margin: 0;
-    padding: 0 12px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: var(--radius-sm);
     color: var(--color-text-inverse-muted);
+    background: transparent;
+    font: inherit;
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.08em;
+    line-height: 1.25;
+    text-align: left;
     text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .nav-group-title:hover {
+    color: var(--sidebar-text);
+    background: rgb(255 255 255 / 8%);
+  }
+
+  .nav-group-title:focus-visible,
+  nav a:focus-visible {
+    outline: 0;
+    box-shadow: var(--focus-ring);
+  }
+
+  .nav-group-chevron {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .nav-group-chevron.expanded {
+    transform: rotate(180deg);
   }
 
   .nav-group-links {
     display: grid;
     gap: 3px;
+  }
+
+  .nav-group-links[hidden] {
+    display: none;
   }
 
   nav a {
@@ -568,7 +731,7 @@
     }
 
     .nav-group-title {
-      padding: 0 4px;
+      padding: 6px 4px;
     }
 
     .nav-group-links {

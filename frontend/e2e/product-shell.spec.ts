@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test'
 
+const navigationGroupsStorageKey =
+  'lele-manager.navigation-groups.v1'
+
 test.describe('product shell hierarchy', () => {
   test('groups navigation into Knowledge, Capture, and Manage', async ({
     page,
@@ -20,6 +23,12 @@ test.describe('product shell hierarchy', () => {
       navigation.getByRole('region', { name: 'Manage' }),
     ).toBeVisible()
 
+    for (const label of ['Knowledge', 'Capture', 'Manage']) {
+      await expect(
+        navigation.getByRole('button', { name: label, exact: true }),
+      ).toHaveAttribute('aria-expanded', 'true')
+    }
+
     for (const label of [
       'Dashboard',
       'Browse',
@@ -39,6 +48,163 @@ test.describe('product shell hierarchy', () => {
     }
   })
 
+  test('toggles independent inactive groups with accessible disclosure semantics', async ({
+    page,
+  }) => {
+    await page.goto('/app/#/settings')
+
+    const navigation = page.getByRole('navigation', {
+      name: 'Primary',
+    })
+    const knowledge = navigation.getByRole('button', {
+      name: 'Knowledge',
+      exact: true,
+    })
+    const capture = navigation.getByRole('button', {
+      name: 'Capture',
+      exact: true,
+    })
+    const knowledgeLinks = page.locator('#navigation-group-knowledge')
+
+    await expect(knowledge).toHaveAttribute('aria-controls', 'navigation-group-knowledge')
+    await expect(knowledge).toHaveAttribute('aria-expanded', 'true')
+    await expect(knowledge.locator('svg')).toHaveAttribute('aria-hidden', 'true')
+
+    await knowledge.click()
+
+    await expect(knowledge).toHaveAttribute('aria-expanded', 'false')
+    await expect(knowledgeLinks).toBeHidden()
+    await expect(knowledgeLinks.getByRole('link')).toHaveCount(0)
+    await expect(capture).toHaveAttribute('aria-expanded', 'true')
+
+    await knowledge.focus()
+    await page.keyboard.press('Space')
+
+    await expect(knowledge).toHaveAttribute('aria-expanded', 'true')
+    await expect(knowledgeLinks).toBeVisible()
+  })
+
+  test('opens the active group for deep links and stale stored state', async ({
+    page,
+  }) => {
+    await page.addInitScript((key) => {
+      window.localStorage.setItem(key, JSON.stringify({
+        knowledge: true,
+        capture: true,
+        manage: false,
+      }))
+    }, navigationGroupsStorageKey)
+    await page.goto('/app/#/settings')
+
+    const navigation = page.getByRole('navigation', {
+      name: 'Primary',
+    })
+
+    await expect(
+      navigation.getByRole('button', { name: 'Manage', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      navigation.getByRole('link', { name: 'Diagnostics', exact: true }),
+    ).toBeVisible()
+    await expect(
+      navigation.getByRole('link', { name: 'Diagnostics', exact: true }),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(navigation.locator('a[aria-current="page"]')).toHaveCount(1)
+
+    await navigation.getByRole('button', {
+      name: 'Manage',
+      exact: true,
+    }).click()
+    await expect(
+      navigation.getByRole('button', { name: 'Manage', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      navigation.getByRole('link', { name: 'Diagnostics', exact: true }),
+    ).toBeVisible()
+  })
+
+  test('opens a newly active group without changing unrelated preferences', async ({
+    page,
+  }) => {
+    await page.goto('/app/#/browse')
+
+    const navigation = page.getByRole('navigation', {
+      name: 'Primary',
+    })
+    const manage = navigation.getByRole('button', {
+      name: 'Manage',
+      exact: true,
+    })
+
+    await manage.click()
+    await expect(manage).toHaveAttribute('aria-expanded', 'false')
+
+    await navigation.getByRole('link', {
+      name: 'New LeLe',
+      exact: true,
+    }).click()
+
+    await expect(
+      navigation.getByRole('button', { name: 'Capture', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      navigation.getByRole('link', { name: 'New LeLe', exact: true }),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(manage).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('persists valid disclosure state and safely ignores malformed storage', async ({
+    page,
+  }) => {
+    await page.goto('/app/#/settings')
+
+    const knowledge = page.getByRole('button', {
+      name: 'Knowledge',
+      exact: true,
+    })
+    await knowledge.click()
+    await expect(knowledge).toHaveAttribute('aria-expanded', 'false')
+    await expect.poll(async () => page.evaluate((key) => (
+      window.localStorage.getItem(key)
+    ), navigationGroupsStorageKey)).toBe(JSON.stringify({
+      knowledge: false,
+      capture: true,
+      manage: true,
+    }))
+
+    await page.reload()
+    await expect.poll(async () => page.evaluate((key) => (
+      window.localStorage.getItem(key)
+    ), navigationGroupsStorageKey)).toBe(JSON.stringify({
+      knowledge: false,
+      capture: true,
+      manage: true,
+    }))
+    await expect(knowledge).toHaveAttribute('aria-expanded', 'false')
+
+    await page.evaluate((key) => {
+      window.localStorage.setItem(key, '{not valid json')
+    }, navigationGroupsStorageKey)
+    await page.reload()
+
+    for (const label of ['Knowledge', 'Capture', 'Manage']) {
+      await expect(
+        page.getByRole('button', { name: label, exact: true }),
+      ).toHaveAttribute('aria-expanded', 'true')
+    }
+
+    await page.evaluate((key) => {
+      window.localStorage.setItem(key, JSON.stringify({ obsolete: false }))
+    }, navigationGroupsStorageKey)
+    await page.reload()
+
+    for (const label of ['Knowledge', 'Capture', 'Manage']) {
+      await expect(
+        page.getByRole('button', { name: label, exact: true }),
+      ).toHaveAttribute('aria-expanded', 'true')
+    }
+  })
+
   test('uses deterministic local SVG navigation icons', async ({
     page,
   }) => {
@@ -48,7 +214,7 @@ test.describe('product shell hierarchy', () => {
       name: 'Primary',
     })
 
-    await expect(navigation.locator('svg')).toHaveCount(11)
+    await expect(navigation.locator('svg[data-icon]')).toHaveCount(11)
 
     for (const emoji of [
       '🏠',
@@ -177,6 +343,10 @@ test.describe('product shell hierarchy', () => {
     ).toBeVisible()
 
     await expect(
+      navigation.getByRole('button', { name: 'Conoscenza', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true')
+
+    await expect(
       navigation.getByRole('link', { name: 'Dashboard' }),
     ).toHaveAttribute('href', '#/')
     await expect(
@@ -188,6 +358,26 @@ test.describe('product shell hierarchy', () => {
     await expect(
       navigation.getByRole('link', { name: 'Sistema' }),
     ).toHaveAttribute('href', '#/ops')
+  })
+
+  test('keeps disclosure state when the locale changes', async ({ page }) => {
+    await page.goto('/app/#/settings')
+
+    const knowledge = page.getByRole('button', {
+      name: 'Knowledge',
+      exact: true,
+    })
+    await knowledge.click()
+    await expect(knowledge).toHaveAttribute('aria-expanded', 'false')
+
+    await page.getByLabel('Language').selectOption('it')
+
+    await expect(
+      page.getByRole('button', { name: 'Conoscenza', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'false')
+    await expect(
+      page.getByRole('button', { name: 'Acquisizione', exact: true }),
+    ).toHaveAttribute('aria-expanded', 'true')
   })
 })
 
