@@ -64,6 +64,76 @@ test.describe('product shell hierarchy', () => {
     }
   })
 
+  test('maps every navigation destination to its distinct semantic icon', async ({
+    page,
+  }) => {
+    await page.goto('/app/#/browse')
+
+    const navigation = page.getByRole('navigation', {
+      name: 'Primary',
+    })
+    const expectedIcons = [
+      ['Dashboard', 'dashboard'],
+      ['Browse', 'browse'],
+      ['Timeline', 'timeline'],
+      ['Statistics', 'stats'],
+      ['New LeLe', 'new'],
+      ['Collection', 'collection'],
+      ['Vault', 'vault'],
+      ['Duplicates', 'duplicates'],
+      ['System', 'system'],
+      ['Diagnostics', 'diagnostics'],
+      ['About', 'about'],
+    ] as const
+
+    for (const [label, icon] of expectedIcons) {
+      const link = navigation.getByRole('link', {
+        name: label,
+        exact: true,
+      })
+      const svg = link.locator('svg')
+
+      await expect(svg).toHaveAttribute('data-icon', icon)
+      await expect(svg).toHaveAttribute('aria-hidden', 'true')
+    }
+
+    expect(new Set(expectedIcons.map(([, icon]) => icon)).size).toBe(
+      expectedIcons.length,
+    )
+    await expect(
+      navigation.getByRole('link', { name: 'Browse', exact: true }),
+    ).toHaveAttribute('aria-current', 'page')
+    await expect(
+      navigation.getByRole('link', { name: 'System', exact: true }),
+    ).not.toHaveAttribute('aria-current')
+    await expect(
+      navigation.locator('a[aria-current="page"]'),
+    ).toHaveCount(1)
+  })
+
+  test('keeps semantic icon identities stable when localized', async ({
+    page,
+  }) => {
+    await page.goto('/app/#/')
+
+    await page.getByLabel('Language').selectOption('it')
+
+    const navigation = page.getByRole('navigation', {
+      name: 'Primary',
+    })
+    const expectedIcons = [
+      ['Sistema', 'system'],
+      ['Diagnostica', 'diagnostics'],
+      ['Informazioni', 'about'],
+    ] as const
+
+    for (const [label, icon] of expectedIcons) {
+      await expect(
+        navigation.getByRole('link', { name: label, exact: true }).locator('svg'),
+      ).toHaveAttribute('data-icon', icon)
+    }
+  })
+
   test('shows bounded runtime and workspace context', async ({
     page,
   }) => {
