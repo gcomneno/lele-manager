@@ -41,7 +41,7 @@
         { view: 'duplicates' as const, labelKey: 'navDuplicates' as const, hash: '#/duplicates', icon: 'duplicates' as const },
         { view: 'ops' as const, labelKey: 'navSystem' as const, hash: '#/ops', icon: 'system' as const },
         { view: 'settings' as const, labelKey: 'navSettings' as const, hash: '#/settings', icon: 'diagnostics' as const },
-        { view: 'about' as const, labelKey: 'navAbout' as const, hash: '#/about', icon: 'system' as const },
+        { view: 'about' as const, labelKey: 'navAbout' as const, hash: '#/about', icon: 'about' as const },
       ],
     },
   ]
@@ -105,6 +105,7 @@
               <a
                 href={link.hash}
                 class:active={isActive(link.view)}
+                aria-current={isActive(link.view) ? 'page' : undefined}
                 onclick={(e) => {
                   e.preventDefault()
                   navigate({ view: link.view })
