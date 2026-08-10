@@ -15,7 +15,11 @@
   import About from './routes/About.svelte'
   import { parseRoute, type Route } from './lib/router'
 
-  let route = $state<Route>({ view: 'dashboard' })
+  let route = $state<Route>(
+    typeof window === 'undefined'
+      ? { view: 'dashboard' }
+      : parseRoute(),
+  )
 
   onMount(() => {
     route = parseRoute()
