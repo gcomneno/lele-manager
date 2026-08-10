@@ -370,6 +370,8 @@ export const it = {
   duplicatesMergeIncomplete: 'Accorpamento incompleto',
   duplicatesMergePartial: 'La LeLe canonica risultante è stata salvata, ma non è stato possibile eliminare la LeLe sostituita.',
   duplicatesMergeRefreshFailed: 'Le modifiche canoniche dell’accorpamento sono riuscite, ma i dati derivati non sono stati aggiornati. La revisione duplicati potrebbe essere obsoleta.',
+  duplicatesMergePartialRefreshFailed: 'La LeLe canonica risultante è stata salvata. Non è stato possibile eliminare la LeLe sostituita e i dati derivati non sono stati aggiornati. La revisione duplicati potrebbe essere obsoleta.',
+  duplicatesMergeFailed: 'Non è stato possibile completare l’accorpamento. Controlla le LeLe canoniche prima di riprovare.',
   duplicatesMerged: 'LeLe accorpate. Mantenuta {survivor}; eliminata {superseded}.',
 
   opsTitle: 'Stato e manutenzione',

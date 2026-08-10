@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
     Button,
@@ -38,7 +39,8 @@
   let dialog = $state<'delete-left' | 'delete-right' | 'not-duplicates' | 'merge' | null>(null)
   let submitting = $state(false)
   let mergeConfirm = $state(false)
-  let mergeSurvivor = $state<'left' | 'right'>('left')
+  let mergeSurvivor = $state<'left' | 'right' | null>(null)
+  let mergeDraftDirty = $state(false)
   let mergeText = $state('')
   let mergeTitle = $state('')
   let mergeTopic = $state('')
@@ -46,6 +48,34 @@
   let mergeImportance = $state(3)
   let mergeTags = $state('')
   let mergeDate = $state('')
+  let deleteDialog = $state<HTMLDialogElement>()
+  let notDuplicatesDialog = $state<HTMLDialogElement>()
+  let mergeDialog = $state<HTMLDialogElement>()
+  let cancelButton = $state<HTMLButtonElement>()
+
+  $effect(() => {
+    const active = dialog === 'merge'
+      ? mergeDialog
+      : dialog === 'not-duplicates'
+        ? notDuplicatesDialog
+        : dialog === 'delete-left' || dialog === 'delete-right'
+          ? deleteDialog
+          : undefined
+    if (active && !active.open) {
+      void (async () => {
+        await tick()
+        active.showModal()
+        // Destructive paths deliberately begin at Cancel. Merge begins at the
+        // unselected survivor choice, so the user must make that choice.
+        if (dialog === 'merge') active.querySelector<HTMLInputElement>('input[name="merge-survivor"]')?.focus()
+        else cancelButton?.focus()
+      })()
+    } else if (!active) {
+      for (const candidate of [deleteDialog, notDuplicatesDialog, mergeDialog]) {
+        if (candidate?.open) candidate.close()
+      }
+    }
+  })
 
   function requestLimit(): number | null {
     const parsed = Number(limit)
@@ -172,6 +202,14 @@
     mergeConfirm = false
   }
 
+  function handleDialogClose() {
+    if (!submitting) closeDialog()
+  }
+
+  function handleDialogCancel(event: Event) {
+    if (submitting) event.preventDefault()
+  }
+
   function selectedSide(side: 'left' | 'right') {
     if (!selectedPair) return null
     return side === 'left'
@@ -185,22 +223,39 @@
     dialog = next
     notice = ''
     if (next === 'merge') {
-      mergeSurvivor = 'left'
-      const lesson = pair.left_lesson
-      mergeText = lesson.text ?? ''
-      mergeTitle = lesson.title ?? ''
-      mergeTopic = lesson.topic ?? ''
-      mergeSource = lesson.source ?? 'note'
-      mergeImportance = lesson.importance ?? 3
-      mergeTags = (lesson.tags ?? []).join(', ')
-      mergeDate = lesson.date ?? ''
+      mergeSurvivor = null
+      mergeDraftDirty = false
+      mergeText = ''
+      mergeTitle = ''
+      mergeTopic = ''
+      mergeSource = 'note'
+      mergeImportance = 3
+      mergeTags = ''
+      mergeDate = ''
       mergeConfirm = false
     }
   }
 
+  function initialiseMergeDraft(side: 'left' | 'right') {
+    const lesson = selectedSide(side)?.lesson
+    if (!lesson) return
+    mergeText = lesson.text ?? ''
+    mergeTitle = lesson.title ?? ''
+    mergeTopic = lesson.topic ?? ''
+    mergeSource = lesson.source ?? 'note'
+    mergeImportance = lesson.importance ?? 3
+    mergeTags = (lesson.tags ?? []).join(', ')
+    mergeDate = lesson.date ?? ''
+  }
+
   function chooseMergeSurvivor(side: 'left' | 'right') {
-    // Preserve the draft while switching: both sources remain visible for manual comparison.
+    if (mergeSurvivor === null || !mergeDraftDirty) initialiseMergeDraft(side)
     mergeSurvivor = side
+  }
+
+  function markMergeDraftDirty() {
+    mergeDraftDirty = true
+    mergeConfirm = false
   }
 
   function pruneDeleted(lessonId: string) {
@@ -252,7 +307,7 @@
   }
 
   async function confirmMerge() {
-    if (!selectedPair) return
+    if (!selectedPair || !mergeSurvivor) return
     const survivor = selectedSide(mergeSurvivor)
     const superseded = selectedSide(mergeSurvivor === 'left' ? 'right' : 'left')
     if (!survivor || !superseded) return
@@ -283,10 +338,17 @@
     } catch (e) {
       closeDialog(true)
       if (e instanceof ApiError && e.code === 'duplicate_merge_refresh_failed') {
-        const recovery = e.recovery
-        if (recovery?.superseded_deleted === true && typeof recovery.superseded_id === 'string') pruneDeleted(recovery.superseded_id)
-        staleReview = true
-        notice = $messages.duplicatesMergeRefreshFailed
+        const recovery = mergeRefreshRecovery(e.recovery)
+        if (recovery?.survivorWritten && recovery.supersededDeleted) {
+          pruneDeleted(recovery.supersededId)
+          staleReview = true
+          notice = $messages.duplicatesMergeRefreshFailed
+        } else if (recovery?.survivorWritten && !recovery.supersededDeleted) {
+          staleReview = true
+          notice = $messages.duplicatesMergePartialRefreshFailed
+        } else {
+          notice = $messages.duplicatesMergeFailed
+        }
       } else if (e instanceof ApiError && e.code === 'duplicate_pair_stale') {
         notice = $messages.duplicatesStale
         await rerunApplied()
@@ -298,12 +360,29 @@
     }
   }
 
-  function escapeDialog(event: KeyboardEvent) {
-    if (event.key === 'Escape' && dialog) closeDialog()
+  function mergeRefreshRecovery(value: Record<string, unknown> | null): {
+    survivorId: string
+    survivorWritten: boolean
+    supersededId: string
+    supersededDeleted: boolean
+    refreshFailed: boolean
+  } | null {
+    if (!value || typeof value.survivor_id !== 'string' || typeof value.superseded_id !== 'string'
+      || typeof value.survivor_written !== 'boolean' || typeof value.superseded_deleted !== 'boolean'
+      || !value.refresh_outcome || typeof value.refresh_outcome !== 'object') return null
+    const refresh = value.refresh_outcome as Record<string, unknown>
+    if (refresh.attempted !== true || refresh.refreshed !== false) return null
+    if (!value.superseded_deleted && (!value.failure || typeof value.failure !== 'object'
+      || (value.failure as Record<string, unknown>).code !== 'duplicate_merge_superseded_delete_failed')) return null
+    return {
+      survivorId: value.survivor_id,
+      survivorWritten: value.survivor_written,
+      supersededId: value.superseded_id,
+      supersededDeleted: value.superseded_deleted,
+      refreshFailed: true,
+    }
   }
 </script>
-
-<svelte:window onkeydown={escapeDialog} />
 
 <section class="duplicates">
   <Panel title={$messages.duplicatesTitle} class="controls">
@@ -486,41 +565,41 @@
   {/if}
 </section>
 
-{#if selectedPair && dialog === 'not-duplicates'}
-  <div class="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="not-duplicates-title">
+<dialog bind:this={notDuplicatesDialog} aria-labelledby="not-duplicates-title" oncancel={handleDialogCancel} onclose={handleDialogClose}>
+  {#if selectedPair && dialog === 'not-duplicates'}
     <div class="dialog-card"><h2 id="not-duplicates-title">{$messages.duplicatesNotDuplicatesTitle}</h2>
       <p>{selectedPair.left_lesson.title || '—'} <code>{selectedPair.left_id}</code></p>
       <p>{selectedPair.right_lesson.title || '—'} <code>{selectedPair.right_id}</code></p>
       <p>{$messages.duplicatesNotDuplicatesHelp}</p>
-      <div class="dialog-actions"><button type="button" disabled={submitting} onclick={() => closeDialog()}>{$messages.duplicatesCancel}</button><button type="button" disabled={submitting} onclick={() => void confirmNotDuplicates()}>{$messages.duplicatesMark}</button></div>
+      <div class="dialog-actions"><button bind:this={cancelButton} type="button" disabled={submitting} onclick={() => notDuplicatesDialog?.close()}>{$messages.duplicatesCancel}</button><button type="button" disabled={submitting} onclick={() => void confirmNotDuplicates()}>{$messages.duplicatesMark}</button></div>
     </div>
-  </div>
-{/if}
+  {/if}
+</dialog>
 
-{#if selectedPair && (dialog === 'delete-left' || dialog === 'delete-right')}
-  {@const kept = selectedSide(dialog === 'delete-left' ? 'right' : 'left')}
-  {@const deleted = selectedSide(dialog === 'delete-left' ? 'left' : 'right')}
-  <div class="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-resolution-title">
+<dialog bind:this={deleteDialog} aria-labelledby="delete-resolution-title" oncancel={handleDialogCancel} onclose={handleDialogClose}>
+  {#if selectedPair && (dialog === 'delete-left' || dialog === 'delete-right')}
+    {@const kept = selectedSide(dialog === 'delete-left' ? 'right' : 'left')}
+    {@const deleted = selectedSide(dialog === 'delete-left' ? 'left' : 'right')}
     <div class="dialog-card"><h2 id="delete-resolution-title">{$messages.duplicatesConfirmDeleteTitle}</h2>
       <h3>{$messages.duplicatesKeep}</h3><p>{kept?.lesson.title || '—'} <code>{kept?.id}</code></p>
       <h3>{$messages.duplicatesDeletePermanently}</h3><p>{deleted?.lesson.title || '—'} <code>{deleted?.id}</code></p>
-      <div class="dialog-actions"><button type="button" disabled={submitting} onclick={() => closeDialog()}>{$messages.duplicatesCancel}</button><button class="danger" type="button" disabled={submitting} onclick={() => void confirmDelete()}>{submitting ? $messages.duplicatesDeleting : $messages.duplicatesDeletePermanently}</button></div>
+      <div class="dialog-actions"><button bind:this={cancelButton} type="button" disabled={submitting} onclick={() => deleteDialog?.close()}>{$messages.duplicatesCancel}</button><button class="danger" type="button" disabled={submitting} onclick={() => void confirmDelete()}>{submitting ? $messages.duplicatesDeleting : $messages.duplicatesDeletePermanently}</button></div>
     </div>
-  </div>
-{/if}
+  {/if}
+</dialog>
 
-{#if selectedPair && dialog === 'merge'}
-  {@const survivor = selectedSide(mergeSurvivor)}
-  {@const superseded = selectedSide(mergeSurvivor === 'left' ? 'right' : 'left')}
-  <div class="resolution-dialog" role="dialog" aria-modal="true" aria-labelledby="merge-title">
+<dialog bind:this={mergeDialog} aria-labelledby="merge-title" oncancel={handleDialogCancel} onclose={handleDialogClose}>
+  {#if selectedPair && dialog === 'merge'}
+    {@const survivor = mergeSurvivor ? selectedSide(mergeSurvivor) : null}
+    {@const superseded = mergeSurvivor ? selectedSide(mergeSurvivor === 'left' ? 'right' : 'left') : null}
     <div class="dialog-card merge-card"><h2 id="merge-title">{$messages.duplicatesMergeTitle}</h2>
       <div class="merge-sources"><section><h3>{$messages.duplicatesSourceLeft}</h3><p>{selectedPair.left_lesson.title || '—'} <code>{selectedPair.left_id}</code></p><pre>{selectedPair.left_lesson.text}</pre></section><section><h3>{$messages.duplicatesSourceRight}</h3><p>{selectedPair.right_lesson.title || '—'} <code>{selectedPair.right_id}</code></p><pre>{selectedPair.right_lesson.text}</pre></section></div>
       <fieldset><legend>{$messages.duplicatesResult}</legend><label><input type="radio" name="merge-survivor" checked={mergeSurvivor === 'left'} onchange={() => chooseMergeSurvivor('left')} /> {$messages.duplicatesUseLeft} <code>{selectedPair.left_id}</code></label><label><input type="radio" name="merge-survivor" checked={mergeSurvivor === 'right'} onchange={() => chooseMergeSurvivor('right')} /> {$messages.duplicatesUseRight} <code>{selectedPair.right_id}</code></label></fieldset>
-      <div class="merge-fields"><label>{$messages.fieldTitle}<input bind:value={mergeTitle} /></label><label>{$messages.fieldTopic}<input bind:value={mergeTopic} required /></label><label>{$messages.fieldSource}<input bind:value={mergeSource} /></label><label>{$messages.fieldImportance}<select bind:value={mergeImportance}>{#each [1, 2, 3, 4, 5] as value}<option value={value}>{value}</option>{/each}</select></label><label>{$messages.fieldTags}<input bind:value={mergeTags} /></label><label>{$messages.fieldDate}<input bind:value={mergeDate} /></label><label class="wide">{$messages.duplicatesResult}<textarea rows="8" bind:value={mergeText}></textarea></label></div>
-      {#if mergeConfirm}<section class="merge-confirm"><h3>{$messages.duplicatesConfirmMergeTitle}</h3><p>{$messages.duplicatesSurviving}: <code>{survivor?.id}</code></p><p>{$messages.duplicatesSuperseded}: <code>{superseded?.id}</code></p><button type="button" disabled={submitting} onclick={() => void confirmMerge()}>{submitting ? $messages.duplicatesDeleting : $messages.duplicatesSaveMerge}</button></section>{:else}<div class="dialog-actions"><button type="button" onclick={() => closeDialog()}>{$messages.duplicatesCancel}</button><button type="button" onclick={() => { mergeConfirm = true }} disabled={!mergeText.trim() || !mergeTopic.trim()}>{$messages.duplicatesSaveMerge}</button></div>{/if}
+      <div class="merge-fields"><label>{$messages.fieldTitle}<input bind:value={mergeTitle} oninput={markMergeDraftDirty} /></label><label>{$messages.fieldTopic}<input bind:value={mergeTopic} required oninput={markMergeDraftDirty} /></label><label>{$messages.fieldSource}<input bind:value={mergeSource} oninput={markMergeDraftDirty} /></label><label>{$messages.fieldImportance}<select bind:value={mergeImportance} onchange={markMergeDraftDirty}>{#each [1, 2, 3, 4, 5] as value}<option value={value}>{value}</option>{/each}</select></label><label>{$messages.fieldTags}<input bind:value={mergeTags} oninput={markMergeDraftDirty} /></label><label>{$messages.fieldDate}<input bind:value={mergeDate} oninput={markMergeDraftDirty} /></label><label class="wide">{$messages.duplicatesResult}<textarea rows="8" bind:value={mergeText} oninput={markMergeDraftDirty}></textarea></label></div>
+      {#if mergeConfirm}<section class="merge-confirm"><h3>{$messages.duplicatesConfirmMergeTitle}</h3><p>{$messages.duplicatesSurviving}: <code>{survivor?.id}</code></p><p>{$messages.duplicatesSuperseded}: <code>{superseded?.id}</code></p><button type="button" disabled={submitting} onclick={() => void confirmMerge()}>{submitting ? $messages.duplicatesDeleting : $messages.duplicatesSaveMerge}</button></section>{:else}<div class="dialog-actions"><button bind:this={cancelButton} type="button" onclick={() => mergeDialog?.close()}>{$messages.duplicatesCancel}</button><button type="button" onclick={() => { mergeConfirm = true }} disabled={!mergeSurvivor || !mergeText.trim() || !mergeTopic.trim()}>{$messages.duplicatesSaveMerge}</button></div>{/if}
     </div>
-  </div>
-{/if}
+  {/if}
+</dialog>
 
 <style>
   .duplicates, .pair-list { display: grid; gap: 16px; }
@@ -560,7 +639,8 @@
   .resolution-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .resolution-actions button, .dialog-actions button, .merge-confirm button { border: 1px solid var(--border); border-radius: 6px; background: var(--color-surface); color: var(--text); padding: 7px 10px; }
   .resolution-actions button:focus-visible, .dialog-actions button:focus-visible, .merge-confirm button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .resolution-dialog { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgb(36 28 22 / 42%); }
+  dialog { width: min(650px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 0; border: 1px solid var(--border); border-radius: 10px; color: var(--color-text); background: var(--color-surface); box-shadow: 0 18px 48px rgb(36 28 22 / 28%); }
+  dialog::backdrop { background: rgb(36 28 22 / 42%); }
   .dialog-card { width: min(650px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 20px; border-radius: 10px; background: var(--color-surface); box-shadow: 0 18px 48px rgb(36 28 22 / 28%); }
   .dialog-card h2, .dialog-card h3 { margin-top: 0; } .dialog-card code { overflow-wrap: anywhere; }
   .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }.danger { background: #a22 !important; color: white !important; border-color: #a22 !important; }
