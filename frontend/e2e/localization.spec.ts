@@ -163,7 +163,7 @@ test.describe('GUI localization', () => {
       ['Vault', '#/vault'],
       ['Duplicates', '#/duplicates'],
       ['System', '#/ops'],
-      ['Settings', '#/settings'],
+      ['Diagnostics', '#/settings'],
       ['About', '#/about'],
     ] as const
 
@@ -192,7 +192,7 @@ test.describe('GUI localization', () => {
       ['Vault', '#/vault'],
       ['Duplicati', '#/duplicates'],
       ['Sistema', '#/ops'],
-      ['Impostazioni', '#/settings'],
+      ['Diagnostica', '#/settings'],
       ['Informazioni', '#/about'],
     ] as const
 
