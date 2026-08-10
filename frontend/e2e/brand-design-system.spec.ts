@@ -90,8 +90,6 @@ test('shows the GiadaWare product signature without crowding the product brand',
     '/app/brand/lele-cameo/05-walk-right-a.png',
   )
 })
-
-
 test('pins the maker signature to the desktop viewport across routes', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 600 })
   await page.goto('/app/')
@@ -177,20 +175,4 @@ test('keeps browse filter controls clear of the right edge', async ({ page }) =>
 
   expect(geometry.rightGap).toBeGreaterThanOrEqual(16)
   expect(geometry.controlsInside).toBe(true)
-})
-
-
-test('presents the new lesson action with the LeLe monkey balloon', async ({ page }) => {
-  await page.goto('/app/')
-
-  const action = page.getByTestId('new-lesson-cta')
-
-  await expect(action).toBeVisible()
-  await expect(action).toHaveAccessibleName('New LeLe')
-  await expect(action.getByText('+ New')).toBeVisible()
-  await expect(action.getByText('LeLe')).toBeVisible()
-  await expect(action.locator('img')).toHaveAttribute(
-    'src',
-    '/app/brand/lele-cameo/05-walk-right-a.png',
-  )
 })

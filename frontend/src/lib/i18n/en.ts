@@ -61,6 +61,22 @@ export const en = {
   navGroupManage: 'Manage',
   shellVersion: 'Version',
   shellWorkspace: 'Workspace',
+  shellWorkspaceUnavailable: 'Unavailable',
+  showNavigation: 'Show navigation',
+  hideNavigation: 'Hide navigation',
+  commandPaletteTrigger: 'Search or commands',
+  commandPaletteShortcut: 'Command palette shortcut: Control K',
+  commandPaletteTitle: 'Search or commands',
+  commandPalettePlaceholder: 'Filter commands…',
+  commandPaletteResults: 'Available commands',
+  commandPaletteNoResults: 'No matching commands.',
+  commandPaletteClose: 'Close',
+  commandPaletteEnterHint: 'Press Enter to open the highlighted first result.',
+  commandSearchLele: 'Search LeLe',
+  help: 'Help',
+  helpUserGuide: 'User guide',
+  helpReportProblem: 'Report a problem',
+  helpShortcut: 'Shortcut: Ctrl K opens Search or commands.',
   settingsTitle: 'Diagnostics',
   settingsIntro:
     'Inspect the current support state and prepare a bounded report only when you choose to generate one.',
@@ -136,9 +152,6 @@ export const en = {
   languageItalian: 'Italian',
 
   makerOpenSource: 'Open-source software',
-
-  newLeleAccessible: 'New LeLe',
-  newLelePrefix: 'New',
 
   commonLoading: 'Loading…',
 
