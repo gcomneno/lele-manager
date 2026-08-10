@@ -212,8 +212,42 @@
 </script>
 
 <div class:sidebar-hidden={!sidebarVisible} class="shell">
-  {#if sidebarVisible}
-  <aside id="primary-sidebar" class="sidebar">
+  <header class="global-header">
+    <button
+      class="sidebar-toggle"
+      type="button"
+      aria-label={sidebarVisible ? $messages.hideNavigation : $messages.showNavigation}
+      aria-expanded={sidebarVisible}
+      aria-controls="primary-sidebar"
+      data-testid="sidebar-toggle"
+      onclick={toggleSidebar}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+    </button>
+    <dl class="workspace-context" data-testid="header-workspace">
+      <dt>{$messages.shellWorkspace}</dt>
+      <dd data-testid="shell-workspace">{workspaceName ?? $messages.shellWorkspaceUnavailable}</dd>
+    </dl>
+    <div class="header-utilities">
+      <CommandPalette />
+      <HealthBar />
+      <label class="header-language" for="lele-manager-language">
+        <span>{$messages.languageLabel}</span>
+        <select
+          id="lele-manager-language"
+          data-testid="language-control"
+          value={$locale}
+          onchange={(event) => setLocale(event.currentTarget.value)}
+        >
+          <option value="en">{$messages.languageEnglish}</option>
+          <option value="it">{$messages.languageItalian}</option>
+        </select>
+      </label>
+      <HeaderHelp />
+    </div>
+  </header>
+
+  <aside id="primary-sidebar" class="sidebar" hidden={!sidebarVisible}>
     <a class="brand" href="#/" aria-label={$messages.brandHomeAccessible} onclick={(e) => { e.preventDefault(); navigate({ view: 'dashboard' }) }}>
       <img src="/app/brand/lele-manager-mark.svg" alt="" aria-hidden="true" />
       <span>
@@ -299,43 +333,8 @@
       </span>
     </footer>
   </aside>
-  {/if}
 
-  <div class="main">
-    <header class="global-header">
-      <button
-        class="sidebar-toggle"
-        type="button"
-        aria-label={sidebarVisible ? $messages.hideNavigation : $messages.showNavigation}
-        aria-expanded={sidebarVisible}
-        aria-controls="primary-sidebar"
-        data-testid="sidebar-toggle"
-        onclick={toggleSidebar}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-      </button>
-      <dl class="workspace-context" data-testid="header-workspace">
-        <dt>{$messages.shellWorkspace}</dt>
-        <dd data-testid="shell-workspace">{workspaceName ?? $messages.shellWorkspaceUnavailable}</dd>
-      </dl>
-      <div class="header-utilities">
-        <CommandPalette />
-      <HealthBar />
-        <label class="header-language" for="lele-manager-language">
-          <span>{$messages.languageLabel}</span>
-          <select
-            id="lele-manager-language"
-            data-testid="language-control"
-            value={$locale}
-            onchange={(event) => setLocale(event.currentTarget.value)}
-          >
-            <option value="en">{$messages.languageEnglish}</option>
-            <option value="it">{$messages.languageItalian}</option>
-          </select>
-        </label>
-        <HeaderHelp />
-      </div>
-    </header>
+  <main class="main">
     <div class="content">
       {@render children()}
     </div>
@@ -393,27 +392,39 @@
         LeLe!!
       </span>
     </div>
-  </div>
+  </main>
 </div>
 
 <style>
   .shell {
     display: grid;
     grid-template-columns: 220px 1fr;
+    grid-template-areas:
+      'sidebar header'
+      'sidebar main';
+    grid-template-rows: auto minmax(0, 1fr);
     min-height: 100vh;
   }
 
   .shell.sidebar-hidden {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'header'
+      'main';
   }
 
   .sidebar {
+    grid-area: sidebar;
     background: var(--sidebar);
     color: var(--sidebar-text);
     padding: 20px 16px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  .sidebar[hidden] {
+    display: none;
   }
 
   .brand {
@@ -561,12 +572,14 @@
   }
 
   .main {
+    grid-area: main;
     display: flex;
     flex-direction: column;
     min-width: 0;
   }
 
   .global-header {
+    grid-area: header;
     display: flex;
     align-items: center;
     gap: 12px;
@@ -667,15 +680,18 @@
 
   @media (max-width: 800px) {
     .shell {
-      display: flex;
-      flex-direction: column;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'header'
+        'sidebar'
+        'main';
+      grid-template-rows: auto auto minmax(0, 1fr);
       width: 100%;
       max-width: 100%;
       overflow-x: clip;
     }
 
     .sidebar {
-      order: 2;
       box-sizing: border-box;
       width: 100%;
       min-width: 0;
@@ -700,8 +716,6 @@
     .product-signature {
       display: none;
     }
-
-    .main { order: 1; }
 
     .global-header {
       flex-wrap: wrap;
