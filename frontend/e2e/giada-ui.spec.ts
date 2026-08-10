@@ -173,21 +173,21 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
 
   await expect(detailPanel).toBeVisible()
 
-  const editButton = detailPanel.getByRole('button', {
-    name: 'Edit',
+  const modifyButton = detailPanel.getByRole('button', {
+    name: 'Modify',
     exact: true,
   })
 
-  await expect(editButton).toHaveAttribute(
+  await expect(modifyButton).toHaveAttribute(
     'data-giu-variant',
     'secondary',
   )
-  await expect(editButton).toHaveAttribute(
+  await expect(modifyButton).toHaveAttribute(
     'data-giu-size',
     'compact',
   )
 
-  await editButton.click()
+  await modifyButton.click()
 
   const editorPanel = page.getByRole('region', {
     name: 'Edit LeLe',

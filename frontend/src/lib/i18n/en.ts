@@ -178,6 +178,21 @@ export const en = {
   browseLessons: '{count} lessons',
   browseEmpty: 'No LeLe found.',
 
+  lessonModify: 'Modify',
+  lessonInspect: 'Inspect',
+  deleteLessonDelete: 'Delete',
+  deleteLessonTitle: 'Delete LeLe?',
+  deleteLessonId: 'ID',
+  deleteLessonUntitled: 'Untitled',
+  deleteLessonCanonical: 'This removes the canonical Markdown lesson.',
+  deleteLessonIrreversible: 'This action cannot be undone.',
+  deleteLessonCancel: 'Cancel',
+  deleteLessonDeleting: 'Deleting…',
+  lessonDeleted: 'LeLe deleted.',
+  lessonDeletedRefreshFailed:
+    'The canonical LeLe was deleted, but derived data could not be refreshed. Search and similarity results may be stale.',
+  lessonDeleteFailed: 'LeLe could not be deleted.',
+
   detailEdit: 'Edit',
   detailSimilarLessons: 'Similar LeLe',
 

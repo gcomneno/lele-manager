@@ -3,7 +3,10 @@
   import { api, type ExportSearchRequest, type Lesson } from '../lib/api'
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
+  import { deleteLessonWithOutcome } from '../lib/lessonDeletion'
+  import { consumeLessonDeletionNotice } from '../lib/lessonDeletionNotice'
   import LessonCard from '../components/LessonCard.svelte'
+  import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
     Button,
@@ -24,6 +27,9 @@
   let exporting = $state(false)
   let error = $state('')
   let status = $state('')
+  let deleteTarget = $state<Lesson | null>(null)
+  let deleteNotice = $state('')
+  let deleteNoticeTone = $state<'success' | 'warning'>('success')
 
   function buildSearchBody(): ExportSearchRequest {
     return {
@@ -116,7 +122,34 @@
     runSearch()
   }
 
+  async function deleteLesson(lesson: Lesson) {
+    error = ''
+    try {
+      const outcome = await deleteLessonWithOutcome(lesson.id)
+      lessons = lessons.filter((item) => item.id !== lesson.id)
+      if (outcome.kind === 'refreshed') {
+        deleteNotice = $messages.lessonDeleted
+        deleteNoticeTone = 'success'
+      } else {
+        deleteNotice = $messages.lessonDeletedRefreshFailed
+        deleteNoticeTone = 'warning'
+      }
+      deleteTarget = null
+    } catch {
+      error = $messages.lessonDeleteFailed
+      deleteTarget = null
+    }
+  }
+
   onMount(() => {
+    const notice = consumeLessonDeletionNotice()
+    if (notice === 'deleted') {
+      deleteNotice = $messages.lessonDeleted
+      deleteNoticeTone = 'success'
+    } else if (notice === 'refresh-failed') {
+      deleteNotice = $messages.lessonDeletedRefreshFailed
+      deleteNoticeTone = 'warning'
+    }
     runSearch()
   })
 </script>
@@ -204,6 +237,14 @@
       />
     {/if}
 
+    {#if deleteNotice}
+      <FormStatus
+        message={deleteNotice}
+        tone={deleteNoticeTone}
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+    {/if}
+
     {#if error}
       <FormStatus
         message={error}
@@ -220,14 +261,49 @@
       <p class="meta">{$messages.browseEmpty}</p>
     {:else}
       {#each lessons as lesson}
-        <LessonCard
-          {lesson}
-          onclick={() => navigate({ view: 'detail', id: lesson.id })}
-        />
+        <div class="lesson-result" data-testid={`lesson-result-${lesson.id}`}>
+          <LessonCard
+            {lesson}
+            onclick={() => navigate({ view: 'detail', id: lesson.id })}
+          />
+          <div class="lesson-actions" aria-label={`${lesson.id} actions`}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              class="lele-secondary-button"
+              onclick={() => navigate({ view: 'editor', id: lesson.id })}
+            >
+              {$messages.lessonModify}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              class="lele-secondary-button"
+              onclick={() => navigate({ view: 'detail', id: lesson.id })}
+            >
+              {$messages.lessonInspect}
+            </Button>
+            <button
+              type="button"
+              class="delete-action"
+              onclick={() => { deleteTarget = lesson }}
+            >
+              {$messages.deleteLessonDelete}
+            </button>
+          </div>
+        </div>
       {/each}
     {/if}
   </section>
 </div>
+
+<DeleteLessonDialog
+  lesson={deleteTarget}
+  oncancel={() => { deleteTarget = null }}
+  onconfirm={deleteLesson}
+/>
 
 <style>
   .browse {
@@ -259,6 +335,32 @@
   .results {
     display: grid;
     gap: 10px;
+  }
+
+  .lesson-result {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .lesson-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-inline: var(--space-2);
+  }
+
+  .delete-action {
+    border: 1px solid #a22;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: #8b1717;
+    font-weight: 700;
+    padding: 6px 10px;
+  }
+
+  .delete-action:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
   }
   /* Browse filter grid breathing room */
   .browse-filter-grid {

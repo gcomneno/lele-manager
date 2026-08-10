@@ -168,6 +168,22 @@ l’Importanza è esplicitamente limitata da 1 a 5. La similarità può proporre
 topic solo dopo una verifica esplicita; applicarlo richiede un’azione distinta.
 Solo il salvataggio scrive nel vault Markdown canonico.
 
+## Gestire una LeLe esistente
+
+Browse e Dettaglio della lesson espongono le stesse azioni per una LeLe
+esistente: **Modifica**, **Ispeziona** ed **Elimina**. Ispeziona apre la
+superficie mantenuta di similarità spiegata; durante la modifica, Editor
+mantiene l’azione esplicita **Verifica similarità**. Elimina mostra sempre il
+titolo della lesson (oppure *Senza titolo*) e l’ID stabile per la conferma,
+prima di rimuovere permanentemente quel preciso file Markdown canonico.
+
+Dopo una normale eliminazione LeLe Manager ricostruisce automaticamente la
+proiezione e lo stato di ricerca derivati: non è necessario usare
+**Sistema → Aggiorna tutto**. Se l’eliminazione Markdown riesce ma il refresh
+derivato fallisce, l’interfaccia comunica correttamente l’esito parziale: la
+LeLe canonica non esiste più, mentre ricerca e similarità possono restare
+temporaneamente obsolete fino a un refresh successivo.
+
 ## Screenshot
 
 Gli screenshot in [`../images/gui/`](../images/gui/) sono generati dalla

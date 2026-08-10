@@ -12,8 +12,11 @@
   } from '../lib/api'
   import { navigate } from '../lib/router'
   import { messages } from '../lib/i18n'
+  import { deleteLessonWithOutcome } from '../lib/lessonDeletion'
+  import { setLessonDeletionNotice } from '../lib/lessonDeletionNotice'
   import { renderMarkdown } from '../lib/markdown'
   import SimilarPanel from '../components/SimilarPanel.svelte'
+  import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
 
   interface Props {
     id: string
@@ -28,6 +31,8 @@
   let similarLoading = $state(false)
   let error = $state('')
   let similarError = $state('')
+  let deleteTarget = $state<Lesson | null>(null)
+  let deleteError = $state('')
 
   async function load() {
     loading = true
@@ -66,6 +71,25 @@
     }
   }
 
+  function inspectSimilarity() {
+    document.getElementById('lesson-similarity')?.focus()
+  }
+
+  async function deleteLesson(lessonToDelete: Lesson) {
+    deleteError = ''
+    try {
+      const outcome = await deleteLessonWithOutcome(lessonToDelete.id)
+      setLessonDeletionNotice(
+        outcome.kind === 'refreshed' ? 'deleted' : 'refresh-failed',
+      )
+      deleteTarget = null
+      navigate({ view: 'browse' })
+    } catch {
+      deleteError = $messages.lessonDeleteFailed
+      deleteTarget = null
+    }
+  }
+
   $effect(() => {
     if (!id) return
     load()
@@ -94,9 +118,30 @@
             id: lesson!.id,
           })}
         >
-          {$messages.detailEdit}
+          {$messages.lessonModify}
         </Button>
+        <Button
+          variant="secondary"
+          size="compact"
+          class="lele-secondary-button"
+          onclick={inspectSimilarity}
+        >
+          {$messages.lessonInspect}
+        </Button>
+        <button
+          type="button"
+          class="delete-action"
+          onclick={() => { deleteTarget = lesson }}
+        >{$messages.deleteLessonDelete}</button>
       {/snippet}
+
+      {#if deleteError}
+        <FormStatus
+          message={deleteError}
+          tone="error"
+          style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+        />
+      {/if}
 
       <div class="meta row">
         <span>{$messages.fieldTopic}: {lesson.topic ?? '—'}</span>
@@ -123,6 +168,7 @@
     </Panel>
 
     <SimilarPanel
+      id="lesson-similarity"
       title={$messages.detailSimilarLessons}
       items={similar}
       meta={similarMeta}
@@ -132,6 +178,12 @@
     />
   </div>
 {/if}
+
+<DeleteLessonDialog
+  lesson={deleteTarget}
+  oncancel={() => { deleteTarget = null }}
+  onconfirm={deleteLesson}
+/>
 
 <style>
   .detail-layout {
@@ -157,6 +209,20 @@
 
   .tags {
     margin-top: 8px;
+  }
+
+  .delete-action {
+    border: 1px solid #a22;
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    color: #8b1717;
+    font-weight: 700;
+    padding: 6px 10px;
+  }
+
+  .delete-action:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
   }
 
   @media (max-width: 900px) {

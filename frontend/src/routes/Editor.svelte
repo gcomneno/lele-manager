@@ -15,7 +15,10 @@
   import { stripFrontmatter } from '../lib/markdown'
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
+  import { deleteLessonWithOutcome } from '../lib/lessonDeletion'
+  import { setLessonDeletionNotice } from '../lib/lessonDeletionNotice'
   import SimilarPanel from '../components/SimilarPanel.svelte'
+  import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
 
   interface Props {
     id?: string
@@ -33,6 +36,7 @@
   let title = $state('')
   let body = $state('')
   let lessonId = $state('')
+  let loadedLesson = $state<Lesson | null>(null)
 
   let similar = $state<SimilarItem[]>([])
   let similarMeta = $state<SimilarMeta | null>(null)
@@ -44,6 +48,8 @@
   let saving = $state(false)
   let saveMsg = $state('')
   let saveSucceeded = $state(false)
+  let deleteError = $state('')
+  let deleteTarget = $state<Lesson | null>(null)
   let metadataOptions = $state<EditorMetadataOptionsResponse>({
     topics: [], tags: [], sources: [],
   })
@@ -202,6 +208,7 @@
         lessonIdValue,
       )
       lessonId = lesson.id
+      loadedLesson = lesson
       topic = lesson.topic ?? ''
       source = lesson.source ?? ''
       importance = lesson.importance ?? 3
@@ -213,6 +220,7 @@
       body = parsed.body || lesson.text || ''
       invalidateSimilarity()
     } catch (e) {
+      loadedLesson = null
       loadError = e instanceof Error
         ? e.message
         : String(e)
@@ -290,6 +298,21 @@
     }
   }
 
+  async function deleteLesson(lessonToDelete: Lesson) {
+    deleteError = ''
+    try {
+      const outcome = await deleteLessonWithOutcome(lessonToDelete.id)
+      setLessonDeletionNotice(
+        outcome.kind === 'refreshed' ? 'deleted' : 'refresh-failed',
+      )
+      deleteTarget = null
+      navigate({ view: 'browse' })
+    } catch {
+      deleteError = $messages.lessonDeleteFailed
+      deleteTarget = null
+    }
+  }
+
   $effect(() => {
     loadMetadataOptions()
     if (id) {
@@ -330,6 +353,14 @@
           ? $messages.editorSaving
           : $messages.editorSaveVault}
       </Button>
+
+      {#if id && loadedLesson}
+        <button
+          type="button"
+          class="delete-action"
+          onclick={() => { deleteTarget = loadedLesson }}
+        >{$messages.deleteLessonDelete}</button>
+      {/if}
     {/snippet}
 
     {#if loadError}
@@ -344,6 +375,14 @@
       <FormStatus
         message={saveMsg}
         tone={saveSucceeded ? 'success' : 'error'}
+        style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+      />
+    {/if}
+
+    {#if deleteError}
+      <FormStatus
+        message={deleteError}
+        tone="error"
         style="--giu-form-status-padding: var(--space-2) var(--space-3)"
       />
     {/if}
@@ -511,6 +550,12 @@
   {/if}
 </div>
 
+<DeleteLessonDialog
+  lesson={deleteTarget}
+  oncancel={() => { deleteTarget = null }}
+  onconfirm={deleteLesson}
+/>
+
 <style>
   .editor-layout {
     display: grid;
@@ -553,6 +598,8 @@
   }
 
   .new-value { font-size: 0.75rem; color: var(--muted); }
+  .delete-action { border: 1px solid #a22; border-radius: var(--radius-sm); background: var(--color-surface); color: #8b1717; font-weight: 700; padding: 6px 10px; }
+  .delete-action:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .tag-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .tag-input input { flex: 1 1 120px; width: auto; }
   .tag-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: #f0ebe3; padding: 3px 7px; color: var(--text); }
