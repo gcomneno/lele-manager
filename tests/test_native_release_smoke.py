@@ -13,6 +13,8 @@ SMOKE: dict[str, Any] = runpy.run_path(
 find_release_archive = SMOKE["find_release_archive"]
 extract_release_archive = SMOKE["extract_release_archive"]
 assert_isolated_runtime_paths = SMOKE["assert_isolated_runtime_paths"]
+find_linux_installer = SMOKE["find_linux_installer"]
+run_linux_installed_smoke = SMOKE["run_linux_installed_smoke"]
 
 
 def test_find_release_archive_requires_exactly_one_match(
@@ -91,6 +93,22 @@ def test_zip_extraction_restores_unix_executable_mode(
 
     executable = target / "package" / "LeLe-Manager"
     assert executable.stat().st_mode & 0o777 == 0o755
+
+
+def test_find_linux_installer_requires_an_executable_at_archive_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "LeLe-Manager-v1.2.3-Linux-x86_64"
+    root.mkdir()
+    installer = root / "install.sh"
+    installer.write_text("#!/bin/sh\n", encoding="utf-8")
+    installer.chmod(0o755)
+
+    assert find_linux_installer(tmp_path, "1.2.3") == installer
+
+
+def test_linux_installed_smoke_is_part_of_the_published_archive_contract() -> None:
+    assert callable(run_linux_installed_smoke)
 
 
 def test_runtime_paths_must_stay_outside_extracted_release(

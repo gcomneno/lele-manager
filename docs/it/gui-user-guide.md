@@ -17,6 +17,12 @@ virtuale, build del frontend o checkout del repository. Il launcher packaged
 prepara le directory runtime locali, avvia l'applicazione su loopback, attende
 `/health` e apre automaticamente `/app/`.
 
+L'archive Linux supporta anche un'installazione locale esplicita: eseguire
+`./install.sh` dalla sua directory principale e poi il launcher stabile
+`lele-manager` da `~/.local/bin` (o dalla directory bin personalizzata
+documentata). L'archive estratto resta utilizzabile in modo portabile.
+L'installazione non aggiunge ancora una voce nel menu applicazioni o un'icona.
+
 Ogni archive nativo include `LEGGIMI_PRIMA.txt` con istruzioni di primo avvio
 specifiche per la piattaforma.
 

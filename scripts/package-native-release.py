@@ -16,6 +16,7 @@ PYPROJECT = ROOT / "pyproject.toml"
 DIST_NATIVE = ROOT / "dist" / "native"
 RELEASE_DIR = ROOT / "dist" / "release"
 APP_NAME = "LeLe-Manager"
+LINUX_INSTALLER = ROOT / "packaging" / "linux" / "install.sh"
 
 
 def project_version() -> str:
@@ -95,6 +96,16 @@ def main() -> int:
     if not guide.is_file():
         raise SystemExit(f"ERRORE: guida assente: {guide}")
 
+    if os_label == "Linux":
+        if not LINUX_INSTALLER.is_file():
+            raise SystemExit(
+                f"ERRORE: installer Linux assente: {LINUX_INSTALLER}"
+            )
+        if not LINUX_INSTALLER.stat().st_mode & 0o111:
+            raise SystemExit(
+                f"ERRORE: installer Linux non eseguibile: {LINUX_INSTALLER}"
+            )
+
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
     package_name = f"{APP_NAME}-v{version}-{os_label}-{architecture}"
@@ -111,6 +122,8 @@ def main() -> int:
 
     shutil.copytree(source, staging / APP_NAME)
     shutil.copy2(guide, staging / "LEGGIMI_PRIMA.txt")
+    if os_label == "Linux":
+        shutil.copy2(LINUX_INSTALLER, staging / "install.sh")
 
     if archive_format == "tar.gz":
         create_tar_gz(staging, archive, package_name)

@@ -76,6 +76,31 @@ from GitHub Releases, extract it, and launch **LeLe-Manager**. The native
 packages for Linux, macOS, and Windows are self-contained: they do not require
 Python, Node.js, npm, a virtual environment, or a repository checkout.
 
+### Linux: portable or user-local installed
+
+The Linux `.tar.gz` remains a portable extract-and-run release: launch
+`LeLe-Manager/LeLe-Manager` directly from the extracted archive and keep or
+move that directory as you prefer.
+
+It also includes an explicit user-local installer. From the extracted archive
+root, run:
+
+```bash
+./install.sh
+```
+
+This copies the native bundle to
+`${XDG_DATA_HOME:-~/.local/share}/lele-manager/app` and creates the stable
+`~/.local/bin/lele-manager` launcher. The latter is intended for a user whose
+`~/.local/bin` is on `PATH`; the installer prints the exact path when it is
+not. Advanced users and automated environments may choose another absolute
+launcher directory with `LELE_MANAGER_INSTALL_BIN_DIR`.
+
+Re-running `./install.sh` from a newer extracted Linux release replaces only
+the stable `app/` bundle. It does not remove the existing data, vault, or model
+paths, which are siblings of—not contents of—the installed bundle. This does
+not yet create a desktop-menu entry or install icons.
+
 On first launch, LeLe Manager prepares its local application directories and
 default Markdown vault outside the installation directory, starts the local
 FastAPI application, waits for it to become healthy, and opens `/app/` in the
