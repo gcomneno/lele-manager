@@ -1,11 +1,42 @@
-LELE MANAGER — COME APRIRLO SU LINUX
+LELE MANAGER — USO SU LINUX
+
+Puoi usare LeLe Manager in due modi.
+
+A. PORTABILE (senza installazione)
 
 1. Apri la cartella LeLe-Manager.
 2. Cerca il file chiamato LeLe-Manager.
 3. Fai doppio clic sul file LeLe-Manager.
 4. Se il computer ti chiede se vuoi eseguirlo, conferma.
-5. Aspetta qualche secondo.
-6. LeLe Manager si aprirà automaticamente nel browser.
+5. Aspetta qualche secondo: LeLe Manager si aprirà automaticamente nel browser.
+
+Puoi conservare o spostare questa cartella. Per una nuova versione, estrai la
+nuova cartella e avviala allo stesso modo.
+
+B. INSTALLAZIONE LOCALE UTENTE (launcher stabile)
+
+1. Estrai l'archive e apri un terminale nella sua cartella principale.
+2. Esegui: ./install.sh
+3. Dopo il messaggio di conferma, esegui: lele-manager
+
+L'installazione non richiede privilegi di amministratore. Copia l'applicazione
+in ${XDG_DATA_HOME:-~/.local/share}/lele-manager/install/app e crea il launcher
+~/.local/bin/lele-manager. Se ~/.local/bin non e' nel PATH, aggiungilo alla
+configurazione della shell oppure esegui il percorso indicato dal programma di
+installazione.
+
+Per aggiornare, estrai una nuova release ed esegui di nuovo ./install.sh. Il
+launcher lele-manager mantiene lo stesso percorso. La directory
+${XDG_DATA_HOME:-~/.local/share}/lele-manager contiene i dati runtime
+persistenti; solo install/ e' gestita e sostituibile dall'installer. I dati, il
+vault e i modelli personali restano fuori dalla directory app installata.
+
+Per uso automatizzato o per scegliere intenzionalmente una directory bin
+diversa, puoi impostare LELE_MANAGER_INSTALL_BIN_DIR a un percorso assoluto
+prima di eseguire l'installer.
+
+L'installazione non aggiunge ancora voci al menu delle applicazioni o icone del
+desktop.
 
 Quando il programma è aperto puoi usare normalmente:
 - Esplora

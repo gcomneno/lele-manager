@@ -17,6 +17,14 @@ build, or repository checkout is required. The packaged launcher prepares local
 runtime directories, starts the loopback application, waits for `/health`, and
 opens `/app/` automatically.
 
+The Linux archive also supports an explicit user-local installation: run its
+top-level `./install.sh`, then start the stable `lele-manager` launcher from
+`~/.local/bin` (or the documented custom bin directory). The extracted archive
+continues to work portably. This installation does not yet add an application
+menu entry or desktop icon. The installer owns only
+`${XDG_DATA_HOME:-~/.local/share}/lele-manager/install/`; the surrounding
+`lele-manager` directory remains the persistent runtime-data namespace.
+
 Each native archive includes `LEGGIMI_PRIMA.txt` with platform-specific
 first-run instructions.
 
