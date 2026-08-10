@@ -5,9 +5,77 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER_SOURCE = ROOT / "packaging" / "linux" / "install.sh"
 CANONICAL_ICON = ROOT / "frontend" / "public" / "favicon.svg"
+
+
+def desktop_entry_values(desktop_entry: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in desktop_entry.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value
+    return values
+
+
+def decode_desktop_string(value: str) -> str:
+    escapes = {"s": " ", "n": "\n", "t": "\t", "r": "\r", "\\": "\\"}
+    decoded: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "\\":
+            decoded.append(char)
+            index += 1
+            continue
+        if index + 1 == len(value) or value[index + 1] not in escapes:
+            raise AssertionError(f"unsupported desktop string escape: {value!r}")
+        decoded.append(escapes[value[index + 1]])
+        index += 2
+    return "".join(decoded)
+
+
+def decode_exec_program(value: str) -> str:
+    command_line = decode_desktop_string(value)
+    if len(command_line) < 2 or not (
+        command_line.startswith('"') and command_line.endswith('"')
+    ):
+        raise AssertionError(f"Exec program is not one quoted token: {value!r}")
+
+    decoded: list[str] = []
+    index = 1
+    while index < len(command_line) - 1:
+        char = command_line[index]
+        if char == "\\":
+            if (
+                index + 1 >= len(command_line) - 1
+                or command_line[index + 1] not in {'"', "`", "$", "\\"}
+            ):
+                raise AssertionError(f"invalid Exec quote escape: {value!r}")
+            decoded.append(command_line[index + 1])
+            index += 2
+        elif char == "%":
+            if index + 1 >= len(command_line) - 1 or command_line[index + 1] != "%":
+                raise AssertionError(f"unexpected Exec field code: {value!r}")
+            decoded.append("%")
+            index += 2
+        elif char == '"':
+            raise AssertionError(f"unescaped quote inside Exec token: {value!r}")
+        else:
+            decoded.append(char)
+            index += 1
+    return "".join(decoded)
+
+
+def assert_desktop_launcher_contract(desktop_entry: Path, launcher: Path) -> None:
+    values = desktop_entry_values(desktop_entry)
+    assert decode_exec_program(values["Exec"]) == str(launcher)
+    assert decode_desktop_string(values["TryExec"]) == str(launcher)
+    assert not values["TryExec"].startswith('"')
+    assert not values["TryExec"].endswith('"')
 
 
 def create_extracted_release(
@@ -108,8 +176,7 @@ def test_clean_install_honors_xdg_data_home_and_creates_stable_launcher(
     assert "Icon=lele-manager" in desktop
     assert "Categories=Development;" in desktop
     assert "StartupNotify=true" in desktop
-    assert f'Exec="{launcher}"' in desktop
-    assert f'TryExec="{launcher}"' in desktop
+    assert_desktop_launcher_contract(desktop_entry, launcher)
     assert "~" not in desktop
     assert "$HOME" not in desktop
     assert "/home/baltimora" not in desktop
@@ -204,11 +271,10 @@ def test_upgrade_replaces_only_stable_app_payload_and_preserves_user_state(
         "1.2." in str(path)
         for path in (data_home / "lele-manager").rglob("*")
     )
-    desktop = (data_home / "applications/lele-manager.desktop").read_text(
-        encoding="utf-8"
+    assert_desktop_launcher_contract(
+        data_home / "applications/lele-manager.desktop",
+        launcher,
     )
-    assert f'Exec="{launcher}"' in desktop
-    assert f'TryExec="{launcher}"' in desktop
     assert (data_home / "icons/hicolor/scalable/apps/lele-manager.svg").is_file()
 
 
@@ -322,7 +388,7 @@ def test_existing_desktop_entry_symlink_is_rejected(tmp_path: Path) -> None:
     assert desktop.is_symlink()
 
 
-def test_custom_launcher_path_with_spaces_is_desktop_entry_escaped(
+def test_custom_launcher_path_with_spaces_preserves_both_desktop_contracts(
     tmp_path: Path,
 ) -> None:
     home = tmp_path / "home with spaces"
@@ -334,11 +400,10 @@ def test_custom_launcher_path_with_spaces_is_desktop_entry_escaped(
 
     assert result.returncode == 0, result.stderr
     launcher = bin_dir / "lele-manager"
-    desktop = (data_home / "applications/lele-manager.desktop").read_text(
-        encoding="utf-8"
-    )
-    assert f'Exec="{launcher}"' in desktop
-    assert f'TryExec="{launcher}"' in desktop
+    desktop_entry = data_home / "applications/lele-manager.desktop"
+    values = desktop_entry_values(desktop_entry)
+    assert_desktop_launcher_contract(desktop_entry, launcher)
+    assert values["TryExec"] == str(launcher)
     validator = shutil.which("desktop-file-validate")
     if validator:
         validation = subprocess.run(
@@ -348,6 +413,103 @@ def test_custom_launcher_path_with_spaces_is_desktop_entry_escaped(
             check=False,
         )
         assert validation.returncode == 0, validation.stderr
+
+
+@pytest.mark.parametrize(
+    ("directory_name", "expected_exec_fragment", "expected_try_exec_fragment"),
+    [
+        ("bin%percent", "%%", "%"),
+        (r"bin\backslash", "\\\\\\\\", "\\\\"),
+        ("bin$dollar", r"\\$", "$"),
+        ("bin`backtick", r"\\`", "`"),
+        ('bin"quote', r'\\"', '"'),
+    ],
+)
+def test_special_launcher_paths_round_trip_through_distinct_desktop_layers(
+    tmp_path: Path,
+    directory_name: str,
+    expected_exec_fragment: str,
+    expected_try_exec_fragment: str,
+) -> None:
+    home = tmp_path / "home"
+    data_home = tmp_path / "data"
+    bin_dir = tmp_path / directory_name
+    release = create_extracted_release(tmp_path, "release", "payload-a")
+
+    result = install(release, home, xdg_data_home=data_home, bin_dir=bin_dir)
+
+    assert result.returncode == 0, result.stderr
+    launcher = bin_dir / "lele-manager"
+    desktop_entry = data_home / "applications/lele-manager.desktop"
+    values = desktop_entry_values(desktop_entry)
+    assert_desktop_launcher_contract(desktop_entry, launcher)
+    assert expected_exec_fragment in values["Exec"]
+    assert expected_try_exec_fragment in values["TryExec"]
+
+
+def test_equal_in_launcher_path_fails_before_replacing_desktop_resources(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    data_home = tmp_path / "data"
+    bin_dir = tmp_path / "bin"
+    good_release = create_extracted_release(tmp_path, "good", "payload-a")
+    invalid_release = create_extracted_release(tmp_path, "invalid", "payload-b")
+
+    good = install(good_release, home, xdg_data_home=data_home, bin_dir=bin_dir)
+    desktop = data_home / "applications/lele-manager.desktop"
+    icon = data_home / "icons/hicolor/scalable/apps/lele-manager.svg"
+    old_desktop = desktop.read_bytes()
+    old_icon = icon.read_bytes()
+    failed = install(
+        invalid_release,
+        home,
+        xdg_data_home=data_home,
+        bin_dir=tmp_path / "bin=invalid",
+    )
+
+    assert good.returncode == 0, good.stderr
+    assert failed.returncode != 0
+    assert "non puo' contenere '=' per Exec" in failed.stderr
+    assert desktop.read_bytes() == old_desktop
+    assert icon.read_bytes() == old_icon
+    assert subprocess.run(
+        [str(bin_dir / "lele-manager")], text=True, capture_output=True, check=True
+    ).stdout == "payload-a\n"
+
+
+@pytest.mark.parametrize(
+    ("invalid_character", "expected_error"),
+    [("\n", "non puo' contenere newline"), ("\r", "non puo' contenere newline"), ("\x1f", "caratteri di controllo")],
+)
+def test_control_character_launcher_paths_are_rejected(
+    tmp_path: Path,
+    invalid_character: str,
+    expected_error: str,
+) -> None:
+    home = tmp_path / "home"
+    data_home = tmp_path / "data"
+    bin_dir = tmp_path / "bin"
+    good_release = create_extracted_release(tmp_path, "good", "payload-a")
+    invalid_release = create_extracted_release(tmp_path, "invalid", "payload-b")
+
+    good = install(good_release, home, xdg_data_home=data_home, bin_dir=bin_dir)
+    desktop = data_home / "applications/lele-manager.desktop"
+    icon = data_home / "icons/hicolor/scalable/apps/lele-manager.svg"
+    old_desktop = desktop.read_bytes()
+    old_icon = icon.read_bytes()
+    failed = install(
+        invalid_release,
+        home,
+        xdg_data_home=data_home,
+        bin_dir=tmp_path / f"bin{invalid_character}invalid",
+    )
+
+    assert good.returncode == 0, good.stderr
+    assert failed.returncode != 0
+    assert expected_error in failed.stderr
+    assert desktop.read_bytes() == old_desktop
+    assert icon.read_bytes() == old_icon
 
 
 def test_recognizable_manual_desktop_entry_is_adopted(tmp_path: Path) -> None:
@@ -369,6 +531,30 @@ def test_recognizable_manual_desktop_entry_is_adopted(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert "X-LeLe-Manager-Installer=true" in desktop.read_text(encoding="utf-8")
+
+
+def test_manual_desktop_entry_with_escaping_sensitive_path_is_not_adopted(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    data_home = tmp_path / "data"
+    bin_dir = tmp_path / "bin with spaces"
+    launcher = bin_dir / "lele-manager"
+    desktop = data_home / "applications/lele-manager.desktop"
+    desktop.parent.mkdir(parents=True)
+    legacy_entry = (
+        "[Desktop Entry]\nType=Application\nName=LeLe Manager\n"
+        f"Exec={launcher}\nTryExec={launcher}\nIcon=lele-manager\n"
+        "Terminal=false\nCategories=Development;\nStartupNotify=true\n"
+    )
+    desktop.write_text(legacy_entry, encoding="utf-8")
+    release = create_extracted_release(tmp_path, "release", "payload-a")
+
+    result = install(release, home, xdg_data_home=data_home, bin_dir=bin_dir)
+
+    assert result.returncode != 0
+    assert "voce desktop esistente non appartiene" in result.stderr
+    assert desktop.read_text(encoding="utf-8") == legacy_entry
 
 
 def test_distributed_installer_has_no_developer_home_or_release_version() -> None:
