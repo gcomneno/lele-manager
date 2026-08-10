@@ -368,7 +368,7 @@ def run_linux_installed_smoke(
 
     launcher = install_bin_dir / "lele-manager"
     installed_executable = (
-        install_data_home / "lele-manager" / "app" / APP_NAME
+        install_data_home / "lele-manager" / "install" / "app" / APP_NAME
     )
     if not launcher.is_symlink() or launcher.readlink() != installed_executable:
         raise RuntimeError(

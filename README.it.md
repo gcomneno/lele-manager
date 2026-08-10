@@ -86,6 +86,13 @@ l'applicazione FastAPI locale, attende che sia pronta e apre `/app/` nel browser
 predefinito. I dati utente persistenti sopravvivono quindi alla sostituzione o
 all'aggiornamento della cartella applicativa estratta.
 
+Su Linux l'archive include anche `./install.sh` per un'installazione locale
+utente esplicita. L'installer colloca l'app nativa in
+`${XDG_DATA_HOME:-~/.local/share}/lele-manager/install/app` e crea il launcher
+stabile `~/.local/bin/lele-manager`. La directory `lele-manager` resta lo
+spazio dei dati runtime persistenti; solo `install/` e' gestita e sostituibile
+dall'installer. L'archive estratto resta utilizzabile in modo portabile.
+
 Ogni archive nativo include `LEGGIMI_PRIMA.txt` con istruzioni di primo avvio
 specifiche per la piattaforma.
 

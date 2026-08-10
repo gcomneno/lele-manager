@@ -74,16 +74,21 @@ def test_clean_install_honors_xdg_data_home_and_creates_stable_launcher(
         "LeLe-Manager-v1.2.3-Linux-x86_64",
         "payload-a",
     )
+    state_file = data_home / "lele-manager" / "lessons.jsonl"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text("existing runtime state\n", encoding="utf-8")
 
     result = install(release, home, xdg_data_home=data_home, bin_dir=bin_dir)
 
     assert result.returncode == 0, result.stderr
-    app = data_home / "lele-manager" / "app" / "LeLe-Manager"
+    app = data_home / "lele-manager" / "install" / "app" / "LeLe-Manager"
     launcher = bin_dir / "lele-manager"
     assert app.is_file()
     assert launcher.is_symlink()
     assert launcher.stat().st_mode & 0o111
     assert launcher.readlink() == app
+    assert state_file.read_text(encoding="utf-8") == "existing runtime state\n"
+    assert not state_file.is_relative_to(app.parents[1])
     assert "1.2.3" not in str(app)
     assert "1.2.3" not in str(launcher.readlink())
     assert subprocess.run(
@@ -100,7 +105,9 @@ def test_default_paths_use_home_local_conventions_without_real_home_writes(
     result = install(release, home)
 
     assert result.returncode == 0, result.stderr
-    assert (home / ".local/share/lele-manager/app/LeLe-Manager").is_file()
+    assert (
+        home / ".local/share/lele-manager/install/app/LeLe-Manager"
+    ).is_file()
     assert (home / ".local/bin/lele-manager").is_symlink()
     assert str(Path.home()) not in result.stdout
     assert str(Path.home()) not in result.stderr
@@ -123,7 +130,7 @@ def test_reinstall_is_idempotent_and_preserves_launcher_identity(
     assert second.returncode == 0, second.stderr
     assert launcher.lstat().st_ino == original_inode
     assert list((data_home / "lele-manager").iterdir()) == [
-        data_home / "lele-manager" / "app"
+        data_home / "lele-manager" / "install"
     ]
 
 
@@ -158,11 +165,15 @@ def test_upgrade_replaces_only_stable_app_payload_and_preserves_user_state(
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
     assert launcher.lstat().st_ino == original_inode
-    assert launcher.readlink() == data_home / "lele-manager/app/LeLe-Manager"
+    installed_executable = (
+        data_home / "lele-manager" / "install" / "app" / "LeLe-Manager"
+    )
+    assert launcher.readlink() == installed_executable
     assert subprocess.run(
         [str(launcher)], text=True, capture_output=True, check=True
     ).stdout == "payload-b\n"
     assert state_file.read_text(encoding="utf-8") == "persistent lessons\n"
+    assert not state_file.is_relative_to(installed_executable.parents[1])
     assert vault_file.read_text(encoding="utf-8") == "persistent vault\n"
     assert not any(
         "1.2." in str(path)
@@ -211,7 +222,7 @@ def test_existing_unowned_launcher_is_not_overwritten(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "non appartiene a LeLe Manager" in result.stderr
     assert foreign.read_text(encoding="utf-8") == "do not replace\n"
-    assert not (data_home / "lele-manager" / "app").exists()
+    assert not (data_home / "lele-manager" / "install" / "app").exists()
 
 
 def test_distributed_installer_has_no_developer_home_or_release_version() -> None:
