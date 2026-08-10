@@ -142,6 +142,27 @@ def find_packaged_executable(
     return candidates[0]
 
 
+def find_linux_installer(extraction_root: Path, version: str) -> Path:
+    candidates = sorted(
+        extraction_root.glob(
+            f"{APP_NAME}-v{version}-Linux-*/install.sh"
+        )
+    )
+
+    if len(candidates) != 1 or not candidates[0].is_file():
+        raise RuntimeError(
+            "Installer Linux packaged non trovato in modo univoco: "
+            f"{candidates}"
+        )
+
+    if not candidates[0].stat().st_mode & 0o111:
+        raise RuntimeError(
+            f"Installer Linux packaged non eseguibile: {candidates[0]}"
+        )
+
+    return candidates[0]
+
+
 def choose_free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -310,6 +331,84 @@ def validate_running_release(
     )
 
 
+def run_linux_installed_smoke(
+    installer: Path,
+    version: str,
+    temporary_root: Path,
+    environment: dict[str, str],
+) -> None:
+    install_home = temporary_root / "installed-home"
+    install_data_home = temporary_root / "installed-xdg-data"
+    install_bin_dir = temporary_root / "installed-bin"
+    installed_runtime = temporary_root / "installed-runtime"
+    install_log = temporary_root / "installed-native.log"
+
+    installer_environment = environment.copy()
+    installer_environment["HOME"] = str(install_home)
+    installer_environment["XDG_DATA_HOME"] = str(install_data_home)
+    installer_environment["LELE_MANAGER_INSTALL_BIN_DIR"] = str(install_bin_dir)
+    installer_environment["LELE_DATA_DIR"] = str(installed_runtime / "data")
+    installer_environment["LELE_CACHE_DIR"] = str(installed_runtime / "cache")
+    installer_environment["LELE_VAULT_DIR"] = str(installed_runtime / "vault")
+
+    installation = subprocess.run(
+        [str(installer)],
+        cwd=installer.parent,
+        env=installer_environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if installation.returncode != 0:
+        raise RuntimeError(
+            "Installer Linux packaged terminato con errore:\n"
+            f"stdout:\n{installation.stdout}\n"
+            f"stderr:\n{installation.stderr}"
+        )
+
+    launcher = install_bin_dir / "lele-manager"
+    installed_executable = (
+        install_data_home / "lele-manager" / "install" / "app" / APP_NAME
+    )
+    if not launcher.is_symlink() or launcher.readlink() != installed_executable:
+        raise RuntimeError(
+            "Il launcher Linux installato non punta al bundle stabile atteso: "
+            f"{launcher}"
+        )
+    if not installed_executable.is_file():
+        raise RuntimeError(
+            "Bundle Linux installato assente: "
+            f"{installed_executable}"
+        )
+
+    port = choose_free_loopback_port()
+    base_url = f"http://127.0.0.1:{port}"
+    installer_environment[PORT_ENV] = str(port)
+
+    with install_log.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            [str(launcher)],
+            cwd=installed_executable.parent,
+            env=installer_environment,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        try:
+            validate_running_release(
+                base_url,
+                version,
+                installed_executable.parent,
+                installed_runtime,
+                process,
+            )
+        finally:
+            terminate_process(process)
+
+    print("OK: installer Linux e launcher stabile verificati.")
+
+
 def main() -> int:
     version = project_version()
     os_label, extension = platform_contract()
@@ -338,6 +437,9 @@ def main() -> int:
             version,
             os_label,
         )
+        if os_label == "Linux":
+            installer = find_linux_installer(extraction_root, version)
+            print(f"Installer:    {installer}")
 
         port = choose_free_loopback_port()
         base_url = f"http://127.0.0.1:{port}"
@@ -377,6 +479,14 @@ def main() -> int:
 
         print("OK: published-style native archive avviato e verificato.")
         print("OK: runtime data esterni alla directory del release package.")
+
+        if os_label == "Linux":
+            run_linux_installed_smoke(
+                installer,
+                version,
+                temp_root,
+                environment,
+            )
 
     return 0
 
