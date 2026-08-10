@@ -17,6 +17,7 @@ DIST_NATIVE = ROOT / "dist" / "native"
 RELEASE_DIR = ROOT / "dist" / "release"
 APP_NAME = "LeLe-Manager"
 LINUX_INSTALLER = ROOT / "packaging" / "linux" / "install.sh"
+LINUX_ICON = ROOT / "frontend" / "public" / "favicon.svg"
 
 
 def project_version() -> str:
@@ -105,6 +106,8 @@ def main() -> int:
             raise SystemExit(
                 f"ERRORE: installer Linux non eseguibile: {LINUX_INSTALLER}"
             )
+        if not LINUX_ICON.is_file():
+            raise SystemExit(f"ERRORE: icona Linux assente: {LINUX_ICON}")
 
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -124,6 +127,7 @@ def main() -> int:
     shutil.copy2(guide, staging / "LEGGIMI_PRIMA.txt")
     if os_label == "Linux":
         shutil.copy2(LINUX_INSTALLER, staging / "install.sh")
+        shutil.copy2(LINUX_ICON, staging / "lele-manager.svg")
 
     if archive_format == "tar.gz":
         create_tar_gz(staging, archive, package_name)
