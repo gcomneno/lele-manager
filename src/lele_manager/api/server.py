@@ -24,7 +24,7 @@ from lele_manager.core.runtime_transparency import (
     RuntimePathDescription,
     describe_runtime_paths,
 )
-from lele_manager.core.analytics import compute_stats_summary, compute_timeline
+from lele_manager.core.analytics import compute_metadata_options, compute_stats_summary, compute_timeline
 from lele_manager.application.dataframes import records_to_legacy_dataframe
 from lele_manager.application.external_lessons import external_lessons_feed
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
@@ -475,6 +475,17 @@ class StatsSummaryResponse(BaseModel):
     avg_importance: Optional[float] = None
     top_tags: List[TagCount]
     by_topic: List[TopicCount]
+
+
+class MetadataOption(BaseModel):
+    value: str
+    count: int
+
+
+class EditorMetadataOptionsResponse(BaseModel):
+    topics: List[MetadataOption]
+    tags: List[MetadataOption]
+    sources: List[MetadataOption]
 
 
 class TimelineBucket(BaseModel):
@@ -1710,6 +1721,21 @@ def stats_summary() -> StatsSummaryResponse:
         avg_importance=raw["avg_importance"],
         top_tags=[TagCount(**t) for t in raw["top_tags"]],
         by_topic=[TopicCount(**t) for t in raw["by_topic"]],
+    )
+
+
+@app.get("/editor/metadata-options", response_model=EditorMetadataOptionsResponse)
+def editor_metadata_options() -> EditorMetadataOptionsResponse:
+    """Complete read-only metadata facets for Editor suggestions.
+
+    This deliberately reads the same active projection as the GUI. It does not
+    import the vault, train a model, or mutate canonical Markdown.
+    """
+    raw = compute_metadata_options(load_lessons_df())
+    return EditorMetadataOptionsResponse(
+        topics=[MetadataOption(**item) for item in raw["topics"]],
+        tags=[MetadataOption(**item) for item in raw["tags"]],
+        sources=[MetadataOption(**item) for item in raw["sources"]],
     )
 
 

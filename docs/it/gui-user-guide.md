@@ -158,6 +158,16 @@ repository, issue tracker, release, changelog e documentazione, oltre alla
 dichiarazione local-first. LeLe Manager non introduce account, telemetria,
 storage cloud o servizi remoti per la knowledge base.
 
+## Scrittura dei metadati
+
+L’Editor carica suggerimenti locali in sola lettura per topic, tag e fonti
+conosciuti dalla proiezione corrente delle lesson. Sono una comodità: puoi
+scrivere un nuovo topic, tag o fonte e i suggerimenti non modificano mai i
+metadati automaticamente. I tag sono chip visibili da aggiungere o rimuovere e
+l’Importanza è esplicitamente limitata da 1 a 5. La similarità può proporre un
+topic solo dopo una verifica esplicita; applicarlo richiede un’azione distinta.
+Solo il salvataggio scrive nel vault Markdown canonico.
+
 ## Screenshot
 
 Gli screenshot in [`../images/gui/`](../images/gui/) sono generati dalla
