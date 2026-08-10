@@ -86,7 +86,18 @@ def build_vault_tree(vault_dir: Path) -> VaultTreeNode:
 
 def find_markdown_by_id(vault_dir: Path, lesson_id: str) -> Optional[Path]:
     """Locate a vault markdown file by frontmatter id or derived path id."""
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    return matches[0] if matches else None
+
+
+def find_markdown_paths_by_id(vault_dir: Path, lesson_id: str) -> list[Path]:
+    """Return every canonical source matching an ID, sorted deterministically.
+
+    New destructive workflows must require exactly one result rather than using
+    the historical first-match compatibility helper above.
+    """
     target = str(lesson_id)
+    matches: list[Path] = []
     for md_path in sorted(vault_dir.rglob("*.md")):
         try:
             content = md_path.read_text(encoding="utf-8")
@@ -95,10 +106,10 @@ def find_markdown_by_id(vault_dir: Path, lesson_id: str) -> Optional[Path]:
         frontmatter, _ = parse_markdown_with_frontmatter(content)
         raw_id = frontmatter.get("id")
         if isinstance(raw_id, str) and raw_id.strip() == target:
-            return md_path
-        if derive_id_from_path(md_path, vault_dir) == target:
-            return md_path
-    return None
+            matches.append(md_path)
+        elif derive_id_from_path(md_path, vault_dir) == target:
+            matches.append(md_path)
+    return matches
 
 
 def _slugify(text: str) -> str:

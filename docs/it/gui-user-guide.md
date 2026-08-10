@@ -221,7 +221,35 @@ fixture Playwright isolata. Non contengono vault o dati personali.
 
 ![Albero del vault Markdown canonico](../images/gui/vault.png)
 
-![Revisione non distruttiva dei duplicati](../images/gui/duplicates.png)
+![Revisione dei duplicati](../images/gui/duplicates.png)
+
+### Risolvere con consapevolezza le coppie candidate
+
+Il rilevamento dei duplicati è solo informativo: non elimina, accorpa né
+modifica automaticamente i metadati. Ogni coppia mantiene visibili entrambe le
+fonti Markdown canoniche e offre azioni esplicite. Puoi aprire in modifica uno
+dei due ID, mantenere una LeLe ed eliminare definitivamente l'altra dopo una
+conferma che identifica entrambe, segnare **Non sono duplicati** oppure aprire
+**Accorpa**.
+
+**Non sono duplicati** è stato applicativo locale persistente, non metadato
+Markdown. Nasconde la coppia solo finché entrambe le LeLe conservano lo stesso
+contenuto materiale: testo, titolo, topic, fonte, importanza, tag e data. Una
+modifica materiale rende nuovamente revisionabile una coppia ancora rilevata.
+Le decisioni sono al momento delimitate dal percorso risolto del vault; questo
+limite temporaneo è isolato e verrà migrato a un'identità di vault registrata
+nel futuro lavoro multi-vault.
+
+L'accorpamento è un flusso di modifica controllato dall'utente. Scegli quale ID
+esistente, sinistro o destro, resta, confronta entrambe le fonti in sola
+lettura, modifica manualmente la LeLe risultante e conferma esplicitamente il
+salvataggio e l'eliminazione dell'altra fonte. LeLe Manager non concatena in
+automatico e non usa IA per sintetizzare un accorpamento.
+
+Il Markdown è canonico. Eliminazione e accorpamento modificano prima le fonti
+canoniche e poi aggiornano proiezione e ricerca derivate. Se tale aggiornamento
+fallisce, l'interfaccia indica separatamente la realtà canonica e non finge un
+rollback; quando opportuno aggiorna i dati derivati da Sistema.
 
 ![Pannello Ops e report sano del Vault Doctor](../images/gui/ops.png)
 
