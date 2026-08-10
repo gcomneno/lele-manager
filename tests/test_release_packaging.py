@@ -102,6 +102,16 @@ def test_native_build_rejects_stale_installed_version() -> None:
     assert '"project"]["version"]' in script
     assert "metadata lele-manager non allineata" in script
 
+
+def test_linux_native_release_ships_the_user_local_installer() -> None:
+    script = read("scripts/package-native-release.py")
+    installer = ROOT / "packaging/linux/install.sh"
+
+    assert installer.is_file()
+    assert installer.stat().st_mode & 0o111
+    assert 'LINUX_INSTALLER = ROOT / "packaging" / "linux" / "install.sh"' in script
+    assert 'shutil.copy2(LINUX_INSTALLER, staging / "install.sh")' in script
+
 def test_pypi_publication_uses_dedicated_manual_trusted_workflow() -> None:
     release = read(".github/workflows/release.yml")
     pypi = read(".github/workflows/publish-pypi.yml")
