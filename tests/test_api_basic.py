@@ -414,6 +414,7 @@ def test_settings_runtime_is_bounded_side_effect_free_and_version_aligned(
         "application_data",
         "lesson_projection",
         "candidate_staging",
+        "duplicate_decisions",
         "cache",
         "topic_model",
     }
@@ -421,6 +422,7 @@ def test_settings_runtime_is_bounded_side_effect_free_and_version_aligned(
     assert by_key["vault"]["role"] == "authoritative_user_data"
     assert by_key["application_data"]["role"] == "persistent_application_state"
     assert by_key["candidate_staging"]["role"] == "persistent_application_state"
+    assert by_key["duplicate_decisions"]["role"] == "persistent_application_state"
     assert by_key["lesson_projection"]["role"] == "derived_rebuildable_artifact"
     assert by_key["topic_model"]["role"] == "derived_rebuildable_artifact"
     assert by_key["cache"]["role"] == "cache_temporary_state"

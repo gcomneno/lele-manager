@@ -303,6 +303,10 @@ export interface DuplicatePair {
   score: number
   reasons: string[]
   shared_tags: string[]
+  left_fingerprint: string
+  right_fingerprint: string
+  resolution_available: boolean
+  resolution_problem?: string | null
   left_lesson: DuplicateLessonSnapshot
   right_lesson: DuplicateLessonSnapshot
 }
@@ -314,7 +318,26 @@ export interface DuplicateReportResponse {
   near_pairs: number
   min_score: number
   exact_only: boolean
+  suppressed_pairs: number
   pairs: DuplicatePair[]
+}
+
+export interface DuplicateDecisionResponse {
+  left_id: string
+  right_id: string
+  left_fingerprint: string
+  right_fingerprint: string
+  decided_at: string
+}
+
+export interface DuplicateMergeResponse {
+  completed: boolean
+  survivor_id: string
+  survivor_written: boolean
+  superseded_id: string
+  superseded_deleted: boolean
+  refresh_outcome: { attempted: boolean; refreshed: boolean }
+  failure?: { code: string; message: string } | null
 }
 
 export interface DuplicateQuery {
@@ -496,6 +519,21 @@ export const api = {
     if (limit != null) params.set('limit', String(limit))
     return request<DuplicateReportResponse>(`/duplicates?${params.toString()}`)
   },
+
+  markNotDuplicates: (pair: Pick<DuplicatePair, 'left_id' | 'right_id' | 'left_fingerprint' | 'right_fingerprint'>) =>
+    request<DuplicateDecisionResponse>('/duplicates/not-duplicates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pair),
+    }),
+
+  mergeDuplicates: (body: {
+    survivor_id: string
+    superseded_id: string
+    expected_survivor_fingerprint: string
+    expected_superseded_fingerprint: string
+    result: LessonVaultWrite
+  }) => request<DuplicateMergeResponse>('/duplicates/merge', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }),
 
   listLessons: (limit = 50) =>
     request<Lesson[]>(`/lessons?limit=${encodeURIComponent(limit)}`),

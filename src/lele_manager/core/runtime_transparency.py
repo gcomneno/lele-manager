@@ -10,6 +10,7 @@ from platformdirs import PlatformDirs
 from lele_manager.core.paths import (
     APP_NAME,
     DEFAULT_CANDIDATES_FILENAME,
+    DEFAULT_DUPLICATE_DECISIONS_FILENAME,
     DEFAULT_DB_FILENAME,
     DEFAULT_TOPIC_MODEL_FILENAME,
     ENV_CACHE_DIR,
@@ -164,6 +165,12 @@ def describe_runtime_paths(
         RuntimePathDescription(
             key="candidate_staging",
             path=data_dir / DEFAULT_CANDIDATES_FILENAME,
+            role="persistent_application_state",
+            provenance=data_dir_provenance,
+        ),
+        RuntimePathDescription(
+            key="duplicate_decisions",
+            path=data_dir / DEFAULT_DUPLICATE_DECISIONS_FILENAME,
             role="persistent_application_state",
             provenance=data_dir_provenance,
         ),
