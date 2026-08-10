@@ -14,6 +14,7 @@ find_release_archive = SMOKE["find_release_archive"]
 extract_release_archive = SMOKE["extract_release_archive"]
 assert_isolated_runtime_paths = SMOKE["assert_isolated_runtime_paths"]
 find_linux_installer = SMOKE["find_linux_installer"]
+find_linux_icon = SMOKE["find_linux_icon"]
 run_linux_installed_smoke = SMOKE["run_linux_installed_smoke"]
 
 
@@ -105,6 +106,17 @@ def test_find_linux_installer_requires_an_executable_at_archive_root(
     installer.chmod(0o755)
 
     assert find_linux_installer(tmp_path, "1.2.3") == installer
+
+
+def test_find_linux_icon_requires_the_packaged_installation_resource(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "LeLe-Manager-v1.2.3-Linux-x86_64"
+    root.mkdir()
+    icon = root / "lele-manager.svg"
+    icon.write_text("<svg/>", encoding="utf-8")
+
+    assert find_linux_icon(tmp_path, "1.2.3") == icon
 
 
 def test_linux_installed_smoke_is_part_of_the_published_archive_contract() -> None:

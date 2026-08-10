@@ -23,7 +23,8 @@ L'installazione non richiede privilegi di amministratore. Copia l'applicazione
 in ${XDG_DATA_HOME:-~/.local/share}/lele-manager/install/app e crea il launcher
 ~/.local/bin/lele-manager. Se ~/.local/bin non e' nel PATH, aggiungilo alla
 configurazione della shell oppure esegui il percorso indicato dal programma di
-installazione.
+installazione. Aggiunge inoltre LeLe Manager al menu delle applicazioni con
+l'icona ufficiale; puoi quindi cercarlo o aggiungerlo ai preferiti/dock.
 
 Per aggiornare, estrai una nuova release ed esegui di nuovo ./install.sh. Il
 launcher lele-manager mantiene lo stesso percorso. La directory
@@ -33,10 +34,7 @@ vault e i modelli personali restano fuori dalla directory app installata.
 
 Per uso automatizzato o per scegliere intenzionalmente una directory bin
 diversa, puoi impostare LELE_MANAGER_INSTALL_BIN_DIR a un percorso assoluto
-prima di eseguire l'installer.
-
-L'installazione non aggiunge ancora voci al menu delle applicazioni o icone del
-desktop.
+prima di eseguire l'installer. La voce del menu usera' quel percorso stabile.
 
 Quando il programma è aperto puoi usare normalmente:
 - Esplora

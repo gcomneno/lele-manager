@@ -163,6 +163,20 @@ def find_linux_installer(extraction_root: Path, version: str) -> Path:
     return candidates[0]
 
 
+def find_linux_icon(extraction_root: Path, version: str) -> Path:
+    candidates = sorted(
+        extraction_root.glob(
+            f"{APP_NAME}-v{version}-Linux-*/lele-manager.svg"
+        )
+    )
+    if len(candidates) != 1 or not candidates[0].is_file():
+        raise RuntimeError(
+            "Icona Linux packaged non trovata in modo univoco: "
+            f"{candidates}"
+        )
+    return candidates[0]
+
+
 def choose_free_loopback_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -333,6 +347,7 @@ def validate_running_release(
 
 def run_linux_installed_smoke(
     installer: Path,
+    packaged_icon: Path,
     version: str,
     temporary_root: Path,
     environment: dict[str, str],
@@ -380,6 +395,28 @@ def run_linux_installed_smoke(
             "Bundle Linux installato assente: "
             f"{installed_executable}"
         )
+    desktop_entry = install_data_home / "applications" / "lele-manager.desktop"
+    installed_icon = (
+        install_data_home / "icons/hicolor/scalable/apps/lele-manager.svg"
+    )
+    if not desktop_entry.is_file():
+        raise RuntimeError(f"Voce desktop Linux installata assente: {desktop_entry}")
+    if not installed_icon.is_file() or installed_icon.read_bytes() != packaged_icon.read_bytes():
+        raise RuntimeError("Icona Linux installata assente o diversa da quella packaged.")
+    desktop = desktop_entry.read_text(encoding="utf-8")
+    for entry in (
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=LeLe Manager",
+        "Terminal=false",
+        "Icon=lele-manager",
+        "Categories=Development;",
+        "StartupNotify=true",
+        f'Exec="{launcher}"',
+        f'TryExec="{launcher}"',
+    ):
+        if entry not in desktop:
+            raise RuntimeError(f"Voce desktop Linux non valida, manca: {entry}")
 
     port = choose_free_loopback_port()
     base_url = f"http://127.0.0.1:{port}"
@@ -406,7 +443,7 @@ def run_linux_installed_smoke(
         finally:
             terminate_process(process)
 
-    print("OK: installer Linux e launcher stabile verificati.")
+    print("OK: installer Linux, launcher stabile e integrazione desktop verificati.")
 
 
 def main() -> int:
@@ -439,6 +476,7 @@ def main() -> int:
         )
         if os_label == "Linux":
             installer = find_linux_installer(extraction_root, version)
+            packaged_icon = find_linux_icon(extraction_root, version)
             print(f"Installer:    {installer}")
 
         port = choose_free_loopback_port()
@@ -483,6 +521,7 @@ def main() -> int:
         if os_label == "Linux":
             run_linux_installed_smoke(
                 installer,
+                packaged_icon,
                 version,
                 temp_root,
                 environment,
