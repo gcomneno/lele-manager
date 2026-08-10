@@ -555,7 +555,7 @@ Available views:
 | **Stats** | Counts, tags, topics, and averages |
 | **Vault** | Real filesystem tree and import |
 | **Ops** | Health, training, vault import, and full refresh |
-| **Settings** | Effective local paths, storage roles, and explicit bounded diagnostics |
+| **Diagnostics** | Support status, explicit bounded diagnostics, and secondary runtime paths |
 | **About** | Product identity, version, MIT license, local-first statement, and support links |
 
 Saving from the Editor writes the Markdown file into the vault and refreshes
@@ -657,7 +657,7 @@ frontend, security, packaging, and native-release verification.
 Native release archives are verified after packaging and before upload by
 extracting the published-style artifact, starting its packaged executable on
 loopback with isolated runtime directories, checking health, GUI, license,
-About and Settings/runtime surfaces, and confirming persistent paths remain
+About and Diagnostics/runtime surfaces, and confirming persistent paths remain
 outside the extracted application package.
 
 Example annotated tag:

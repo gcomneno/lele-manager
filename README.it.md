@@ -546,7 +546,7 @@ Viste disponibili:
 | **Stats** | Conteggi, tag, topic e medie |
 | **Vault** | Albero filesystem reale e import |
 | **Ops** | Health, training, import vault e refresh completo |
-| **Impostazioni** | Percorsi locali effettivi, ruoli di archiviazione e diagnostica bounded esplicita |
+| **Diagnostica** | Stato per l’assistenza, diagnostica bounded esplicita e percorsi runtime secondari |
 | **Informazioni** | Identità prodotto, versione, licenza MIT, dichiarazione local-first e collegamenti di supporto |
 
 Il salvataggio dall'Editor scrive il file Markdown nel vault e aggiorna la
@@ -619,7 +619,7 @@ Python, frontend, sicurezza, packaging e release nativa tutte verdi.
 Gli archive nativi vengono verificati dopo il packaging e prima dell'upload:
 la CI estrae l'artefatto nello stesso formato destinato alla pubblicazione,
 avvia l'eseguibile packaged su loopback con runtime isolato, verifica health,
-GUI, licenza, Informazioni e Impostazioni/runtime e controlla che i percorsi
+GUI, licenza, Informazioni e Diagnostica/runtime e controlla che i percorsi
 persistenti restino fuori dalla directory applicativa estratta.
 
 Esempio di tag annotato:

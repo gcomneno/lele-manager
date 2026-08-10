@@ -30,7 +30,7 @@ test.describe('product shell hierarchy', () => {
       'Vault',
       'Duplicates',
       'System',
-      'Settings',
+      'Diagnostics',
       'About',
     ]) {
       await expect(
@@ -192,7 +192,7 @@ test.describe('product shell responsive layouts', () => {
       'Vault',
       'Duplicates',
       'System',
-      'Settings',
+      'Diagnostics',
       'About',
     ]) {
       await expect(

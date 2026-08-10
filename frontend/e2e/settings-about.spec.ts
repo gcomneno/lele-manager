@@ -104,8 +104,8 @@ async function mockSettings(page: Page): Promise<void> {
   )
 }
 
-test.describe('Settings and About', () => {
-  test('renders healthy and partial runtime configuration truthfully', async ({
+test.describe('Diagnostics and About', () => {
+  test('renders support status first and keeps runtime paths secondary', async ({
     page,
   }) => {
     await mockSettings(page)
@@ -113,14 +113,17 @@ test.describe('Settings and About', () => {
 
     await expect(
       page.getByRole('heading', {
-        name: 'Settings',
+        name: 'Diagnostics',
         exact: true,
       }),
     ).toBeVisible()
 
-    await expect(
-      page.getByText('Authoritative user data'),
-    ).toBeVisible()
+    const headings = await page.getByRole('heading').allTextContents()
+    expect(headings.indexOf('Status')).toBeLessThan(headings.indexOf('Diagnostic package'))
+    expect(headings.indexOf('Diagnostic package')).toBeLessThan(headings.indexOf('Request support'))
+    await expect(page.getByTestId('technical-details')).not.toHaveAttribute('open', '')
+    await page.getByTestId('technical-details').locator('summary').click()
+    await expect(page.getByText('Authoritative user data')).toBeVisible()
     await expect(
       page.getByText('Persistent application state'),
     ).toHaveCount(2)
@@ -183,9 +186,50 @@ test.describe('Settings and About', () => {
     expect(diagnosticRequests).toBe(1)
   })
 
-  test('exports exactly the JSON displayed in the diagnostic preview', async ({
+  test('uses Diagnostics terminology in Italian navigation and page content', async ({ page }) => {
+    await mockSettings(page)
+    await page.goto('/app/#/settings')
+    await page.getByLabel('Language').selectOption('it')
+
+    await expect(page.getByRole('link', { name: 'Diagnostica', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Diagnostica', exact: true })).toBeVisible()
+    await expect(page.getByText('Impostazioni', { exact: true })).toHaveCount(0)
+  })
+
+  test('opens the maintained support form without generating diagnostics', async ({ page }) => {
+    await mockSettings(page)
+    let diagnosticRequests = 0
+    await page.route('**/diagnostics/preview', (route) => {
+      diagnosticRequests += 1
+      return route.fulfill({ status: 200, body: JSON.stringify(diagnosticsFixture) })
+    })
+
+    await page.goto('/app/#/settings')
+    const support = page.getByRole('link', { name: 'Request support', exact: true })
+    await expect(support).toHaveAttribute(
+      'href',
+      'https://github.com/gcomneno/lele-manager/issues/new?template=bug_report.yml',
+    )
+    await expect(support).toHaveAttribute('target', '_blank')
+    expect(diagnosticRequests).toBe(0)
+    await expect(page.getByText(/Generating a preview first is recommended/)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Generate preview', exact: true }).click()
+    await expect(page.getByText('lele-manager-diagnostics-1.10.1.json')).toBeVisible()
+    expect(diagnosticRequests).toBe(1)
+  })
+
+  test('copies and exports exactly the JSON displayed in the diagnostic preview', async ({
     page,
   }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => localStorage.setItem('clipboard', text),
+        },
+      })
+    })
     await mockSettings(page)
 
     await page.route('**/diagnostics/preview', (route) =>
@@ -198,6 +242,9 @@ test.describe('Settings and About', () => {
 
     await page.goto('/app/#/settings')
 
+    await expect(page.getByRole('button', { name: 'Copy JSON', exact: true })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Download JSON', exact: true })).toBeDisabled()
+
     await page.getByRole('button', {
       name: 'Generate preview',
       exact: true,
@@ -209,10 +256,13 @@ test.describe('Settings and About', () => {
     const previewText = await preview.textContent()
     expect(previewText).toBe(JSON.stringify(diagnosticsFixture, null, 2))
 
+    await page.getByRole('button', { name: 'Copy JSON', exact: true }).click()
+    expect(await page.evaluate(() => localStorage.getItem('clipboard'))).toBe(previewText)
+
     const downloadPromise = page.waitForEvent('download')
 
     await page.getByRole('button', {
-      name: 'Save diagnostic JSON',
+        name: 'Download JSON',
       exact: true,
     }).click()
 
