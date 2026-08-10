@@ -206,6 +206,13 @@ export interface LessonVaultCreate extends LessonVaultWrite {
   id?: string | null
 }
 
+export interface LessonDeleteResponse {
+  lesson_id: string
+  relative_vault_path: string
+  canonical_deleted: true
+  refresh_outcome: { refreshed: boolean }
+}
+
 export interface OpsRefreshResponse {
   import_result: VaultImportResponse
   train_result?: TrainResponse | null
@@ -541,6 +548,11 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    }),
+
+  deleteLesson: (id: string) =>
+    request<LessonDeleteResponse>(`/lessons/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
 
   opsRefresh: (train = true) =>

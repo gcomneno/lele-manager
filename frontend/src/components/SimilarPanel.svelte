@@ -4,6 +4,7 @@
   import { messages } from '../lib/i18n'
 
   interface Props {
+    id?: string
     title?: string
     items: SimilarItem[]
     meta?: SimilarMeta | null
@@ -15,6 +16,7 @@
   }
 
   let {
+    id = undefined,
     title = '',
     items,
     meta = null,
@@ -31,7 +33,7 @@
   }
 </script>
 
-<section class="card similar-panel">
+<section {id} class="card similar-panel" tabindex="-1">
   <h3>
     {explain
       ? $messages.similarWhy

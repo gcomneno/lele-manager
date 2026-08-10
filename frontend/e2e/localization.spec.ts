@@ -380,7 +380,7 @@ test.describe('GUI localization', () => {
 
     await expect(
       page.getByRole('button', {
-        name: 'Edit',
+        name: 'Modify',
         exact: true,
       }),
     ).toBeVisible()
