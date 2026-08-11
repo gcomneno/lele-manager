@@ -2,10 +2,12 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from lele_manager.api import server
+from lele_manager.core.vault_registry import ActiveVaultContext
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -60,8 +62,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     )
 
     # Point server to temp paths
-    monkeypatch.setattr(server, "get_data_path", lambda: data_path)
-    monkeypatch.setattr(server, "get_model_path", lambda: model_path)
+    context = ActiveVaultContext(
+        "test-vault", "Test vault", tmp_path, data_path,
+        tmp_path / "candidates.json", model_path, "test-vault",
+    )
+    dependency = server.get_active_vault_context
+    server.app.dependency_overrides[dependency] = lambda: context
+    monkeypatch.setattr(server, "get_active_vault_context", lambda: context)
 
     # Avoid real joblib pipeline I/O
     monkeypatch.setattr(server, "load_topic_model", lambda *_args, **_kw: object())
@@ -69,8 +76,10 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Reset cache between tests
     server.invalidate_similarity_cache()
 
-    c = TestClient(server.app)
-    return c, model_path
+    try:
+        yield TestClient(server.app), model_path
+    finally:
+        server.app.dependency_overrides.pop(dependency, None)
 
 
 def test_similarity_index_is_cached_across_requests(client, monkeypatch: pytest.MonkeyPatch):
@@ -126,3 +135,21 @@ def test_similarity_cache_invalidated_after_train_topic(client, monkeypatch: pyt
     r2 = c.post("/similar", json={"text": "y", "top_k": 3, "min_score": 0.0})
     assert r2.status_code == 200
     assert calls["n"] == 2
+
+
+def test_similarity_request_keeps_projection_model_and_cache_key_in_one_context(
+    client, monkeypatch: pytest.MonkeyPatch
+):
+    c, _model_path = client
+    context = server.get_active_vault_context()
+    frame = pd.DataFrame([{"id": "1", "text": "one"}])
+    seen: list[object] = []
+    monkeypatch.setattr(server, "load_lessons_df", lambda supplied: seen.append(supplied) or frame)
+    monkeypatch.setattr(server, "build_similarity_index", lambda _df, supplied: seen.append(supplied) or _DummyIndex())
+    response = c.post("/similar", json={"text": "one"})
+    assert response.status_code == 200
+    assert seen == [context, context]
+    key = server._similarity_cache_key(
+        context.projection_path, context.topic_model_path, context
+    )
+    assert key[:3] == (context.vault_id, str(context.projection_path), str(context.topic_model_path))

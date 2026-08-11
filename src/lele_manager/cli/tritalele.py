@@ -72,8 +72,7 @@ from lele_manager.application.raw_source_ingestion import (
     RawSourceIngestionResult,
     RawSourceIngestionService,
 )
-from lele_manager.core.paths import candidates_path, lessons_path
-from lele_manager.core.vault import resolve_vault_dir
+from lele_manager.core.vault_registry import active_vault_context
 
 
 class TritaLeLeCliInputError(Exception):
@@ -343,7 +342,7 @@ def _ingestion_dict(
 
 def _candidate_repository() -> JsonCandidateRepository:
     try:
-        path = candidates_path()
+        path = active_vault_context().candidates_path
     except (OSError, RuntimeError):
         raise TritaLeLeCliConfigurationError(
             "Lo storage locale dei candidati non è disponibile."
@@ -357,8 +356,9 @@ def _review_service() -> CandidateReviewService:
 
 def _approval_service() -> CandidateApprovalService:
     try:
-        vault_dir = resolve_vault_dir()
-        projection_path = lessons_path()
+        context = active_vault_context()
+        vault_dir = context.vault_dir
+        projection_path = context.projection_path
     except (OSError, RuntimeError):
         raise TritaLeLeCliConfigurationError(
             "La configurazione locale di vault o proiezione non è disponibile."

@@ -64,8 +64,7 @@ from lele_manager.application.raw_source_ingestion import (
     RawSourceIngestionResult,
     RawSourceIngestionService,
 )
-from lele_manager.core.paths import candidates_path, lessons_path
-from lele_manager.core.vault import resolve_vault_dir
+from lele_manager.core.vault_registry import ActiveVaultContext, active_vault_context
 
 
 router = APIRouter(prefix="/api/v1/tritalele", tags=["tritalele"])
@@ -246,11 +245,22 @@ def _raise_api_error(
     raise HTTPException(status_code=status_code, detail=detail) from None
 
 
-def get_candidate_repository() -> CandidateRepository:
+def get_active_vault_context() -> ActiveVaultContext:
+    """Request-scoped immutable Vault snapshot (FastAPI caches dependencies)."""
+    try:
+        return active_vault_context()
+    except (OSError, RuntimeError):
+        _raise_api_error(503, "candidate_storage_unavailable", "Candidate staging storage is unavailable.")
+
+
+def get_candidate_repository(
+    context: Annotated[ActiveVaultContext | None, Depends(get_active_vault_context)] = None,
+) -> CandidateRepository:
     """Build a fresh repository for the configured local staging document."""
     try:
-        path = candidates_path()
-    except (OSError, RuntimeError):
+        context = context or get_active_vault_context()
+        path = context.candidates_path
+    except OSError:
         _raise_api_error(
             503,
             "candidate_storage_unavailable",
@@ -275,11 +285,12 @@ def get_review_service(
 
 def get_approval_service(
     repository: Annotated[CandidateRepository, Depends(get_candidate_repository)],
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
 ) -> CandidateApprovalService:
     try:
-        vault_dir = resolve_vault_dir()
-        projection_path = lessons_path()
-    except (OSError, RuntimeError):
+        vault_dir = context.vault_dir
+        projection_path = context.projection_path
+    except OSError:
         _raise_api_error(
             503,
             "approval_storage_unavailable",

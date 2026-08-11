@@ -93,6 +93,7 @@ export type RuntimePathProvenanceKind =
   | 'platform_default'
   | 'product_default'
   | 'runtime_override'
+  | 'managed_registry'
 
 export interface RuntimePathProvenanceResponse {
   kind: RuntimePathProvenanceKind
@@ -153,6 +154,17 @@ export interface TrainResponse {
 export interface VaultStatusResponse {
   vault_dir: string
   exists: boolean
+  vault_id?: string | null
+  display_name?: string | null
+}
+
+export interface ManagedVault {
+  id: string
+  name: string
+  path: string
+  active: boolean
+  available: boolean
+  lesson_count: number | null
 }
 
 export interface VaultTreeNode {
@@ -592,6 +604,27 @@ export const api = {
     request<TrainResponse>('/train/topic', { method: 'POST' }),
 
   vaultStatus: () => request<VaultStatusResponse>('/vault/status'),
+
+  vaults: () => request<ManagedVault[]>('/vaults'),
+
+  createVault: (name: string, path: string) => request<ManagedVault>('/vaults/create', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, path }),
+  }),
+
+  registerVault: (name: string, path: string) => request<ManagedVault>('/vaults/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, path }),
+  }),
+
+  renameVault: (id: string, name: string) => request<ManagedVault>(`/vaults/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  }),
+
+  activateVault: (id: string) => request<VaultStatusResponse>(`/vaults/${encodeURIComponent(id)}/activate`, { method: 'POST' }),
+
+  removeVault: (id: string) => request<void>(`/vaults/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   vaultTree: () => request<VaultTreeResponse>('/vault/tree'),
 

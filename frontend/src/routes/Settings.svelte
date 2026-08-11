@@ -50,6 +50,8 @@
         return $messages.settingsProvenanceProduct
       case 'runtime_override':
         return $messages.settingsProvenanceRuntime
+      case 'managed_registry':
+        return $messages.settingsProvenanceRegistry
     }
   }
 

@@ -412,12 +412,14 @@ def test_settings_runtime_is_bounded_side_effect_free_and_version_aligned(
     assert set(by_key) == {
         "vault",
         "application_data",
+        "vault_registry",
         "lesson_projection",
         "candidate_staging",
         "duplicate_decisions",
         "cache",
         "topic_model",
     }
+    assert by_key["vault_registry"]["path"] == str(data / "vault-registry.json")
 
     assert by_key["vault"]["role"] == "authoritative_user_data"
     assert by_key["application_data"]["role"] == "persistent_application_state"
