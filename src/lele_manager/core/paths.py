@@ -23,6 +23,22 @@ DEFAULT_DUPLICATE_DECISIONS_FILENAME = "duplicate-decisions.json"
 DEFAULT_TOPIC_MODEL_FILENAME = "topic_model.joblib"
 
 
+def resolved_data_dir() -> Path:
+    """Resolve the data root without bootstrapping it.
+
+    Read-only operations (diagnostics and snapshot preview) use this rather
+    than :func:`data_dir`, whose historical contract includes startup mkdir.
+    """
+    configured = os.environ.get(ENV_DATA_DIR)
+    return Path(configured or PlatformDirs(APP_NAME).user_data_dir).expanduser().resolve()
+
+
+def resolved_cache_dir() -> Path:
+    """Resolve the cache root without bootstrapping it."""
+    configured = os.environ.get(ENV_CACHE_DIR)
+    return Path(configured or PlatformDirs(APP_NAME).user_cache_dir).expanduser().resolve()
+
+
 def _warn_deprecated_env(var_name: str, replacement: str) -> None:
     log.warning(
         "Env var %s is DEPRECATED and will be removed in the next release. "
@@ -40,14 +56,7 @@ def data_dir() -> Path:
     1) LELE_DATA_DIR (new)
     2) platformdirs user_data_dir (XDG on Linux)
     """
-    env = os.environ.get(ENV_DATA_DIR)
-    if env:
-        p = Path(env).expanduser().resolve()
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
-    d = PlatformDirs(APP_NAME)
-    p = Path(d.user_data_dir).expanduser().resolve()
+    p = resolved_data_dir()
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -60,14 +69,7 @@ def cache_dir() -> Path:
     1) LELE_CACHE_DIR (new)
     2) platformdirs user_cache_dir (XDG on Linux)
     """
-    env = os.environ.get(ENV_CACHE_DIR)
-    if env:
-        p = Path(env).expanduser().resolve()
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
-    d = PlatformDirs(APP_NAME)
-    p = Path(d.user_cache_dir).expanduser().resolve()
+    p = resolved_cache_dir()
     p.mkdir(parents=True, exist_ok=True)
     return p
 

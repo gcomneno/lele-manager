@@ -275,27 +275,33 @@ unless the legacy file override is intentionally required.
 
 ## Backup and restore
 
-### Minimum safe backup
+Use **Vault** to create a portable snapshot for an explicitly selected
+registered Vault. **Create snapshot** downloads a versioned ZIP without
+switching the active Vault. It includes canonical Markdown, that Vault's
+candidate staging, and its duplicate-review decisions; it excludes the global
+registry, JSONL projection, similarity cache and topic model.
 
-Back up:
+To restore, choose a local ZIP and an explicitly registered target, then use
+**Validate and preview restore**. The read-only preview identifies source
+provenance and target UUID/path and lists additions, replacements, removals and
+unchanged Markdown. The maintained Vault contract makes every `.md` file below
+the Vault root canonical input (including one without frontmatter), so exact
+restore removes any target Markdown absent from the snapshot. Unrelated
+non-Markdown files are preserved. Type the actual target Vault name for the
+second confirmation. Archives are versioned and fully validated before any
+write: bounded ZIP sizes, safe relative paths, checksums, and no encrypted or
+link-like members or unsafe source/target links.
 
-1. the complete Markdown vault;
-2. `candidates.json` when staged candidates or review history must be retained;
-3. configuration or service files that define custom environment variables.
-
-The JSONL projection and topic model can be rebuilt from the vault.
-
-### Restore
-
-1. restore the Markdown vault;
-2. set `LELE_VAULT_DIR` to the restored directory;
-3. optionally restore `candidates.json` under `LELE_DATA_DIR`;
-4. run `lele doctor`;
-5. run `scripts/lele-api-refresh.sh`;
-6. verify **Ops**, **Browse** and **Vault** before resuming edits.
-
-Never replace a newer vault with an older JSONL projection. The Markdown vault
-wins.
+The destination retains its own registry UUID, display name, path and active
+status even for a snapshot made by another Vault. Its candidate and duplicate
+state is restored only into that destination scope. On success LeLe Manager
+rebuilds the projection, invalidates similarity data and removes an old topic
+model. If derived refresh fails, the UI explicitly reports canonical success
+and that derived data needs attention. A changed artifact, target Markdown,
+candidates, duplicate decisions or selected target makes the preview stale and
+requires a new preview. A failed canonical/editorial application attempts
+bounded rollback and reports whether recovery succeeded; this is not a
+filesystem-wide transaction.
 
 ## Troubleshooting
 

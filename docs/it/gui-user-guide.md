@@ -288,27 +288,34 @@ voluto esplicitamente.
 
 ## Backup e ripristino
 
-### Backup minimo sicuro
+Usa **Vault** per creare uno snapshot portabile di un Vault registrato scelto
+esplicitamente. **Crea snapshot** scarica uno ZIP versionato senza cambiare il
+Vault attivo. Include Markdown canonici, staging candidati e decisioni sui
+duplicati di quel Vault; esclude registro globale, proiezione JSONL, cache di
+similarità e modello topic.
 
-Salvare:
+Per ripristinare, scegli uno ZIP locale e una destinazione già registrata,
+quindi usa **Valida e mostra anteprima del ripristino**. L'anteprima in sola
+lettura identifica provenienza, UUID e percorso della destinazione e mostra
+aggiunte, sostituzioni, rimozioni e file Markdown invariati. Il contratto del
+Vault considera canonico ogni file `.md` sotto la radice (anche senza
+frontmatter), quindi il ripristino esatto rimuove ogni Markdown di destinazione
+assente dallo snapshot. I file non Markdown non correlati restano invariati.
+Digita il nome effettivo del Vault di destinazione per la seconda conferma. Lo
+ZIP viene validato completamente prima di scrivere: limiti di dimensione,
+percorsi relativi sicuri, checksum e nessun membro cifrato, link o percorso
+sorgente/destinazione non sicuro.
 
-1. l’intero vault Markdown;
-2. `candidates.json` quando occorre conservare candidati e cronologia di review;
-3. configurazioni o servizi che definiscono variabili d’ambiente personalizzate.
-
-La proiezione JSONL e il modello topic sono ricostruibili dal vault.
-
-### Ripristino
-
-1. ripristinare il vault Markdown;
-2. impostare `LELE_VAULT_DIR` sulla directory ripristinata;
-3. ripristinare eventualmente `candidates.json` sotto `LELE_DATA_DIR`;
-4. eseguire `lele doctor`;
-5. eseguire `scripts/lele-api-refresh.sh`;
-6. verificare **Ops**, **Browse** e **Vault** prima di riprendere le modifiche.
-
-Non sostituire mai un vault più recente con una vecchia proiezione JSONL. Vince
-il vault Markdown.
+La destinazione conserva UUID di registro, nome visualizzato, percorso e stato
+attivo anche per uno snapshot proveniente da un altro Vault. Candidati e
+decisioni sono ripristinati solo nel relativo scope. Al successo LeLe Manager
+ricostruisce la proiezione, invalida la similarità ed elimina un vecchio modello
+topic. Se l'aggiornamento derivato fallisce, la GUI dichiara esplicitamente il
+successo canonico e segnala che i dati derivati richiedono attenzione. Un
+artefatto, Markdown, candidati, decisioni sui duplicati o Vault selezionato
+modificati rendono obsoleta l'anteprima e richiedono una nuova anteprima. In
+caso di errore canonico/editoriale viene tentato un rollback limitato e il
+risultato riporta se sia riuscito; non è una transazione filesystem globale.
 
 ## Risoluzione dei problemi
 

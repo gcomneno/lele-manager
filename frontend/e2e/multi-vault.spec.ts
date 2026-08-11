@@ -48,7 +48,7 @@ test('keeps registry-backed Vault runtime state isolated across a switch', async
     await expect(bRow).toBeVisible()
     await bRow.getByRole('button', { name: 'Switch to Vault' }).click()
     await expect(page.getByTestId('shell-workspace')).toHaveText('Vault B Display')
-    await expect(page.getByRole('region', { name: 'Vault', exact: true }).getByText('Vault B Display')).toBeVisible()
+    await expect(page.getByLabel('Vault management').getByText('Vault B Display', { exact: true })).toBeVisible()
     await page.goto('/app/#/lesson/shared%2Fid')
     await expect(page.getByText('B-only shared lesson.')).toBeVisible()
     await expect(page.getByText('A-only shared lesson.')).toHaveCount(0)

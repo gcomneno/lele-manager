@@ -7,7 +7,7 @@
     FormActions,
     Panel,
   } from 'giadaware-ui-components/studio'
-  import { api, type ManagedVault, type VaultTreeResponse } from '../lib/api'
+  import { api, type ManagedVault, type VaultRestorePreview, type VaultTreeResponse } from '../lib/api'
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
   import VaultTree from '../components/VaultTree.svelte'
@@ -21,6 +21,19 @@
   let vaultName = $state('')
   let vaultPath = $state('')
   let managementMessage = $state('')
+  let snapshotMessage = $state('')
+  let snapshotTone = $state<FormStatusTone>('info')
+  let restoreArtifact = $state<File | null>(null)
+  let restoreArtifactVersion = $state(0)
+  let restoreTargetId = $state('')
+  let restorePreview = $state<VaultRestorePreview | null>(null)
+  let restoreConfirmation = $state('')
+  let restoreMessage = $state('')
+  let restoreTone = $state<FormStatusTone>('info')
+  let snapshotBusy = $state(false)
+  let restoreBusy = $state(false)
+  let restoreExecuting = $state(false)
+  let previewRequestVersion = $state(0)
 
   async function load() {
     loading = true
@@ -29,6 +42,7 @@
     try {
       const status = await api.vaultStatus()
       vaults = await api.vaults()
+      if (!restoreTargetId) restoreTargetId = status.vault_id ?? ''
 
       if (!status.exists) {
         error = formatMessage(
@@ -94,6 +108,113 @@
     }
   }
 
+  async function createSnapshot(vault: ManagedVault) {
+    snapshotBusy = true
+    snapshotMessage = $messages.vaultSnapshotCreating
+    snapshotTone = 'info'
+    try {
+      const artifact = await api.downloadVaultSnapshot(vault.id)
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(artifact)
+      link.download = `lele-vault-${vault.id}.snapshot.zip`
+      link.click()
+      URL.revokeObjectURL(link.href)
+      snapshotMessage = formatMessage($messages.vaultSnapshotCreated, { name: vault.name })
+      snapshotTone = 'success'
+    } catch (e) {
+      snapshotMessage = e instanceof Error ? e.message : $messages.vaultSnapshotFailed
+      snapshotTone = 'error'
+    } finally { snapshotBusy = false }
+  }
+
+  function selectRestoreArtifact(event: Event) {
+    const input = event.currentTarget as HTMLInputElement
+    restoreArtifact = input.files?.[0] ?? null
+    restoreArtifactVersion += 1
+    previewRequestVersion += 1
+    restoreBusy = false
+    restorePreview = null
+    restoreConfirmation = ''
+    restoreMessage = ''
+  }
+
+  function selectRestoreTarget() {
+    previewRequestVersion += 1
+    restoreBusy = false
+    restorePreview = null
+    restoreConfirmation = ''
+    restoreMessage = ''
+  }
+
+  async function previewRestore() {
+    if (!restoreArtifact || !restoreTargetId) {
+      restoreMessage = $messages.vaultRestoreNeedPreview
+      restoreTone = 'error'
+      return
+    }
+    const targetId = restoreTargetId
+    const artifact = restoreArtifact
+    const artifactVersion = restoreArtifactVersion
+    const requestVersion = ++previewRequestVersion
+    restoreBusy = true
+    restoreMessage = $messages.vaultRestorePreviewing
+    restoreTone = 'info'
+    try {
+      const preview = await api.previewVaultRestore(targetId, artifact)
+      if (
+        requestVersion === previewRequestVersion
+        && restoreTargetId === targetId
+        && restoreArtifact === artifact
+        && restoreArtifactVersion === artifactVersion
+      ) {
+        restorePreview = preview
+        restoreMessage = ''
+      }
+    } catch (e) {
+      if (requestVersion === previewRequestVersion) {
+        restorePreview = null
+        restoreMessage = e instanceof Error ? e.message : $messages.vaultRestoreFailed
+        restoreTone = 'error'
+      }
+    } finally {
+      if (requestVersion === previewRequestVersion) restoreBusy = false
+    }
+  }
+
+  async function restoreSnapshot() {
+    if (
+      !restoreArtifact
+      || !restorePreview
+      || restorePreview.target_vault_id !== restoreTargetId
+    ) {
+      restorePreview = null
+      restoreConfirmation = ''
+      restoreMessage = $messages.vaultRestoreNeedPreview
+      restoreTone = 'error'
+      return
+    }
+    restoreBusy = true
+    restoreExecuting = true
+    restoreMessage = $messages.vaultRestoreRestoring
+    restoreTone = 'info'
+    try {
+      const result = await api.restoreVaultSnapshot(restoreTargetId, restoreArtifact, restorePreview.plan_digest)
+      restoreTone = result.derived_reconciled ? 'success' : 'error'
+      restoreMessage = result.derived_reconciled
+        ? $messages.vaultRestoreSuccess
+        : formatMessage($messages.vaultRestorePartial, { error: result.derived_error ?? '' })
+      restorePreview = null
+      restoreConfirmation = ''
+      await load()
+    } catch (e) {
+      restoreMessage = e instanceof Error ? e.message : $messages.vaultRestoreFailed
+      restoreTone = 'error'
+    } finally {
+      restoreBusy = false
+      restoreExecuting = false
+    }
+  }
+
   onMount(load)
 </script>
 
@@ -105,6 +226,7 @@
         <div><strong>{vault.name}</strong>{#if vault.active} · {$messages.vaultActive}{/if}<br /><small>{vault.path} · {vault.available ? $messages.vaultAvailable : $messages.vaultMissing}</small></div>
         <div>
           {#if !vault.active}<Button size="compact" onclick={() => activate(vault.id)}>{$messages.vaultSwitch}</Button>{/if}
+          <Button variant="secondary" size="compact" onclick={() => createSnapshot(vault)} disabled={snapshotBusy}>{$messages.vaultCreateSnapshot}</Button>
           <Button variant="secondary" size="compact" onclick={() => rename(vault)}>{$messages.vaultRename}</Button>
           {#if !vault.active}<Button variant="secondary" size="compact" onclick={() => remove(vault)}>{$messages.vaultRemove}</Button>{/if}
         </div>
@@ -116,6 +238,37 @@
     <FormActions><Button onclick={() => addVault(true)}>{$messages.vaultCreate}</Button><Button variant="secondary" onclick={() => addVault(false)}>{$messages.vaultRegister}</Button></FormActions>
     <p class="meta">{$messages.vaultRemovalNote}</p>
     {#if managementMessage}<FormStatus message={managementMessage} tone="error" />{/if}
+  </section>
+  <section class="vault-management" aria-label={$messages.vaultSnapshots}>
+    <h2>{$messages.vaultSnapshots}</h2>
+    <label>{$messages.vaultRestoreArtifact} <input type="file" accept=".zip,application/zip" onchange={selectRestoreArtifact} disabled={restoreExecuting} /></label>
+    <label>{$messages.vaultRestoreTarget}
+      <select bind:value={restoreTargetId} onchange={selectRestoreTarget} disabled={restoreExecuting}>
+        {#each vaults.filter((vault) => vault.available) as vault (vault.id)}
+          <option value={vault.id}>{vault.name} — {vault.path}</option>
+        {/each}
+      </select>
+    </label>
+    <FormActions><Button variant="secondary" onclick={previewRestore} disabled={restoreBusy || !restoreArtifact || !restoreTargetId}>{$messages.vaultRestorePreview}</Button></FormActions>
+    {#if restorePreview}
+      <div class="restore-preview">
+        <h3>{$messages.vaultRestorePreviewTitle}</h3>
+        <p>{formatMessage($messages.vaultRestoreSource, { name: restorePreview.source_vault_name, id: restorePreview.source_vault_id })}</p>
+        <p>{formatMessage($messages.vaultRestoreTargetDetails, { name: restorePreview.target_name, id: restorePreview.target_vault_id, path: restorePreview.target_path })}</p>
+        <p>{formatMessage($messages.vaultRestoreFiles, { count: restorePreview.canonical_file_count })}</p>
+        <p>{$messages.vaultRestoreAdditions}: {restorePreview.additions.join(', ') || '—'}</p>
+        <p>{$messages.vaultRestoreReplacements}: {restorePreview.replacements.join(', ') || '—'}</p>
+        <p>{$messages.vaultRestoreRemovals}: {restorePreview.removals.join(', ') || '—'}</p>
+        <p>{$messages.vaultRestoreUnchanged}: {restorePreview.unchanged.join(', ') || '—'}</p>
+        <p>{formatMessage($messages.vaultRestoreEditorial, { items: restorePreview.editorial_state.join(', ') })}</p>
+        <p>{formatMessage($messages.vaultRestoreDerived, { items: restorePreview.derived_effects.join(', ') })}</p>
+        <label>{ $messages.vaultRestoreConfirmLabel } <input bind:value={restoreConfirmation} /></label>
+        {#if restoreConfirmation !== restorePreview.target_name}<p class="meta">{$messages.vaultRestoreConfirmMismatch}</p>{/if}
+        <FormActions><Button onclick={restoreSnapshot} disabled={restoreBusy || restoreConfirmation !== restorePreview.target_name}>{$messages.vaultRestoreConfirm}</Button></FormActions>
+      </div>
+    {/if}
+    {#if snapshotMessage}<FormStatus message={snapshotMessage} tone={snapshotTone} />{/if}
+    {#if restoreMessage}<FormStatus message={restoreMessage} tone={restoreTone} />{/if}
   </section>
   <FormActions
     class="vault-actions"

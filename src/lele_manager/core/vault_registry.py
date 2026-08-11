@@ -15,7 +15,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, List, cast
 
-from .paths import cache_dir, data_dir
+from .paths import cache_dir, data_dir, resolved_cache_dir, resolved_data_dir
 from .vault import DEFAULT_VAULT_DIRNAME, resolve_vault_dir
 
 SCHEMA_VERSION = 1
@@ -219,6 +219,41 @@ class VaultRegistryStore:
     @staticmethod
     def context_for(item: RegisteredVault) -> ActiveVaultContext:
         return VaultRegistryStore.context_for_roots(item, data_dir(), cache_dir())
+
+    def safe_context_for_registered(self, vault_id: str) -> ActiveVaultContext:
+        """Resolve a registered Vault without following a substituted symlink.
+
+        Registry records are normally canonical absolute paths.  This extra
+        execution-time check protects operations that write many canonical
+        files (such as snapshot restore) if that filesystem object was later
+        replaced by a symlink.
+        """
+        with _LOCK:
+            data = self._load()
+            item = next((entry for entry in data["vaults"] if entry.id == vault_id), None)
+            if item is None:
+                raise VaultNotFoundError("Vault was not found")
+            try:
+                raw = json.loads(self.path.read_text(encoding="utf-8"))
+                record = next(entry for entry in raw["vaults"] if entry.get("id") == vault_id)
+                stored = Path(record["path"]).expanduser()
+            except (OSError, ValueError, KeyError, StopIteration, TypeError, json.JSONDecodeError) as exc:
+                raise VaultRegistryCorruptError("vault registry is unreadable; it was left unchanged") from exc
+            if not stored.is_absolute() or not stored.is_dir():
+                raise VaultPathError("Vault path is unavailable")
+            current = Path(stored.anchor)
+            for part in stored.parts[1:]:
+                current = current / part
+                if current.is_symlink():
+                    raise VaultPathError("Vault path is unavailable or unsafe")
+            resolved = stored.resolve()
+            if resolved != item.path:
+                raise VaultPathError("Vault path changed while resolving")
+            safe_item = RegisteredVault(item.id, item.name, resolved, item.registered_at)
+        # Snapshot creation and restore preview are read-only: resolve roots
+        # using the same pure path policy as runtime transparency, rather than
+        # the startup helpers which intentionally mkdir their roots.
+        return self.context_for_roots(safe_item, resolved_data_dir(), resolved_cache_dir())
 
     @staticmethod
     def context_for_roots(

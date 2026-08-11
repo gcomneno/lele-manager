@@ -6,7 +6,7 @@ import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
 from typing import Annotated, Any, List, Literal, Mapping, Optional, cast
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
 from datetime import datetime, timezone
@@ -74,6 +74,20 @@ from lele_manager.core.vault_registry import (
     VaultRegistryError,
     VaultRegistryStore,
     active_vault_context,
+)
+from lele_manager.core.vault_snapshot import (
+    RestorePreview,
+    SnapshotPlanStaleError,
+    SnapshotRestoreError,
+    SnapshotTargetError,
+    SnapshotValidationError,
+    MAX_ARTIFACT_SIZE,
+    create_snapshot,
+    execute_restore,
+    invalidate_scoped_derived_artifact,
+    prepare_scoped_mutation_path,
+    preview_restore,
+    validate_snapshot,
 )
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
 from lele_manager.ml.similarity import LessonSimilarityIndex
@@ -504,6 +518,30 @@ class VaultRegistryItemResponse(BaseModel):
 class VaultRegistryMutation(BaseModel):
     name: str = Field(min_length=1)
     path: str | None = None
+
+
+class VaultRestorePreviewResponse(BaseModel):
+    plan_digest: str
+    target_vault_id: str
+    target_name: str
+    target_path: str
+    source_vault_id: str
+    source_vault_name: str
+    canonical_file_count: int
+    additions: List[str]
+    replacements: List[str]
+    removals: List[str]
+    unchanged: List[str]
+    editorial_state: List[str]
+    derived_effects: List[str]
+
+
+class VaultRestoreResponse(BaseModel):
+    canonical_restored: bool
+    rollback_succeeded: bool | None = None
+    derived_reconciled: bool
+    derived_error: str | None = None
+    preview: VaultRestorePreviewResponse
 
 
 class DashboardCandidateSummary(BaseModel):
@@ -1962,6 +2000,7 @@ def _sync_vault_import(context: ActiveVaultContext | None = None) -> VaultImport
     if not vault_dir.is_dir():
         raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
     data_path = context.projection_path
+    prepare_scoped_mutation_path(data_path, "lesson projection")
     result = import_vault_to_jsonl(vault_dir, data_path)
     invalidate_similarity_cache()
     return VaultImportResponse(
@@ -2107,6 +2146,80 @@ def _registry_error(exc: VaultRegistryError) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
 
 
+def _snapshot_context_for_registered_vault(vault_id: str) -> ActiveVaultContext:
+    """Resolve an explicit registry identity; never fall back to active Vault."""
+    try:
+        store = VaultRegistryStore()
+        return store.safe_context_for_registered(vault_id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+def _snapshot_preview_response(preview: RestorePreview) -> VaultRestorePreviewResponse:
+    return VaultRestorePreviewResponse(
+        plan_digest=preview.plan_digest,
+        target_vault_id=preview.target_vault_id,
+        target_name=preview.target_name,
+        target_path=preview.target_path,
+        source_vault_id=preview.source_vault_id,
+        source_vault_name=preview.source_vault_name,
+        canonical_file_count=preview.canonical_file_count,
+        additions=list(preview.additions),
+        replacements=list(preview.replacements),
+        removals=list(preview.removals),
+        unchanged=list(preview.unchanged),
+        editorial_state=list(preview.editorial_state),
+        derived_effects=list(preview.derived_effects),
+    )
+
+
+async def _snapshot_request_body(request: Request) -> bytes:
+    content_length = request.headers.get("content-length")
+    try:
+        if content_length is not None and int(content_length) > MAX_ARTIFACT_SIZE:
+            raise ValueError
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "snapshot_invalid", "message": "Snapshot artifact is empty or exceeds the upload limit."},
+        )
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_ARTIFACT_SIZE:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "snapshot_invalid", "message": "Snapshot artifact is empty or exceeds the upload limit."},
+            )
+        chunks.append(chunk)
+    raw = b"".join(chunks)
+    if not raw:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "snapshot_invalid", "message": "Snapshot artifact is empty or exceeds the upload limit."},
+        )
+    return raw
+
+
+def _snapshot_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, SnapshotPlanStaleError):
+        status = 409
+    elif isinstance(exc, SnapshotTargetError):
+        status = 409
+    elif isinstance(exc, SnapshotRestoreError):
+        status = 503
+    else:
+        status = 422
+    detail: dict[str, object] = {"code": getattr(exc, "code", "snapshot_invalid"), "message": str(exc)}
+    if isinstance(exc, SnapshotRestoreError):
+        detail["recovery"] = {
+            "canonical_restored": False,
+            "rollback_succeeded": exc.rollback_succeeded,
+        }
+    return HTTPException(status_code=status, detail=detail)
+
+
 @app.get("/vaults", response_model=list[VaultRegistryItemResponse])
 def list_vaults() -> list[VaultRegistryItemResponse]:
     try:
@@ -2115,6 +2228,73 @@ def list_vaults() -> list[VaultRegistryItemResponse]:
         return [_registry_item(item, context.vault_id) for item in store.list()]
     except VaultRegistryError as exc:
         raise _registry_error(exc) from exc
+
+
+@app.get("/vaults/{vault_id}/snapshot")
+def download_vault_snapshot(vault_id: str) -> Response:
+    """Create a portable backup for one explicit registered Vault."""
+    context = _snapshot_context_for_registered_vault(vault_id)
+    try:
+        artifact = create_snapshot(context, DuplicateDecisionStore(get_duplicate_decisions_path()))
+    except (SnapshotValidationError, SnapshotTargetError, DuplicateDecisionStoreError) as exc:
+        raise _snapshot_error(exc) from exc
+    filename = f"lele-vault-{context.vault_id}.snapshot.zip"
+    return Response(
+        content=artifact,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/vaults/{vault_id}/restore/preview", response_model=VaultRestorePreviewResponse)
+async def preview_vault_restore(vault_id: str, request: Request) -> VaultRestorePreviewResponse:
+    """Validate an uploaded snapshot and report exact-state effects without mutation."""
+    context = _snapshot_context_for_registered_vault(vault_id)
+    try:
+        artifact = validate_snapshot(await _snapshot_request_body(request))
+        preview = preview_restore(artifact, context, DuplicateDecisionStore(get_duplicate_decisions_path()))
+        return _snapshot_preview_response(preview)
+    except (SnapshotValidationError, SnapshotTargetError, DuplicateDecisionStoreError) as exc:
+        raise _snapshot_error(exc) from exc
+
+
+@app.post("/vaults/{vault_id}/restore", response_model=VaultRestoreResponse)
+async def restore_vault_snapshot(
+    vault_id: str,
+    request: Request,
+    plan_digest: str = Query(min_length=64, max_length=64),
+) -> VaultRestoreResponse:
+    """Restore only after a matching preview plan, then reconcile derived state."""
+    # Resolve the registered target immediately before execution; registry
+    # identity/path is retained and active selection is not changed.
+    try:
+        artifact = validate_snapshot(await _snapshot_request_body(request))
+        # Validation can take time; resolve the registered target again before
+        # deriving the plan that will authorize an actual mutation.
+        context = _snapshot_context_for_registered_vault(vault_id)
+
+        def reconcile(final_context: ActiveVaultContext) -> None:
+            # A model trained for old Markdown can never survive a restore.
+            invalidate_scoped_derived_artifact(final_context.topic_model_path, "topic model")
+            _sync_vault_import(final_context)
+
+        result = execute_restore(
+            artifact,
+            context,
+            DuplicateDecisionStore(get_duplicate_decisions_path()),
+            plan_digest=plan_digest,
+            reconcile_derived=reconcile,
+            resolve_current_target=lambda: _snapshot_context_for_registered_vault(vault_id),
+        )
+    except (SnapshotValidationError, SnapshotTargetError, SnapshotPlanStaleError, SnapshotRestoreError, DuplicateDecisionStoreError) as exc:
+        raise _snapshot_error(exc) from exc
+    return VaultRestoreResponse(
+        canonical_restored=result.canonical_restored,
+        rollback_succeeded=result.rollback_succeeded,
+        derived_reconciled=result.derived_reconciled,
+        derived_error=result.derived_error,
+        preview=_snapshot_preview_response(result.preview),
+    )
 
 
 @app.post("/vaults/create", response_model=VaultRegistryItemResponse, status_code=201)

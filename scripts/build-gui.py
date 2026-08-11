@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -59,7 +60,8 @@ def main() -> int:
     npm = npm_executable()
 
     print("==> Building LeLe Manager GUI (Vite + Svelte)")
-    install_dependencies(npm)
+    if os.environ.get("LELE_SKIP_FRONTEND_INSTALL") != "1":
+        install_dependencies(npm)
     build_frontend(npm)
 
     print("==> Copying dist -> src/lele_manager/gui/static")
