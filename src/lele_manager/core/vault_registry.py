@@ -15,7 +15,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, List, cast
 
-from .paths import cache_dir, data_dir
+from .paths import cache_dir, data_dir, resolved_cache_dir, resolved_data_dir
 from .vault import DEFAULT_VAULT_DIRNAME, resolve_vault_dir
 
 SCHEMA_VERSION = 1
@@ -250,7 +250,10 @@ class VaultRegistryStore:
             if resolved != item.path:
                 raise VaultPathError("Vault path changed while resolving")
             safe_item = RegisteredVault(item.id, item.name, resolved, item.registered_at)
-        return self.context_for(safe_item)
+        # Snapshot creation and restore preview are read-only: resolve roots
+        # using the same pure path policy as runtime transparency, rather than
+        # the startup helpers which intentionally mkdir their roots.
+        return self.context_for_roots(safe_item, resolved_data_dir(), resolved_cache_dir())
 
     @staticmethod
     def context_for_roots(

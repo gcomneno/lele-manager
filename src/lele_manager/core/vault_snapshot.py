@@ -7,6 +7,7 @@ is allowed to change canonical Markdown or scoped editorial state.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import io
 import json
 import os
@@ -194,9 +195,11 @@ def _relative_markdown_files(vault_dir: Path) -> dict[str, bytes]:
     if not vault_dir.is_dir() or vault_dir.is_symlink():
         raise SnapshotTargetError("registered Vault directory is unavailable or unsafe")
     result: dict[str, bytes] = {}
+    total = 0
     root = vault_dir.resolve()
 
     def visit(directory: Path, relative: PurePosixPath) -> None:
+        nonlocal total
         try:
             entries = sorted(directory.iterdir(), key=lambda path: path.name)
         except OSError as exc:
@@ -213,10 +216,16 @@ def _relative_markdown_files(vault_dir: Path) -> dict[str, bytes]:
                 visit(path, rel)
             elif stat.S_ISREG(node.st_mode):
                 if path.suffix.lower() == ".md":
+                    if node.st_size > MAX_MEMBER_SIZE or total + node.st_size > MAX_UNCOMPRESSED_SIZE:
+                        raise SnapshotTargetError("Vault state exceeds snapshot size limits")
                     try:
-                        result[rel.as_posix()] = path.read_bytes()
+                        data = _read_bounded_regular_file(path, node, "Vault Markdown")
                     except OSError as exc:
                         raise SnapshotTargetError("Vault Markdown could not be safely read") from exc
+                    if total + len(data) > MAX_UNCOMPRESSED_SIZE:
+                        raise SnapshotTargetError("Vault state exceeds snapshot size limits")
+                    total += len(data)
+                    result[rel.as_posix()] = data
             else:
                 # Refuse unusual filesystem nodes rather than leaving an
                 # ambiguous snapshot boundary around FIFOs/devices/sockets.
@@ -234,10 +243,93 @@ def _validate_markdown_payload(files: Mapping[str, bytes]) -> None:
     backup boundary, not a repair operation, so it must preserve that managed
     state exactly instead of rejecting it or normalising it on restore.
     """
+    portable: set[str] = set()
     for rel, contents in files.items():
-        if not rel.lower().endswith(".md") or not isinstance(contents, bytes):
+        if not isinstance(rel, str) or not rel.lower().endswith(".md") or not isinstance(contents, bytes):
             raise SnapshotValidationError("snapshot canonical payload is malformed")
         _safe_member_name(rel)
+        normalized = unicodedata.normalize("NFC", rel).casefold()
+        if normalized in portable:
+            raise SnapshotValidationError("snapshot canonical paths are not portable")
+        portable.add(normalized)
+
+
+def _read_bounded_regular_file(path: Path, node: os.stat_result, label: str) -> bytes:
+    """Read a regular file only after a size check, including growth races."""
+    if not stat.S_ISREG(node.st_mode) or stat.S_ISLNK(node.st_mode) or node.st_size > MAX_MEMBER_SIZE:
+        raise SnapshotTargetError(f"{label} exceeds snapshot size limits or is unsafe")
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        with path.open("rb") as handle:
+            while chunk := handle.read(min(1024 * 1024, MAX_MEMBER_SIZE - total + 1)):
+                total += len(chunk)
+                if total > MAX_MEMBER_SIZE:
+                    raise SnapshotTargetError(f"{label} exceeds snapshot size limits")
+                chunks.append(chunk)
+    except OSError as exc:
+        raise SnapshotTargetError(f"{label} could not be safely read") from exc
+    return b"".join(chunks)
+
+
+def _scoped_root(path: Path) -> Path:
+    """Return the data/cache root for the fixed ``root/vaults/id/file`` layout."""
+    try:
+        return path.parents[2]
+    except IndexError as exc:  # defensive only; contexts are registry-owned
+        raise SnapshotTargetError("managed scoped path is malformed") from exc
+
+
+def _assert_safe_scoped_path(path: Path, label: str, *, create_parents: bool = False) -> Path:
+    """Check a managed data/cache path without following substituted links."""
+    root = _scoped_root(path)
+    try:
+        root_node = root.lstat()
+    except FileNotFoundError:
+        if not create_parents:
+            return path
+        root.mkdir(parents=True, exist_ok=True)
+        root_node = root.lstat()
+    except OSError as exc:
+        raise SnapshotTargetError(f"{label} could not be safely inspected") from exc
+    if stat.S_ISLNK(root_node.st_mode) or not stat.S_ISDIR(root_node.st_mode):
+        raise SnapshotTargetError(f"{label} managed root is unsafe")
+    current = root
+    for part in path.relative_to(root).parts[:-1]:
+        current = current / part
+        try:
+            node = current.lstat()
+        except FileNotFoundError:
+            if not create_parents:
+                return path
+            current.mkdir()
+            node = current.lstat()
+        except OSError as exc:
+            raise SnapshotTargetError(f"{label} could not be safely inspected") from exc
+        if stat.S_ISLNK(node.st_mode) or not stat.S_ISDIR(node.st_mode):
+            raise SnapshotTargetError(f"{label} managed directory is unsafe")
+    try:
+        node = path.lstat()
+    except FileNotFoundError:
+        return path
+    except OSError as exc:
+        raise SnapshotTargetError(f"{label} could not be safely inspected") from exc
+    if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode):
+        raise SnapshotTargetError(f"{label} is unsafe")
+    return path
+
+
+def prepare_scoped_mutation_path(path: Path, label: str) -> Path:
+    """Create only verified managed parents at an actual mutation boundary."""
+    return _assert_safe_scoped_path(path, label, create_parents=True)
+
+
+def invalidate_scoped_derived_artifact(path: Path, label: str) -> None:
+    path = _assert_safe_scoped_path(path, label, create_parents=False)
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise SnapshotTargetError(f"{label} could not be invalidated") from exc
 
 
 def _validate_candidates(raw: bytes, staging: Path) -> None:
@@ -252,6 +344,7 @@ def _validate_candidates(raw: bytes, staging: Path) -> None:
 
 def _read_regular_state_file(path: Path, label: str) -> bytes | None:
     """Read optional editorial state without accepting a symlink as authority."""
+    _assert_safe_scoped_path(path, label)
     try:
         node = path.lstat()
     except FileNotFoundError:
@@ -261,7 +354,7 @@ def _read_regular_state_file(path: Path, label: str) -> bytes | None:
     if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode):
         raise SnapshotTargetError(f"{label} is unsafe")
     try:
-        return path.read_bytes()
+        return _read_bounded_regular_file(path, node, label)
     except OSError as exc:
         raise SnapshotTargetError(f"{label} could not be safely read") from exc
 
@@ -269,7 +362,7 @@ def _read_regular_state_file(path: Path, label: str) -> bytes | None:
 def _validate_decisions(value: Any) -> tuple[dict[str, str], ...]:
     if not isinstance(value, dict) or set(value) != {"schema_version", "decisions"}:
         raise SnapshotValidationError("snapshot duplicate decisions are malformed")
-    if value["schema_version"] != 1 or not isinstance(value["decisions"], list):
+    if type(value["schema_version"]) is not int or value["schema_version"] != 1 or not isinstance(value["decisions"], list):
         raise SnapshotValidationError("snapshot duplicate decisions have an unsupported schema")
     expected = {"left_id", "right_id", "left_fingerprint", "right_fingerprint", "decided_at"}
     results: list[dict[str, str]] = []
@@ -363,8 +456,12 @@ def validate_snapshot(raw: bytes) -> ValidatedSnapshot:
         normalized_names = [unicodedata.normalize("NFC", name).casefold() for name in names]
         if len(set(normalized_names)) != len(normalized_names):
             raise SnapshotValidationError("snapshot contains case-colliding member paths")
-        ordered_names = sorted(names)
-        if any(right.startswith(left + "/") for left, right in zip(ordered_names, ordered_names[1:])):
+        normalized_name_set = set(normalized_names)
+        if any(
+            "/".join(name.split("/")[:index]) in normalized_name_set
+            for name in normalized_names
+            for index in range(1, len(name.split("/")))
+        ):
             raise SnapshotValidationError("snapshot contains directory/file path collisions")
         total = 0
         for info in infos:
@@ -384,7 +481,12 @@ def validate_snapshot(raw: bytes) -> ValidatedSnapshot:
         required = {"format", "schema_version", "created_at", "source_vault", "files", "canonical_files", "editorial_state"}
         if not isinstance(manifest, dict) or set(manifest) != required:
             raise SnapshotValidationError("snapshot manifest is malformed")
-        if manifest["format"] != FORMAT or manifest["schema_version"] != SCHEMA_VERSION:
+        if (
+            not isinstance(manifest["format"], str)
+            or type(manifest["schema_version"]) is not int
+            or manifest["format"] != FORMAT
+            or manifest["schema_version"] != SCHEMA_VERSION
+        ):
             raise SnapshotValidationError("snapshot format or schema version is unsupported")
         if not isinstance(manifest["created_at"], str) or not manifest["created_at"]:
             raise SnapshotValidationError("snapshot creation timestamp is malformed")
@@ -407,7 +509,7 @@ def validate_snapshot(raw: bytes) -> ValidatedSnapshot:
             if not isinstance(record, dict) or set(record) != {"path", "size", "sha256"}:
                 raise SnapshotValidationError("snapshot inventory record is malformed")
             name, size, digest = record["path"], record["size"], record["sha256"]
-            if not isinstance(name, str) or not isinstance(size, int) or size < 0 or not isinstance(digest, str) or len(digest) != 64:
+            if not isinstance(name, str) or type(size) is not int or size < 0 or not isinstance(digest, str) or len(digest) != 64:
                 raise SnapshotValidationError("snapshot inventory record is malformed")
             _safe_member_name(name)
             if name in inventory:
@@ -423,11 +525,12 @@ def validate_snapshot(raw: bytes) -> ValidatedSnapshot:
             if len(content) != entry.size or _digest(content) != entry.sha256:
                 raise SnapshotValidationError("snapshot inventory checksum or size does not match")
         canonical_paths = manifest["canonical_files"]
+        if not isinstance(canonical_paths, list) or not all(isinstance(path, str) for path in canonical_paths):
+            raise SnapshotValidationError("snapshot canonical inventory is malformed")
         if (
-            not isinstance(canonical_paths, list)
-            or len(set(canonical_paths)) != len(canonical_paths)
+            len(set(canonical_paths)) != len(canonical_paths)
             or canonical_paths != sorted(canonical_paths)
-            or len({unicodedata.normalize("NFC", str(path)).casefold() for path in canonical_paths}) != len(canonical_paths)
+            or len({unicodedata.normalize("NFC", path).casefold() for path in canonical_paths}) != len(canonical_paths)
         ):
             raise SnapshotValidationError("snapshot canonical inventory is malformed")
         canonical: list[SnapshotFile] = []
@@ -469,7 +572,12 @@ def _preview_digest(validated: ValidatedSnapshot, context: ActiveVaultContext, t
         "artifact": validated.artifact_sha256,
         "restore_semantics_version": RESTORE_SEMANTICS_VERSION,
         "target_id": context.vault_id,
+        "target_name": context.display_name,
         "target_path": str(context.vault_dir),
+        "projection_path": str(context.projection_path),
+        "candidates_path": str(context.candidates_path),
+        "topic_model_path": str(context.topic_model_path),
+        "duplicate_decision_scope": context.duplicate_decision_scope,
         "target_state": target_state,
     }))
 
@@ -529,9 +637,32 @@ def _atomic_write(path: Path, data: bytes, *, managed_root: Path | None = None, 
         if managed_root is not None and relative_path is not None:
             path = _assert_safe_destination(managed_root, relative_path)
         os.replace(temporary_name, path)
-    except OSError:
+    except Exception:
         Path(temporary_name).unlink(missing_ok=True)
         raise
+
+
+def _atomic_write_scoped(path: Path, data: bytes, label: str) -> None:
+    """Atomically update a scoped document after every path component is safe."""
+    path = prepare_scoped_mutation_path(path, label)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        _assert_safe_scoped_path(path, label, create_parents=True)
+        os.replace(temporary_name, path)
+    except Exception:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
+
+
+def _assert_restore_scoped_boundaries(context: ActiveVaultContext) -> None:
+    """Reject substituted data/cache scope parents before canonical mutation."""
+    _assert_safe_scoped_path(context.candidates_path, "candidate state")
+    _assert_safe_scoped_path(context.projection_path, "lesson projection")
+    _assert_safe_scoped_path(context.topic_model_path, "topic model")
 
 
 def _restore_apply(validated: ValidatedSnapshot, context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> None:
@@ -554,7 +685,7 @@ def _restore_apply(validated: ValidatedSnapshot, context: ActiveVaultContext, de
                     managed_root=context.vault_dir,
                     relative_path=rel,
                 )
-        _atomic_write(context.candidates_path, validated.candidates)
+        _atomic_write_scoped(context.candidates_path, validated.candidates, "candidate state")
         decisions.replace_scope(context.duplicate_decision_scope, list(validated.duplicate_decisions))
     except Exception as exc:
         rollback_succeeded = True
@@ -571,9 +702,10 @@ def _restore_apply(validated: ValidatedSnapshot, context: ActiveVaultContext, de
                     relative_path=rel,
                 )
             if candidates_before is None:
-                context.candidates_path.unlink(missing_ok=True)
+                path = _assert_safe_scoped_path(context.candidates_path, "candidate state")
+                path.unlink(missing_ok=True)
             else:
-                _atomic_write(context.candidates_path, candidates_before)
+                _atomic_write_scoped(context.candidates_path, candidates_before, "candidate state")
             decisions.replace_scope(context.duplicate_decision_scope, decisions_before)
         except Exception:
             rollback_succeeded = False
@@ -586,7 +718,7 @@ def execute_restore(
     decisions: DuplicateDecisionStore,
     *,
     plan_digest: str,
-    reconcile_derived: Callable[[], None],
+    reconcile_derived: Callable[..., None],
     resolve_current_target: Callable[[], ActiveVaultContext] | None = None,
 ) -> RestoreResult:
     """Apply exact managed state then independently reconcile derived state."""
@@ -597,12 +729,22 @@ def execute_restore(
         raise SnapshotPlanStaleError("snapshot or target state changed after preview")
     if resolve_current_target is not None:
         checked = resolve_current_target()
-        if checked.vault_id != context.vault_id or checked.vault_dir != context.vault_dir:
+        if checked != context:
             raise SnapshotPlanStaleError("selected Vault changed after preview")
         context = checked
+    _assert_restore_scoped_boundaries(context)
     _restore_apply(validated, context, decisions)
     try:
-        reconcile_derived()
+        # New composition receives the exact context which passed both the
+        # stale-plan check and final resolver check.  The no-argument fallback
+        # keeps the domain API compatible with existing callers that have no
+        # derived state to reconcile.
+        try:
+            inspect.signature(reconcile_derived).bind(context)
+        except TypeError:
+            reconcile_derived()
+        else:
+            reconcile_derived(context)
     except Exception:
         # The API must distinguish this recoverable partial success without
         # exposing backend exception details to an uploaded-artifact client.

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -7,6 +7,10 @@ const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
 const fixtureRoot = join(repositoryRoot, '.e2e-fixture')
 const vaultDir = join(fixtureRoot, 'vault')
 const externalMarkdown = join(fixtureRoot, 'outside-vault.md')
+const doctorBackupDir = join(fixtureRoot, 'vault-doctor-backup')
+const doctorBackupVault = join(doctorBackupDir, 'vault')
+
+let externalMarkdownBefore: Buffer | null = null
 
 const healthyLesson = `---
 id: python/2025-01-01.e2e
@@ -35,8 +39,26 @@ async function openDoctor(page: import('@playwright/test').Page) {
 }
 
 test.describe('ops: vault doctor', () => {
+  test.beforeAll(async () => {
+    await rm(doctorBackupDir, { recursive: true, force: true })
+    await mkdir(doctorBackupDir, { recursive: true })
+    await cp(vaultDir, doctorBackupVault, { recursive: true, dereference: false })
+    externalMarkdownBefore = await readFile(externalMarkdown).catch(() => null)
+  })
+
   test.afterEach(async () => {
     await resetVaultFixture()
+  })
+
+  test.afterAll(async () => {
+    try {
+      await rm(vaultDir, { recursive: true, force: true })
+      await cp(doctorBackupVault, vaultDir, { recursive: true, dereference: false })
+    } finally {
+      if (externalMarkdownBefore === null) await rm(externalMarkdown, { force: true })
+      else await writeFile(externalMarkdown, externalMarkdownBefore)
+      await rm(doctorBackupDir, { recursive: true, force: true })
+    }
   })
 
   test('shows a healthy isolated vault report', async ({ page }) => {
