@@ -93,6 +93,7 @@ export type RuntimePathProvenanceKind =
   | 'platform_default'
   | 'product_default'
   | 'runtime_override'
+  | 'managed_registry'
 
 export interface RuntimePathProvenanceResponse {
   kind: RuntimePathProvenanceKind

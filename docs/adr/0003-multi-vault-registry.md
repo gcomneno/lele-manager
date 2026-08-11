@@ -24,6 +24,15 @@ Duplicate decisions remain in the global application document but their normal
 scope is the UUID. Version-1 path scopes migrate to the bootstrap Vault when
 known; unmatched scopes are retained as explicit legacy state.
 
+Bootstrap writes the registry and its stable bootstrap UUID before migration.
+The registry records candidate and duplicate-decision phase completion for that
+same UUID. A later bootstrap resumes only incomplete phases: candidate staging
+is moved without overwrite, then the matching path-scoped decisions are moved
+idempotently. Each completed phase is persisted immediately; only after both
+succeed does a final completion marker prevent all future legacy-file scans.
+Failures preserve the registry, legacy state, and any already completed phase
+for a safe retry; a conflict with both candidate documents remains explicit.
+
 ## Compatibility and activation
 
 Before a registry exists, `LELE_VAULT_DIR` is only a bootstrap source (otherwise

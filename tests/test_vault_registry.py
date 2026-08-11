@@ -9,6 +9,7 @@ from lele_manager.api import server
 from lele_manager.api.server import app
 from lele_manager.core.vault_registry import (
     VaultConflictError,
+    VaultMigrationConflictError,
     VaultRegistryCorruptError,
     VaultRegistryStore,
 )
@@ -103,6 +104,82 @@ def test_corrupt_registry_is_not_replaced(tmp_path):
     with pytest.raises(VaultRegistryCorruptError):
         VaultRegistryStore(path).context()
     assert path.read_bytes() == raw
+
+
+def test_bootstrap_candidate_failure_is_resumable_with_the_same_id(monkeypatch, tmp_path):
+    vault, data = tmp_path / "vault", tmp_path / "data"
+    vault.mkdir()
+    data.mkdir()
+    legacy = data / "candidates.json"
+    legacy.write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    store = VaultRegistryStore()
+    original = store._migrate_legacy_candidates
+    monkeypatch.setattr(store, "_migrate_legacy_candidates", lambda _item: (_ for _ in ()).throw(VaultMigrationConflictError("injected")))
+    with pytest.raises(VaultMigrationConflictError):
+        store.bootstrap()
+    persisted = json.loads((data / "vault-registry.json").read_text(encoding="utf-8"))
+    stable_id = persisted["active_vault_id"]
+    assert persisted["legacy_migration"]["candidates_completed"] is False
+    assert legacy.read_text(encoding="utf-8") == "[]"
+    monkeypatch.setattr(store, "_migrate_legacy_candidates", original)
+    assert store.bootstrap().id == stable_id
+    completed = json.loads((data / "vault-registry.json").read_text(encoding="utf-8"))
+    assert completed["legacy_migration"]["completed"] is True
+    assert (data / "vaults" / stable_id / "candidates.json").exists()
+
+
+def test_bootstrap_duplicate_failure_resumes_without_repeating_candidates(monkeypatch, tmp_path):
+    vault, data = tmp_path / "vault", tmp_path / "data"
+    vault.mkdir()
+    data.mkdir()
+    (data / "candidates.json").write_text("[]", encoding="utf-8")
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    store = VaultRegistryStore()
+    original = DuplicateDecisionStore.migrate_legacy_scope
+    monkeypatch.setattr(DuplicateDecisionStore, "migrate_legacy_scope", lambda *_args: (_ for _ in ()).throw(RuntimeError("injected")))
+    with pytest.raises(RuntimeError, match="injected"):
+        store.bootstrap()
+    persisted = json.loads((data / "vault-registry.json").read_text(encoding="utf-8"))
+    stable_id = persisted["active_vault_id"]
+    assert persisted["legacy_migration"]["candidates_completed"] is True
+    assert persisted["legacy_migration"]["duplicate_decisions_completed"] is False
+    target = data / "vaults" / stable_id / "candidates.json"
+    before = target.read_bytes()
+    monkeypatch.setattr(DuplicateDecisionStore, "migrate_legacy_scope", original)
+    assert store.bootstrap().id == stable_id
+    assert target.read_bytes() == before
+    # Completion makes later accidental legacy-looking files inert.
+    (data / "candidates.json").write_text("later", encoding="utf-8")
+    store.bootstrap()
+    assert (data / "candidates.json").read_text(encoding="utf-8") == "later"
+
+
+def test_bootstrap_candidate_collision_is_controlled_without_overwrite(monkeypatch, tmp_path):
+    vault, data = tmp_path / "vault", tmp_path / "data"
+    vault.mkdir()
+    data.mkdir()
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    store = VaultRegistryStore()
+    # Persist the identity/phase first, then create both candidate documents.
+    original = store._migrate_legacy_candidates
+    monkeypatch.setattr(store, "_migrate_legacy_candidates", lambda _item: (_ for _ in ()).throw(VaultMigrationConflictError("pause")))
+    with pytest.raises(VaultMigrationConflictError):
+        store.bootstrap()
+    vault_id = store.active().id
+    legacy = data / "candidates.json"
+    target = data / "vaults" / vault_id / "candidates.json"
+    target.parent.mkdir(parents=True)
+    legacy.write_text("legacy", encoding="utf-8")
+    target.write_text("scoped", encoding="utf-8")
+    monkeypatch.setattr(store, "_migrate_legacy_candidates", original)
+    with pytest.raises(VaultMigrationConflictError):
+        store.bootstrap()
+    assert legacy.read_text(encoding="utf-8") == "legacy"
+    assert target.read_text(encoding="utf-8") == "scoped"
 
 
 def test_api_activation_scopes_projection_and_preserves_markdown(

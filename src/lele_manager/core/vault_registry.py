@@ -110,7 +110,16 @@ class VaultRegistryStore:
         if not vaults or raw["active_vault_id"] not in {item.id for item in vaults}:
             raise VaultRegistryCorruptError("vault registry has no valid active Vault")
         self._validate_unique(vaults)
-        return {"schema_version": SCHEMA_VERSION, "active_vault_id": raw["active_vault_id"], "vaults": vaults}
+        migration = raw.get("legacy_migration")
+        if migration is not None:
+            if not isinstance(migration, dict):
+                raise VaultRegistryCorruptError("vault registry migration state is malformed")
+            expected = {"vault_id", "candidates_completed", "duplicate_decisions_completed", "completed"}
+            if set(migration) != expected or migration["vault_id"] not in {item.id for item in vaults}:
+                raise VaultRegistryCorruptError("vault registry migration state is malformed")
+            if not all(isinstance(migration[key], bool) for key in expected - {"vault_id"}):
+                raise VaultRegistryCorruptError("vault registry migration state is malformed")
+        return {"schema_version": SCHEMA_VERSION, "active_vault_id": raw["active_vault_id"], "vaults": vaults, "legacy_migration": migration}
 
     @staticmethod
     def _validate_unique(vaults: list[RegisteredVault]) -> None:
@@ -135,6 +144,8 @@ class VaultRegistryStore:
                 for item in sorted(data["vaults"], key=lambda item: item.id)
             ],
         }
+        if data.get("legacy_migration") is not None:
+            serializable["legacy_migration"] = data["legacy_migration"]
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp_name: str | None = None
         try:
@@ -149,17 +160,47 @@ class VaultRegistryStore:
             raise VaultRegistryError("vault registry could not be saved") from exc
 
     def bootstrap(self) -> RegisteredVault:
-        """Persist the legacy source only when no registry exists."""
+        """Persist and resumably migrate the single-Vault legacy installation.
+
+        The bootstrap identity is written before any migration side effect.  Its
+        phase markers make retries safe after an interrupted candidate or
+        duplicate-decision migration; completed registries never inspect
+        legacy-looking files again.
+        """
         with _LOCK:
             if self.path.exists():
-                return self.active()
-            source = resolve_vault_dir()  # env is intentionally consulted only here
-            name = source.name or DEFAULT_VAULT_DIRNAME
-            item = RegisteredVault(str(uuid.uuid4()), name, source, datetime.now(timezone.utc).isoformat())
-            self._write({"active_vault_id": item.id, "vaults": [item]})
-            self._migrate_legacy_candidates(item)
-            from .duplicate_decisions import DuplicateDecisionStore
-            DuplicateDecisionStore(data_dir() / "duplicate-decisions.json").migrate_legacy_scope(str(item.path), item.id)
+                data = self._load()
+            else:
+                source = resolve_vault_dir()  # env is intentionally consulted only here
+                name = source.name or DEFAULT_VAULT_DIRNAME
+                item = RegisteredVault(str(uuid.uuid4()), name, source, datetime.now(timezone.utc).isoformat())
+                data = {
+                    "active_vault_id": item.id,
+                    "vaults": [item],
+                    "legacy_migration": {
+                        "vault_id": item.id,
+                        "candidates_completed": False,
+                        "duplicate_decisions_completed": False,
+                        "completed": False,
+                    },
+                }
+                self._write(data)
+
+            migration = data.get("legacy_migration")
+            if migration is None or migration["completed"]:
+                return next(item for item in data["vaults"] if item.id == data["active_vault_id"])
+            item = next(entry for entry in data["vaults"] if entry.id == migration["vault_id"])
+            if not migration["candidates_completed"]:
+                self._migrate_legacy_candidates(item)
+                migration["candidates_completed"] = True
+                self._write(data)
+            if not migration["duplicate_decisions_completed"]:
+                from .duplicate_decisions import DuplicateDecisionStore
+                DuplicateDecisionStore(data_dir() / "duplicate-decisions.json").migrate_legacy_scope(str(item.path), item.id)
+                migration["duplicate_decisions_completed"] = True
+                self._write(data)
+            migration["completed"] = True
+            self._write(data)
             return item
 
     def list(self) -> list[RegisteredVault]:
@@ -172,7 +213,7 @@ class VaultRegistryStore:
         return next(item for item in data["vaults"] if item.id == data["active_vault_id"])
 
     def context(self, *, bootstrap: bool = True) -> ActiveVaultContext:
-        item = self.bootstrap() if bootstrap and not self.exists() else self.active()
+        item = self.bootstrap() if bootstrap else self.active()
         return self.context_for(item)
 
     @staticmethod

@@ -102,7 +102,7 @@ def test_stats_and_vault_use_public_giada_ui_components() -> None:
     assert "from 'giadaware-ui-components/studio'" in vault
     assert "<Panel" in vault
     assert vault.count("<FormActions") == 2
-    assert 'aria-label="Vault management"' in vault
+    assert 'aria-label={$messages.vaultManagement}' in vault
     assert 'class="vault-actions"' in vault
     assert "<Button" in vault
     assert "<FormStatus" in vault

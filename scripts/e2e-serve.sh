@@ -4,9 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-PYTHON_BIN="$ROOT/.venv/bin/python"
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "Missing required virtualenv Python: $PYTHON_BIN" >&2
+if [[ -n "${E2E_PYTHON:-}" ]]; then
+  PYTHON_BIN="$E2E_PYTHON"
+elif [[ -x "$ROOT/.venv/bin/python" ]]; then
+  PYTHON_BIN="$ROOT/.venv/bin/python"
+else
+  PYTHON_BIN="$(command -v python3 || command -v python || true)"
+fi
+
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
+  echo "No usable Python interpreter found (set E2E_PYTHON, install python3, or create .venv)." >&2
   exit 1
 fi
 

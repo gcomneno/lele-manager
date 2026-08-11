@@ -24,7 +24,7 @@ def test_post_similar_model_missing(monkeypatch):
     monkeypatch.setattr(
         server,
         "load_lessons_df",
-        lambda: pd.DataFrame([{"id": "1", "text": "hello", "topic": "t"}]),
+        lambda *_args: pd.DataFrame([{"id": "1", "text": "hello", "topic": "t"}]),
     )
 
     # forza modello mancante

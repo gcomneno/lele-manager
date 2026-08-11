@@ -19,6 +19,7 @@ from lele_manager.core.paths import (
     ENV_MODEL_PATH_DEPRECATED,
 )
 from lele_manager.core.vault import DEFAULT_VAULT_DIRNAME, ENV_VAULT_DIR
+from lele_manager.core.vault_registry import VaultRegistryStore
 
 
 RuntimePathRole = Literal[
@@ -33,6 +34,7 @@ RuntimePathProvenanceKind = Literal[
     "legacy_override",
     "platform_default",
     "product_default",
+    "managed_registry",
 ]
 
 
@@ -119,29 +121,49 @@ def describe_runtime_paths(
     data_dir, data_dir_provenance = _data_dir(env)
     cache_dir, cache_dir_provenance = _cache_dir(env)
 
-    legacy_data_path = env.get(ENV_DATA_PATH_DEPRECATED)
-    if legacy_data_path:
-        projection_path = _resolved(legacy_data_path)
-        projection_provenance = RuntimePathProvenance(
-            kind="legacy_override",
-            variable=ENV_DATA_PATH_DEPRECATED,
-            deprecated=True,
-        )
+    # Diagnostics must inspect, never bootstrap: a valid registry is the
+    # managed authority, while a malformed one is deliberately surfaced to the
+    # caller instead of being hidden behind the legacy environment fallback.
+    store = VaultRegistryStore(data_dir / "vault-registry.json")
+    context = store.context_for(store.active()) if store.exists() else None
+    if context is not None:
+        managed = RuntimePathProvenance(kind="managed_registry")
+        vault_path = context.vault_dir
+        vault_provenance = managed
+        projection_path = context.projection_path
+        projection_provenance = managed
+        candidate_path = context.candidates_path
+        candidate_provenance = managed
+        topic_model_path = context.topic_model_path
+        topic_model_provenance = managed
     else:
-        projection_path = data_dir / DEFAULT_DB_FILENAME
-        projection_provenance = data_dir_provenance
+        candidate_path = data_dir / DEFAULT_CANDIDATES_FILENAME
+        candidate_provenance = data_dir_provenance
 
-    legacy_model_path = env.get(ENV_MODEL_PATH_DEPRECATED)
-    if legacy_model_path:
-        topic_model_path = _resolved(legacy_model_path)
-        topic_model_provenance = RuntimePathProvenance(
-            kind="legacy_override",
-            variable=ENV_MODEL_PATH_DEPRECATED,
-            deprecated=True,
-        )
-    else:
-        topic_model_path = cache_dir / DEFAULT_TOPIC_MODEL_FILENAME
-        topic_model_provenance = cache_dir_provenance
+    if context is None:
+        legacy_data_path = env.get(ENV_DATA_PATH_DEPRECATED)
+        if legacy_data_path:
+            projection_path = _resolved(legacy_data_path)
+            projection_provenance = RuntimePathProvenance(
+                kind="legacy_override",
+                variable=ENV_DATA_PATH_DEPRECATED,
+                deprecated=True,
+            )
+        else:
+            projection_path = data_dir / DEFAULT_DB_FILENAME
+            projection_provenance = data_dir_provenance
+
+        legacy_model_path = env.get(ENV_MODEL_PATH_DEPRECATED)
+        if legacy_model_path:
+            topic_model_path = _resolved(legacy_model_path)
+            topic_model_provenance = RuntimePathProvenance(
+                kind="legacy_override",
+                variable=ENV_MODEL_PATH_DEPRECATED,
+                deprecated=True,
+            )
+        else:
+            topic_model_path = cache_dir / DEFAULT_TOPIC_MODEL_FILENAME
+            topic_model_provenance = cache_dir_provenance
 
     return (
         RuntimePathDescription(
@@ -170,9 +192,9 @@ def describe_runtime_paths(
         ),
         RuntimePathDescription(
             key="candidate_staging",
-            path=data_dir / DEFAULT_CANDIDATES_FILENAME,
+            path=candidate_path,
             role="persistent_application_state",
-            provenance=data_dir_provenance,
+            provenance=candidate_provenance,
         ),
         RuntimePathDescription(
             key="duplicate_decisions",

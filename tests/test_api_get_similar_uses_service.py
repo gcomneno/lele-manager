@@ -14,8 +14,8 @@ def test_get_similar_uses_similarity_service(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(server, "load_lessons_df", lambda: df)
-    monkeypatch.setattr(server, "build_similarity_index", lambda _df: SimpleNamespace(transformer=None))
+    monkeypatch.setattr(server, "load_lessons_df", lambda *_args: df)
+    monkeypatch.setattr(server, "build_similarity_index", lambda _df, *_args: SimpleNamespace(transformer=None))
 
     calls = {}
 

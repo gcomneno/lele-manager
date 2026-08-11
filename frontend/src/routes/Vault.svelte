@@ -67,14 +67,14 @@
   }
 
   async function rename(vault: ManagedVault) {
-    const name = window.prompt('Vault display name', vault.name)
+    const name = window.prompt($messages.vaultRenamePrompt, vault.name)
     if (!name) return
     try { await api.renameVault(vault.id, name); await load() }
     catch (e) { managementMessage = e instanceof Error ? e.message : String(e) }
   }
 
   async function remove(vault: ManagedVault) {
-    if (!window.confirm(`Remove ${vault.name} from LeLe Manager? Files on disk will NOT be deleted.`)) return
+    if (!window.confirm(formatMessage($messages.vaultRemoveConfirm, { name: vault.name }))) return
     try { await api.removeVault(vault.id); await load() }
     catch (e) { managementMessage = e instanceof Error ? e.message : String(e) }
   }
@@ -98,23 +98,23 @@
 </script>
 
 <Panel title={$messages.navVault}>
-  <section class="vault-management" aria-label="Vault management">
-    <h2>Vaults</h2>
+  <section class="vault-management" aria-label={$messages.vaultManagement}>
+    <h2>{$messages.vaults}</h2>
     {#each vaults as vault (vault.id)}
       <div class="vault-row">
-        <div><strong>{vault.name}</strong>{#if vault.active} · Active{/if}<br /><small>{vault.path} · {vault.available ? 'Available' : 'Missing'}</small></div>
+        <div><strong>{vault.name}</strong>{#if vault.active} · {$messages.vaultActive}{/if}<br /><small>{vault.path} · {vault.available ? $messages.vaultAvailable : $messages.vaultMissing}</small></div>
         <div>
-          {#if !vault.active}<Button size="compact" onclick={() => activate(vault.id)}>Switch to Vault</Button>{/if}
-          <Button variant="secondary" size="compact" onclick={() => rename(vault)}>Rename</Button>
-          {#if !vault.active}<Button variant="secondary" size="compact" onclick={() => remove(vault)}>Remove from Manager</Button>{/if}
+          {#if !vault.active}<Button size="compact" onclick={() => activate(vault.id)}>{$messages.vaultSwitch}</Button>{/if}
+          <Button variant="secondary" size="compact" onclick={() => rename(vault)}>{$messages.vaultRename}</Button>
+          {#if !vault.active}<Button variant="secondary" size="compact" onclick={() => remove(vault)}>{$messages.vaultRemove}</Button>{/if}
         </div>
       </div>
     {/each}
-    <h3>Create or register Vault</h3>
-    <label>Name <input bind:value={vaultName} /></label>
-    <label>Directory path <input bind:value={vaultPath} /></label>
-    <FormActions><Button onclick={() => addVault(true)}>Create Vault</Button><Button variant="secondary" onclick={() => addVault(false)}>Register existing Vault</Button></FormActions>
-    <p class="meta">Removing a Vault from LeLe Manager never deletes files on disk.</p>
+    <h3>{$messages.vaultCreateOrRegister}</h3>
+    <label>{$messages.vaultName} <input bind:value={vaultName} /></label>
+    <label>{$messages.vaultDirectoryPath} <input bind:value={vaultPath} /></label>
+    <FormActions><Button onclick={() => addVault(true)}>{$messages.vaultCreate}</Button><Button variant="secondary" onclick={() => addVault(false)}>{$messages.vaultRegister}</Button></FormActions>
+    <p class="meta">{$messages.vaultRemovalNote}</p>
     {#if managementMessage}<FormStatus message={managementMessage} tone="error" />{/if}
   </section>
   <FormActions
