@@ -101,7 +101,9 @@ def test_stats_and_vault_use_public_giada_ui_components() -> None:
     assert "from 'giadaware-ui-components'" in vault
     assert "from 'giadaware-ui-components/studio'" in vault
     assert "<Panel" in vault
-    assert vault.count("<FormActions") == 2
+    # Vault management, snapshot preview, typed restore confirmation, and the
+    # existing Vault actions are distinct design-system action groups.
+    assert vault.count("<FormActions") == 4
     assert 'aria-label={$messages.vaultManagement}' in vault
     assert 'class="vault-actions"' in vault
     assert "<Button" in vault
