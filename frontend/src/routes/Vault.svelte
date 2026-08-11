@@ -24,6 +24,7 @@
   let snapshotMessage = $state('')
   let snapshotTone = $state<FormStatusTone>('info')
   let restoreArtifact = $state<File | null>(null)
+  let restoreArtifactVersion = $state(0)
   let restoreTargetId = $state('')
   let restorePreview = $state<VaultRestorePreview | null>(null)
   let restoreConfirmation = $state('')
@@ -31,6 +32,8 @@
   let restoreTone = $state<FormStatusTone>('info')
   let snapshotBusy = $state(false)
   let restoreBusy = $state(false)
+  let restoreExecuting = $state(false)
+  let previewRequestVersion = $state(0)
 
   async function load() {
     loading = true
@@ -127,12 +130,17 @@
   function selectRestoreArtifact(event: Event) {
     const input = event.currentTarget as HTMLInputElement
     restoreArtifact = input.files?.[0] ?? null
+    restoreArtifactVersion += 1
+    previewRequestVersion += 1
+    restoreBusy = false
     restorePreview = null
     restoreConfirmation = ''
     restoreMessage = ''
   }
 
   function selectRestoreTarget() {
+    previewRequestVersion += 1
+    restoreBusy = false
     restorePreview = null
     restoreConfirmation = ''
     restoreMessage = ''
@@ -144,26 +152,53 @@
       restoreTone = 'error'
       return
     }
+    const targetId = restoreTargetId
+    const artifact = restoreArtifact
+    const artifactVersion = restoreArtifactVersion
+    const requestVersion = ++previewRequestVersion
     restoreBusy = true
     restoreMessage = $messages.vaultRestorePreviewing
     restoreTone = 'info'
     try {
-      restorePreview = await api.previewVaultRestore(restoreTargetId, restoreArtifact)
-      restoreMessage = ''
+      const preview = await api.previewVaultRestore(targetId, artifact)
+      if (
+        requestVersion === previewRequestVersion
+        && restoreTargetId === targetId
+        && restoreArtifact === artifact
+        && restoreArtifactVersion === artifactVersion
+      ) {
+        restorePreview = preview
+        restoreMessage = ''
+      }
     } catch (e) {
-      restorePreview = null
-      restoreMessage = e instanceof Error ? e.message : $messages.vaultRestoreFailed
-      restoreTone = 'error'
-    } finally { restoreBusy = false }
+      if (requestVersion === previewRequestVersion) {
+        restorePreview = null
+        restoreMessage = e instanceof Error ? e.message : $messages.vaultRestoreFailed
+        restoreTone = 'error'
+      }
+    } finally {
+      if (requestVersion === previewRequestVersion) restoreBusy = false
+    }
   }
 
   async function restoreSnapshot() {
-    if (!restoreArtifact || !restorePreview) return
+    if (
+      !restoreArtifact
+      || !restorePreview
+      || restorePreview.target_vault_id !== restoreTargetId
+    ) {
+      restorePreview = null
+      restoreConfirmation = ''
+      restoreMessage = $messages.vaultRestoreNeedPreview
+      restoreTone = 'error'
+      return
+    }
     restoreBusy = true
+    restoreExecuting = true
     restoreMessage = $messages.vaultRestoreRestoring
     restoreTone = 'info'
     try {
-      const result = await api.restoreVaultSnapshot(restorePreview.target_vault_id, restoreArtifact, restorePreview.plan_digest)
+      const result = await api.restoreVaultSnapshot(restoreTargetId, restoreArtifact, restorePreview.plan_digest)
       restoreTone = result.derived_reconciled ? 'success' : 'error'
       restoreMessage = result.derived_reconciled
         ? $messages.vaultRestoreSuccess
@@ -174,7 +209,10 @@
     } catch (e) {
       restoreMessage = e instanceof Error ? e.message : $messages.vaultRestoreFailed
       restoreTone = 'error'
-    } finally { restoreBusy = false }
+    } finally {
+      restoreBusy = false
+      restoreExecuting = false
+    }
   }
 
   onMount(load)
@@ -203,9 +241,9 @@
   </section>
   <section class="vault-management" aria-label={$messages.vaultSnapshots}>
     <h2>{$messages.vaultSnapshots}</h2>
-    <label>{$messages.vaultRestoreArtifact} <input type="file" accept=".zip,application/zip" onchange={selectRestoreArtifact} /></label>
+    <label>{$messages.vaultRestoreArtifact} <input type="file" accept=".zip,application/zip" onchange={selectRestoreArtifact} disabled={restoreExecuting} /></label>
     <label>{$messages.vaultRestoreTarget}
-      <select bind:value={restoreTargetId} onchange={selectRestoreTarget}>
+      <select bind:value={restoreTargetId} onchange={selectRestoreTarget} disabled={restoreExecuting}>
         {#each vaults.filter((vault) => vault.available) as vault (vault.id)}
           <option value={vault.id}>{vault.name} — {vault.path}</option>
         {/each}

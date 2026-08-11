@@ -61,6 +61,18 @@ def _lesson(root: Path, lesson_id: str, body: str, *, relative_path: str | None 
     )
 
 
+def _with_manifest(raw: bytes, mutate: object) -> bytes:
+    """Return an artifact whose manifest was changed without touching payloads."""
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(raw)) as source, zipfile.ZipFile(output, "w") as destination:
+        manifest = json.loads(source.read("manifest.json"))
+        mutate(manifest)
+        for info in source.infolist():
+            data = json.dumps(manifest).encode() if info.filename == "manifest.json" else source.read(info.filename)
+            destination.writestr(info.filename, data)
+    return output.getvalue()
+
+
 def test_snapshot_round_trip_is_scoped_and_exact(tmp_path: Path) -> None:
     source = _context(tmp_path / "source", SOURCE_ID, "Source")
     target = _context(tmp_path / "target", TARGET_ID, "Target")
@@ -354,3 +366,152 @@ def test_snapshot_api_requires_preview_and_restores_explicit_registered_target(
     assert restored.json()["canonical_restored"] is True
     assert (target_path / "python" / "source.md").exists()
     assert not (target_path / "python" / "old.md").exists()
+    malformed = _with_manifest(
+        artifact,
+        lambda manifest: manifest.__setitem__("canonical_files", [{"bad": "value"}]),
+    )
+    malformed_response = client.post(f"/vaults/{target.id}/restore/preview", content=malformed)
+    assert malformed_response.status_code == 422
+    assert malformed_response.json()["detail"]["code"] == "snapshot_invalid"
+
+
+@pytest.mark.parametrize("value", [{"bad": "value"}, ["nested"], "ok", 2])
+def test_manifest_canonical_paths_are_typed_before_set_or_sort(tmp_path: Path, value: object) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    _lesson(source.vault_dir, "python/source", "source body")
+    raw = create_snapshot(source, DuplicateDecisionStore(tmp_path / "decisions.json"))
+    if value == "ok":
+        value = ["python/source.md", {"bad": "value"}]
+    artifact = _with_manifest(raw, lambda manifest: manifest.__setitem__("canonical_files", [value]))
+    with pytest.raises(SnapshotValidationError):
+        validate_snapshot(artifact)
+
+
+@pytest.mark.parametrize("field", ["schema_version", "size"])
+def test_manifest_boolean_numeric_fields_are_rejected(tmp_path: Path, field: str) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    _lesson(source.vault_dir, "python/source", "source body")
+    raw = create_snapshot(source, DuplicateDecisionStore(tmp_path / "decisions.json"))
+
+    def mutate(manifest: dict[str, object]) -> None:
+        if field == "schema_version":
+            manifest[field] = True
+        else:
+            files = manifest["files"]
+            assert isinstance(files, list)
+            files[0][field] = True
+
+    with pytest.raises(SnapshotValidationError):
+        validate_snapshot(_with_manifest(raw, mutate))
+
+
+def test_snapshot_rejects_nonportable_source_paths_and_oversized_file_before_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    _lesson(source.vault_dir, "python/a", "lower")
+    _lesson(source.vault_dir, "python/A", "upper")
+    with pytest.raises(SnapshotValidationError, match="portable"):
+        create_snapshot(source, DuplicateDecisionStore(tmp_path / "decisions.json"))
+
+    (source.vault_dir / "python" / "A.md").unlink()
+    huge = source.vault_dir / "huge.md"
+    with huge.open("wb") as handle:
+        handle.truncate(33 * 1024 * 1024)
+    monkeypatch.setattr(Path, "read_bytes", lambda _: pytest.fail("unbounded read_bytes was used"))
+    with pytest.raises(SnapshotTargetError, match="size limits"):
+        create_snapshot(source, DuplicateDecisionStore(tmp_path / "decisions.json"))
+
+
+def test_snapshot_rejects_scoped_parent_links_before_external_read_or_restore(tmp_path: Path) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    target = _context(tmp_path / "target", TARGET_ID, "Target")
+    _lesson(source.vault_dir, "python/source", "source")
+    original = _lesson(target.vault_dir, "python/target", "target")
+    decisions = DuplicateDecisionStore(tmp_path / "decisions.json")
+    target.candidates_path.parent.mkdir(parents=True)
+    source.candidates_path.parent.mkdir(parents=True)
+    source.candidates_path.write_bytes(b'{"candidates":[],"schema_version":2}\n')
+    target.candidates_path.parent.rmdir()
+    target.candidates_path.parent.symlink_to(source.candidates_path.parent, target_is_directory=True)
+    external_before = source.candidates_path.read_bytes()
+    with pytest.raises(SnapshotTargetError, match="managed directory is unsafe"):
+        preview_restore(validate_snapshot(create_snapshot(source, decisions)), target, decisions)
+    assert source.candidates_path.read_bytes() == external_before
+    assert original.exists()
+
+
+def test_validation_detects_nonadjacent_file_descendant_collision(tmp_path: Path) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    _lesson(source.vault_dir, "python/source", "source")
+    raw = create_snapshot(source, DuplicateDecisionStore(tmp_path / "decisions.json"))
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(raw)) as source_zip, zipfile.ZipFile(output, "w") as destination:
+        for info in source_zip.infolist():
+            destination.writestr(info.filename, source_zip.read(info.filename))
+        destination.writestr("canonical/a.md", b"x")
+        destination.writestr("canonical/a.md-foo.md", b"x")
+        destination.writestr("canonical/a.md/b.md", b"x")
+    with pytest.raises(SnapshotValidationError, match="directory/file"):
+        validate_snapshot(output.getvalue())
+
+
+def test_registered_snapshot_context_does_not_bootstrap_absent_cache_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = tmp_path / "data"
+    cache = tmp_path / "missing-cache"
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(cache))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
+    registered = VaultRegistryStore().bootstrap()
+    assert not cache.exists()
+    context = VaultRegistryStore().safe_context_for_registered(registered.id)
+    assert context.topic_model_path == cache / "vaults" / registered.id / "topic_model.joblib"
+    assert not cache.exists()
+
+
+def test_restore_rejects_cache_scope_link_before_canonical_mutation(tmp_path: Path) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    target = _context(tmp_path / "target", TARGET_ID, "Target")
+    decisions = DuplicateDecisionStore(tmp_path / "decisions.json")
+    _lesson(source.vault_dir, "python/source", "source")
+    original = _lesson(target.vault_dir, "python/target", "target")
+    artifact = validate_snapshot(create_snapshot(source, decisions))
+    preview = preview_restore(artifact, target, decisions)
+    external = tmp_path / "external-cache"
+    external.mkdir()
+    target.topic_model_path.parent.parent.mkdir(parents=True)
+    target.topic_model_path.parent.symlink_to(external, target_is_directory=True)
+    with pytest.raises(SnapshotTargetError, match="managed directory is unsafe"):
+        execute_restore(artifact, target, decisions, plan_digest=preview.plan_digest, reconcile_derived=lambda: None)
+    assert original.exists()
+    assert not (external / "topic_model.joblib").exists()
+
+
+def test_restore_rejects_complete_context_flip_and_reconciles_with_final_context(tmp_path: Path) -> None:
+    source = _context(tmp_path / "source", SOURCE_ID, "Source")
+    target = _context(tmp_path / "target", TARGET_ID, "Target")
+    decisions = DuplicateDecisionStore(tmp_path / "decisions.json")
+    _lesson(source.vault_dir, "python/source", "source")
+    artifact = validate_snapshot(create_snapshot(source, decisions))
+    preview = preview_restore(artifact, target, decisions)
+    changed = ActiveVaultContext(
+        target.vault_id,
+        target.display_name,
+        target.vault_dir,
+        target.projection_path.with_name("other.jsonl"),
+        target.candidates_path,
+        target.topic_model_path,
+        target.duplicate_decision_scope,
+    )
+    calls = [target, changed]
+    with pytest.raises(SnapshotPlanStaleError, match="selected Vault changed"):
+        execute_restore(
+            artifact,
+            target,
+            decisions,
+            plan_digest=preview.plan_digest,
+            reconcile_derived=lambda _context: None,
+            resolve_current_target=lambda: calls.pop(0),
+        )

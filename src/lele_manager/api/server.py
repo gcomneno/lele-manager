@@ -84,6 +84,8 @@ from lele_manager.core.vault_snapshot import (
     MAX_ARTIFACT_SIZE,
     create_snapshot,
     execute_restore,
+    invalidate_scoped_derived_artifact,
+    prepare_scoped_mutation_path,
     preview_restore,
     validate_snapshot,
 )
@@ -1998,6 +2000,7 @@ def _sync_vault_import(context: ActiveVaultContext | None = None) -> VaultImport
     if not vault_dir.is_dir():
         raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
     data_path = context.projection_path
+    prepare_scoped_mutation_path(data_path, "lesson projection")
     result = import_vault_to_jsonl(vault_dir, data_path)
     invalidate_similarity_cache()
     return VaultImportResponse(
@@ -2270,10 +2273,10 @@ async def restore_vault_snapshot(
         # deriving the plan that will authorize an actual mutation.
         context = _snapshot_context_for_registered_vault(vault_id)
 
-        def reconcile() -> None:
+        def reconcile(final_context: ActiveVaultContext) -> None:
             # A model trained for old Markdown can never survive a restore.
-            context.topic_model_path.unlink(missing_ok=True)
-            _sync_vault_import(context)
+            invalidate_scoped_derived_artifact(final_context.topic_model_path, "topic model")
+            _sync_vault_import(final_context)
 
         result = execute_restore(
             artifact,

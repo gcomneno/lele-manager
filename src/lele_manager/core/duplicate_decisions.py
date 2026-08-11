@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -114,8 +115,16 @@ class DuplicateDecisionStore:
         self.path = path
 
     def _load(self) -> dict[str, Any]:
-        if not self.path.exists():
+        try:
+            node = self.path.lstat()
+        except FileNotFoundError:
             return {"schema_version": _SCHEMA_VERSION, "scopes": {}, "legacy_scopes": {}}
+        except OSError as exc:
+            raise DuplicateDecisionStoreError("duplicate decision state is unreadable") from exc
+        if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode):
+            raise DuplicateDecisionStoreError("duplicate decision state is unsafe")
+        if node.st_size > 32 * 1024 * 1024:
+            raise DuplicateDecisionStoreError("duplicate decision state exceeds size limits")
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
