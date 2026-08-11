@@ -28,7 +28,11 @@ def resolve_vault_dir() -> Path:
 
 
 def require_vault_dir() -> Path:
-    vault = resolve_vault_dir()
+    # Normal product operations use the persisted registry.  ``resolve_vault_dir``
+    # remains the non-persisting legacy/bootstrap resolver used by diagnostics.
+    from lele_manager.core.vault_registry import active_vault_context
+
+    vault = active_vault_context().vault_dir
     if not vault.is_dir():
         raise FileNotFoundError(
             f"Vault directory not found: {vault} (set {ENV_VAULT_DIR})"

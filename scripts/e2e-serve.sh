@@ -6,10 +6,8 @@ cd "$ROOT"
 
 PYTHON_BIN="$ROOT/.venv/bin/python"
 if [[ ! -x "$PYTHON_BIN" ]]; then
-  PYTHON_BIN="python"
-fi
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-  PYTHON_BIN="python3"
+  echo "Missing required virtualenv Python: $PYTHON_BIN" >&2
+  exit 1
 fi
 
 # Build every time so the server exposes the current frontend sources.

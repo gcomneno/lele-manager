@@ -64,8 +64,7 @@ from lele_manager.application.raw_source_ingestion import (
     RawSourceIngestionResult,
     RawSourceIngestionService,
 )
-from lele_manager.core.paths import candidates_path, lessons_path
-from lele_manager.core.vault import resolve_vault_dir
+from lele_manager.core.vault_registry import active_vault_context
 
 
 router = APIRouter(prefix="/api/v1/tritalele", tags=["tritalele"])
@@ -249,7 +248,7 @@ def _raise_api_error(
 def get_candidate_repository() -> CandidateRepository:
     """Build a fresh repository for the configured local staging document."""
     try:
-        path = candidates_path()
+        path = active_vault_context().candidates_path
     except (OSError, RuntimeError):
         _raise_api_error(
             503,
@@ -277,8 +276,9 @@ def get_approval_service(
     repository: Annotated[CandidateRepository, Depends(get_candidate_repository)],
 ) -> CandidateApprovalService:
     try:
-        vault_dir = resolve_vault_dir()
-        projection_path = lessons_path()
+        context = active_vault_context()
+        vault_dir = context.vault_dir
+        projection_path = context.projection_path
     except (OSError, RuntimeError):
         _raise_api_error(
             503,

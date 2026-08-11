@@ -12,19 +12,21 @@ from lele_manager.application.lesson_deletion import LessonDeletionStorageError
 from lele_manager.application.lesson_writing import CanonicalLessonWriteStorageError
 from lele_manager.core.duplicate_decisions import (
     DuplicateDecisionStore,
-    current_vault_scope,
     material_fingerprint,
 )
 from lele_manager.core.vault import find_markdown_by_id, import_vault_to_jsonl, write_lesson_markdown
+from lele_manager.core.vault_registry import active_vault_context
 
 
 @pytest.fixture
 def duplicate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     vault = tmp_path / "vault"
     vault.mkdir()
-    data = tmp_path / "lessons.jsonl"
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
-    monkeypatch.setattr(server, "DATA_PATH", data)
+    monkeypatch.setattr(server, "DATA_PATH", None)
+    monkeypatch.setattr(server, "MODEL_PATH", None)
     monkeypatch.setattr(server, "DUPLICATE_DECISIONS_PATH", tmp_path / "app" / "duplicate-decisions.json")
     for lesson_id, title, body in (
         ("alpha/a", "Nearly same A", "The exact reviewed knowledge."),
@@ -34,8 +36,9 @@ def duplicate_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             vault, lesson_id=lesson_id, body=body, topic="alpha", source="note",
             importance=3, tags=["one", "two"], date="2026-08-10", title=title,
         )
-    import_vault_to_jsonl(vault, data)
-    return vault, data
+    context = active_vault_context()
+    import_vault_to_jsonl(vault, context.projection_path)
+    return vault, context.projection_path
 
 
 def _report(client: TestClient) -> dict:
@@ -58,14 +61,15 @@ def test_not_duplicates_persists_orientation_independently_and_is_scoped(
     assert _report(client)["total_pairs"] == 0
 
     store = DuplicateDecisionStore(server.get_duplicate_decisions_path())
+    context = active_vault_context()
     assert not store.is_suppressed(
-        scope=current_vault_scope(tmp_path / "other-vault"), left_id="alpha/a",
+        scope="different-registered-vault-id", left_id="alpha/a",
         left_fingerprint=pair["left_fingerprint"], right_id="alpha/b",
         right_fingerprint=pair["right_fingerprint"],
     )
     saved = json.loads(server.get_duplicate_decisions_path().read_text(encoding="utf-8"))
-    assert saved["schema_version"] == 1
-    assert current_vault_scope(vault) in saved["scopes"]
+    assert saved["schema_version"] == 2
+    assert context.vault_id in saved["scopes"]
 
 
 def test_material_fingerprint_ignores_tag_order_but_not_material_changes() -> None:
@@ -81,8 +85,12 @@ def test_material_fingerprint_ignores_tag_order_but_not_material_changes() -> No
 def test_suppression_precedes_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("LELE_VAULT_DIR", str(vault))
     monkeypatch.setattr(server, "DUPLICATE_DECISIONS_PATH", tmp_path / "decisions.json")
+    monkeypatch.setattr(server, "DATA_PATH", None)
+    monkeypatch.setattr(server, "MODEL_PATH", None)
     frame = pd.DataFrame([
         {"id": "a", "text": "top", "topic": "x"},
         {"id": "b", "text": "top", "topic": "x"},
@@ -92,7 +100,7 @@ def test_suppression_precedes_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setattr(server, "load_lessons_df", lambda: frame)
     top_left, top_right = frame.iloc[0].to_dict(), frame.iloc[1].to_dict()
     DuplicateDecisionStore(server.get_duplicate_decisions_path()).save_not_duplicates(
-        scope=current_vault_scope(vault), left_id="a", left_fingerprint=material_fingerprint(top_left),
+        scope=active_vault_context().vault_id, left_id="a", left_fingerprint=material_fingerprint(top_left),
         right_id="b", right_fingerprint=material_fingerprint(top_right),
     )
     report = server.duplicates(min_score=0.85, exact_only=True, limit=1)

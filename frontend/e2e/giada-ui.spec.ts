@@ -135,25 +135,18 @@ test('renders Stats and Vault with Giada UI primitives', async ({
   })
 
   await expect(vaultPanel).toBeVisible()
-  await expect(
-    vaultPanel.locator('.giu-form-actions'),
-  ).toBeVisible()
+  const registry = vaultPanel.locator('section[aria-label="Vault management"]')
+  const activeActions = vaultPanel.locator('.vault-actions')
 
-  const vaultButtons = vaultPanel.locator(
-    'button[data-giu-size="compact"]',
-  )
-
-  await expect(vaultButtons).toHaveCount(3)
-  await expect(
-    vaultPanel.locator(
-      'button[data-giu-variant="primary"]',
-    ),
-  ).toHaveCount(1)
-  await expect(
-    vaultPanel.locator(
-      'button[data-giu-variant="secondary"]',
-    ),
-  ).toHaveCount(2)
+  await expect(registry).toBeVisible()
+  await expect(registry.locator('.giu-form-actions')).toBeVisible()
+  await expect(registry.getByRole('button', { name: 'Create Vault' })).toBeVisible()
+  await expect(registry.getByRole('button', { name: 'Register existing Vault' })).toBeVisible()
+  await expect(activeActions).toBeVisible()
+  await expect(activeActions.getByRole('button', { name: 'Refresh' })).toBeVisible()
+  await expect(activeActions.getByRole('button', { name: 'Import → JSONL' })).toBeVisible()
+  await expect(activeActions.getByRole('button', { name: '+ New' })).toBeVisible()
+  await expect(vaultPanel.locator('.giu-form-status')).toHaveCount(0)
 })
 
 test('renders Detail, Editor, and duplicate controls with Giada UI', async ({

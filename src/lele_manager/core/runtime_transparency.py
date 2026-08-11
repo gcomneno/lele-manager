@@ -157,6 +157,12 @@ def describe_runtime_paths(
             provenance=data_dir_provenance,
         ),
         RuntimePathDescription(
+            key="vault_registry",
+            path=data_dir / "vault-registry.json",
+            role="persistent_application_state",
+            provenance=data_dir_provenance,
+        ),
+        RuntimePathDescription(
             key="lesson_projection",
             path=projection_path,
             role="derived_rebuildable_artifact",

@@ -315,6 +315,17 @@ Create the configured directory or set:
 
 ```bash
 export LELE_VAULT_DIR="/absolute/path/to/LeLeVault"
+
+## Vault management
+
+The Vault screen manages registered local Vaults. **Create Vault** makes a new
+empty directory; **Register existing Vault** adds an existing directory without
+importing or changing Markdown. Activating a Vault refreshes its projection in
+read-only mode and reloads the workspace. Rename changes only the display name.
+**Remove from Manager** never deletes files on disk and cannot remove the active
+Vault. On first run `LELE_VAULT_DIR` bootstraps the initial Vault; afterwards
+the persisted registry is authoritative and changing that variable does not
+switch Vault.
 ```
 
 ### Dataset or model unavailable

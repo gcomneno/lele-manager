@@ -15,8 +15,7 @@ from pathlib import Path
 import uvicorn
 
 from lele_manager.api.server import app
-from lele_manager.core.config import resolve_data_path, resolve_model_path
-from lele_manager.core.vault import resolve_vault_dir
+from lele_manager.core.vault_registry import active_vault_context
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
@@ -145,9 +144,10 @@ def resolve_launch_target(
 
 def prepare_runtime() -> tuple[Path, Path, Path]:
     """Create the persistent runtime locations required on first launch."""
-    data_path = resolve_data_path()
-    model_path = resolve_model_path()
-    vault_dir = resolve_vault_dir()
+    context = active_vault_context()
+    data_path = context.projection_path
+    model_path = context.topic_model_path
+    vault_dir = context.vault_dir
 
     data_path.parent.mkdir(parents=True, exist_ok=True)
     model_path.parent.mkdir(parents=True, exist_ok=True)
