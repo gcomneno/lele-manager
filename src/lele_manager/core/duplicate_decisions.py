@@ -164,6 +164,39 @@ class DuplicateDecisionStore:
                 destination.extend(entries)
             self._write(data)
 
+    def export_scope(self, scope: str) -> list[dict[str, str]]:
+        """Return only one immutable Vault's decisions, never global state."""
+        with _STORE_LOCK:
+            data = self._load()
+        entries = data["scopes"].get(scope, [])
+        if not isinstance(entries, list):
+            raise DuplicateDecisionStoreError("duplicate decision scope is malformed")
+        expected = {"left_id", "right_id", "left_fingerprint", "right_fingerprint", "decided_at"}
+        result: list[dict[str, str]] = []
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != expected or not all(isinstance(entry.get(key), str) for key in expected):
+                raise DuplicateDecisionStoreError("duplicate decision scope is malformed")
+            result.append({key: entry[key] for key in sorted(expected)})
+        return sorted(result, key=lambda item: (item["left_id"], item["right_id"]))
+
+    def replace_scope(self, scope: str, entries: list[dict[str, str]]) -> None:
+        """Atomically replace one Vault scope without exposing other Vaults."""
+        expected = {"left_id", "right_id", "left_fingerprint", "right_fingerprint", "decided_at"}
+        normalized: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for entry in entries:
+            if set(entry) != expected or not all(isinstance(entry.get(key), str) and entry[key] for key in expected):
+                raise DuplicateDecisionStoreError("duplicate decision scope is malformed")
+            pair = (entry["left_id"], entry["right_id"])
+            if pair in seen or pair[0] >= pair[1]:
+                raise DuplicateDecisionStoreError("duplicate decision scope is malformed")
+            seen.add(pair)
+            normalized.append({key: entry[key] for key in sorted(expected)})
+        with _STORE_LOCK:
+            data = self._load()
+            data["scopes"][scope] = sorted(normalized, key=lambda item: (item["left_id"], item["right_id"]))
+            self._write(data)
+
     def is_suppressed(
         self, *, scope: str, left_id: str, left_fingerprint: str, right_id: str, right_fingerprint: str
     ) -> bool:

@@ -204,6 +204,30 @@ export interface VaultDoctorReportResponse {
   problems: VaultDoctorProblem[]
 }
 
+export interface VaultRestorePreview {
+  plan_digest: string
+  target_vault_id: string
+  target_name: string
+  target_path: string
+  source_vault_id: string
+  source_vault_name: string
+  canonical_file_count: number
+  additions: string[]
+  replacements: string[]
+  removals: string[]
+  unchanged: string[]
+  editorial_state: string[]
+  derived_effects: string[]
+}
+
+export interface VaultRestoreResponse {
+  canonical_restored: boolean
+  rollback_succeeded: boolean | null
+  derived_reconciled: boolean
+  derived_error: string | null
+  preview: VaultRestorePreview
+}
+
 export interface LessonVaultWrite {
   text: string
   topic: string
@@ -606,6 +630,26 @@ export const api = {
   vaultStatus: () => request<VaultStatusResponse>('/vault/status'),
 
   vaults: () => request<ManagedVault[]>('/vaults'),
+
+  downloadVaultSnapshot: async (id: string): Promise<Blob> => {
+    const resp = await fetch(`/vaults/${encodeURIComponent(id)}/snapshot`)
+    if (!resp.ok) throw await responseError(resp)
+    return resp.blob()
+  },
+
+  previewVaultRestore: (id: string, artifact: Blob) =>
+    request<VaultRestorePreview>(`/vaults/${encodeURIComponent(id)}/restore/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: artifact,
+    }),
+
+  restoreVaultSnapshot: (id: string, artifact: Blob, planDigest: string) =>
+    request<VaultRestoreResponse>(`/vaults/${encodeURIComponent(id)}/restore?plan_digest=${encodeURIComponent(planDigest)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: artifact,
+    }),
 
   createVault: (name: string, path: string) => request<ManagedVault>('/vaults/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
