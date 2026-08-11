@@ -34,10 +34,12 @@ test('exposes actions and routes each edit to its stable ID', async ({ page }) =
   for (const name of ['Edit left', 'Edit right', 'Keep left / delete right', 'Keep right / delete left', 'Not duplicates', 'Merge…']) await expect(pair.getByRole('button', { name })).toBeVisible()
   await pair.getByRole('button', { name: 'Edit left' }).click()
   await expect(page).toHaveURL(new RegExp(encodeURIComponent(left.id)))
+  await expect(page.getByRole('heading', { name: 'Edit LeLe' })).toBeVisible()
   await page.goto('/app/#/duplicates')
   await page.getByRole('button', { name: 'Run review' }).click()
   await page.locator('.duplicate-pair').getByRole('button', { name: 'Edit right' }).click()
   await expect(page).toHaveURL(new RegExp(encodeURIComponent(right.id)))
+  await expect(page.getByRole('heading', { name: 'Edit LeLe' })).toBeVisible()
 })
 
 test('keep left deletes exactly right and cancellation never mutates', async ({ page }) => {
