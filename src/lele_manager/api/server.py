@@ -5,8 +5,8 @@ import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, List, Literal, Mapping, Optional, cast
-from fastapi import FastAPI, HTTPException, Query
+from typing import Annotated, Any, List, Literal, Mapping, Optional, cast
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
 from datetime import datetime, timezone
@@ -425,6 +425,7 @@ class RuntimePathProvenanceResponse(BaseModel):
         "platform_default",
         "product_default",
         "runtime_override",
+        "managed_registry",
     ]
     variable: Optional[str] = None
     deprecated: bool = False
@@ -668,23 +669,24 @@ class TimelineResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Helper di I/O
 # -----------------------------------------------------------------------------
-def _ensure_model_dir() -> None:
-    get_model_path().parent.mkdir(parents=True, exist_ok=True)
+def _ensure_model_dir(model_path: Path | None = None) -> None:
+    (model_path or get_model_path()).parent.mkdir(parents=True, exist_ok=True)
 
 
-def load_lessons_df() -> pd.DataFrame:
+def load_lessons_df(context: ActiveVaultContext | None = None) -> pd.DataFrame:
     """
     Carica il JSONL delle LeLe in un DataFrame.
     Se il file non esiste, restituisce un DataFrame vuoto con colonne standard.
     Gestisce errori di parsing in modo esplicito.
     """
+    data_path = context.projection_path if context is not None else get_data_path()
     try:
-        records = projection_store(get_data_path()).snapshot().list()
+        records = projection_store(data_path).snapshot().list()
         df = records_to_legacy_dataframe(records)
     except ProjectionStoreError as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Errore nel parsing di {get_data_path()}: {e}",
+            detail=f"Errore nel parsing di {data_path}: {e}",
         ) from e
 
     # Assicuriamoci che almeno queste colonne esistano
@@ -744,9 +746,11 @@ def _file_mtime_ns(path: Path) -> int:
         return 0
 
 
-def _similarity_cache_key(data_path: Path, model_path: Path) -> tuple[str, str, str, int, int]:
+def _similarity_cache_key(
+    data_path: Path, model_path: Path, context: ActiveVaultContext | None = None,
+) -> tuple[str, str, str, int, int]:
     # Artifact paths and stable identity prevent equal mtimes from crossing Vaults.
-    context = get_active_vault_context()
+    context = context or get_active_vault_context()
     return (context.vault_id, str(data_path), str(model_path), _file_mtime_ns(data_path), _file_mtime_ns(model_path))
 
 
@@ -832,13 +836,14 @@ def _build_similar_meta(
     min_score: float,
     query_topic: Optional[str] = None,
     query_tags: set[str] | None = None,
+    context: ActiveVaultContext | None = None,
 ) -> Optional[SimilarMeta]:
     if not explain:
         return None
-    data_path = get_data_path()
-    model_path = get_model_path()
+    data_path = context.projection_path if context is not None else get_data_path()
+    model_path = context.topic_model_path if context is not None else get_model_path()
     _vault_id, _data_path, _model_path, data_mtime_ns, model_mtime_ns = _similarity_cache_key(
-        data_path=data_path, model_path=model_path
+        data_path=data_path, model_path=model_path, context=context
     )
     return SimilarMeta(
         data_mtime_ns=int(data_mtime_ns),
@@ -865,7 +870,7 @@ def invalidate_similarity_cache() -> None:
         app.state.sim_index_key = None
 
 
-def build_similarity_index(df: pd.DataFrame):
+def build_similarity_index(df: pd.DataFrame, context: ActiveVaultContext | None = None):
     """
     Costruisce (o riusa) un LessonSimilarityIndex usando il topic model già allenato.
     Cached in API layer (#26).
@@ -875,8 +880,8 @@ def build_similarity_index(df: pd.DataFrame):
             status_code=400, detail="Nessuna LeLe presente nel dataset."
         )
 
-    model_path = get_model_path()
-    data_path = get_data_path()
+    model_path = context.topic_model_path if context is not None else get_model_path()
+    data_path = context.projection_path if context is not None else get_data_path()
 
     if not model_path.exists():
         raise HTTPException(
@@ -890,7 +895,7 @@ def build_similarity_index(df: pd.DataFrame):
         app.state.sim_index = None
         app.state.sim_index_key = None
 
-    key = _similarity_cache_key(data_path=data_path, model_path=model_path)
+    key = _similarity_cache_key(data_path=data_path, model_path=model_path, context=context)
 
     with app.state.sim_index_lock:
         if app.state.sim_index is not None and app.state.sim_index_key == key:
@@ -1124,10 +1129,13 @@ def _runtime_path_response(
 
 
 def _runtime_paths_for_api() -> List[RuntimePathResponse]:
-    descriptions = {
-        item.key: item
-        for item in describe_runtime_paths()
-    }
+    try:
+        descriptions = {item.key: item for item in describe_runtime_paths()}
+    except VaultRegistryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
 
     output: List[RuntimePathResponse] = []
     for key in (
@@ -1690,6 +1698,7 @@ def export_search(
 )
 def similar_lessons(
     lesson_id: str,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -1709,7 +1718,7 @@ def similar_lessons(
     """
     Restituisce LeLe simili a quella indicata, usando il modello di similarità.
     """
-    df = load_lessons_df()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
@@ -1723,7 +1732,7 @@ def similar_lessons(
 
     query_text = str(matches.iloc[0]["text"])
 
-    index = build_similarity_index(df)
+    index = build_similarity_index(df, context)
     results_raw = similar_by_lesson_id(
         df=df,
         lesson_id=lesson_id,
@@ -1747,6 +1756,7 @@ def similar_lessons(
         min_score=min_score,
         query_topic=query_topic if explain else None,
         query_tags=query_tags if explain else None,
+        context=context,
     )
 
     return SimilarResponse(
@@ -1823,6 +1833,7 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
 @app.post("/similar", response_model=SimilarResponse, response_model_exclude_none=True)
 def similar_from_text(
     body: SimilarTextRequest,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -1834,14 +1845,14 @@ def similar_from_text(
     if not text:
         raise HTTPException(status_code=400, detail="text must be non-empty")
 
-    df = load_lessons_df()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
         )
 
     # build_similarity_index() gestisce 503 se manca il modello.
-    index = build_similarity_index(df)  # cached
+    index = build_similarity_index(df, context)  # cached
     results_raw = similar_by_text(
         df,
         text,
@@ -1862,6 +1873,7 @@ def similar_from_text(
         top_k=body.top_k,
         min_score=body.min_score,
         query_tags=query_tags if explain and query_tags else None,
+        context=context,
     )
 
     return SimilarResponse(query=text, results=items, meta=meta)
@@ -1877,7 +1889,8 @@ def train_topic() -> TrainResponse:
     - non deve mai tornare 500 per errori "utente" (es. 1 solo topic)
     - filtra righe senza text/topic validi
     """
-    df = load_lessons_df()
+    context = get_active_vault_context()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400,
@@ -1913,8 +1926,8 @@ def train_topic() -> TrainResponse:
 
         raise HTTPException(status_code=400, detail=msg)
 
-    _ensure_model_dir()
-    model_path = get_model_path()
+    model_path = context.topic_model_path
+    _ensure_model_dir(model_path)
     save_topic_model(pipeline, str(model_path) if model_path else None)
     invalidate_similarity_cache()
 
@@ -1926,8 +1939,8 @@ def train_topic() -> TrainResponse:
     )
 
 
-def _sync_vault_import() -> VaultImportResponse:
-    context = get_active_vault_context()
+def _sync_vault_import(context: ActiveVaultContext | None = None) -> VaultImportResponse:
+    context = context or get_active_vault_context()
     vault_dir = context.vault_dir
     if not vault_dir.is_dir():
         raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
@@ -1953,8 +1966,9 @@ def _write_lesson_to_vault(
     lesson_id: str,
     payload: LessonVaultWrite,
     relative_path: Optional[str] = None,
+    context: ActiveVaultContext | None = None,
 ) -> Path:
-    vault_dir = get_active_vault_context().vault_dir
+    vault_dir = (context or get_active_vault_context()).vault_dir
     tags = payload.tags or []
     date_str = _lesson_date_or_today(payload.date)
     return write_lesson_markdown(
@@ -2202,8 +2216,9 @@ def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
         lesson_id = rel.removesuffix(".md")
 
     try:
-        _write_lesson_to_vault(lesson_id=lesson_id, payload=body)
-        _sync_vault_import()
+        context = get_active_vault_context()
+        _write_lesson_to_vault(lesson_id=lesson_id, payload=body, context=context)
+        _sync_vault_import(context)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -2216,13 +2231,14 @@ def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
 def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
     """Aggiorna una LeLe: write-back su vault `.md` + re-import JSONL."""
     try:
-        vault_dir = get_active_vault_context().vault_dir
+        context = get_active_vault_context()
+        vault_dir = context.vault_dir
         existing = find_markdown_by_id(vault_dir, lesson_id)
         rel_path = existing.relative_to(vault_dir).as_posix() if existing else None
         _write_lesson_to_vault(
-            lesson_id=lesson_id, payload=body, relative_path=rel_path
+            lesson_id=lesson_id, payload=body, relative_path=rel_path, context=context
         )
-        _sync_vault_import()
+        _sync_vault_import(context)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -2447,6 +2463,7 @@ else:
 )
 def similar_from_text_batch(
     body: SimilarBatchRequest,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -2457,13 +2474,13 @@ def similar_from_text_batch(
     Non modifica il contratto di POST /similar.
     Preserva l'ordine delle richieste.
     """
-    df = load_lessons_df()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
         )
 
-    index = build_similarity_index(df)  # cached
+    index = build_similarity_index(df, context)  # cached
 
     out_items: List[SimilarResponse] = []
     for req in body.items:
@@ -2491,6 +2508,7 @@ def similar_from_text_batch(
             top_k=req.top_k,
             min_score=req.min_score,
             query_tags=query_tags if explain and query_tags else None,
+            context=context,
         )
         out_items.append(SimilarResponse(query=text, results=items, meta=meta))
 
@@ -2505,6 +2523,7 @@ def similar_from_text_batch(
 )
 def editor_suggest(
     body: SimilarTextRequest,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -2514,4 +2533,4 @@ def editor_suggest(
 
     Thin wrapper: same behavior/contract as POST /similar.
     """
-    return similar_from_text(body=body, explain=explain)
+    return similar_from_text(body=body, context=context, explain=explain)

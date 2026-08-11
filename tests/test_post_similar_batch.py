@@ -15,8 +15,8 @@ def test_post_similar_batch_preserves_order(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(server, "load_lessons_df", lambda: df)
-    monkeypatch.setattr(server, "build_similarity_index", lambda _df: SimpleNamespace(transformer="X"))
+    monkeypatch.setattr(server, "load_lessons_df", lambda *_args: df)
+    monkeypatch.setattr(server, "build_similarity_index", lambda _df, *_args: SimpleNamespace(transformer="X"))
 
     # Finto service: ritorna un risultato deterministico per ogni query
     def _fake_similar_by_text(df, query_text, transformer, top_k, min_score, ranking=None):

@@ -25,7 +25,7 @@ from lele_manager.application.lesson_candidate import CandidateState
 from lele_manager.application.raw_source import SourceKind
 from lele_manager.application.raw_source_ingestion import PartialIngestionError
 from lele_manager.core.paths import candidates_path
-from lele_manager.core.vault_registry import active_vault_context
+from lele_manager.core.vault_registry import VaultRegistryStore, active_vault_context
 from lele_manager.core.vault import write_lesson_markdown
 
 
@@ -136,6 +136,35 @@ def prepare_accepted_candidate(
     )
     assert accepted.status_code == 200, accepted.text
     return item_id, int(accepted.json()["revision"])
+
+
+def test_approval_uses_one_cached_vault_snapshot_per_request(
+    client: TestClient, tmp_path: Path
+) -> None:
+    context_a = active_vault_context()
+    vault_b = tmp_path / "vault-b"
+    vault_b.mkdir()
+    item_b = VaultRegistryStore().register("B", vault_b)
+    # Prepare an A candidate, then make the approval dependency appear to
+    # switch after its first resolution. FastAPI must cache that first snapshot
+    # for both repository and canonical/projection service construction.
+    app.dependency_overrides[tritalele.get_active_vault_context] = lambda: context_a
+    item_id, revision = prepare_accepted_candidate(client, title="Snapshot A")
+    calls = 0
+
+    def changing_context():
+        nonlocal calls
+        calls += 1
+        return context_a if calls == 1 else VaultRegistryStore().context_for(item_b)
+
+    app.dependency_overrides[tritalele.get_active_vault_context] = changing_context
+    response = client.post(
+        f"{API}/candidates/{item_id}/approve", json={"expected_revision": revision}
+    )
+    assert response.status_code == 200, response.text
+    assert calls == 1
+    assert list(context_a.vault_dir.rglob("*.md"))
+    assert not list(vault_b.rglob("*.md"))
 
 
 def test_openapi_exposes_exact_versioned_surface_and_schemas() -> None:

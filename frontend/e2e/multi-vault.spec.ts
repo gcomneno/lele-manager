@@ -66,3 +66,24 @@ test('keeps registry-backed Vault runtime state isolated across a switch', async
     else await writeFile(candidatesA, candidatesBefore)
   }
 })
+
+test('localizes Vault management and switching in Italian', async ({ page, request }) => {
+  const active = await (await request.get('/vault/status')).json() as { vault_id: string }
+  const vaultB = join(fixtureRoot, 'vault-b-it')
+  await mkdir(vaultB, { recursive: true })
+  try {
+    const registered = await request.post('/vaults/register', { data: { name: 'Vault italiano', path: vaultB } })
+    expect(registered.status()).toBe(201)
+    const vaultBId = (await registered.json()).id as string
+    await page.addInitScript(() => localStorage.setItem('lele-manager.locale', 'it'))
+    await page.goto('/app/#/vault')
+    await expect(page.locator('section.vault-management[aria-label="Gestione dei vault"]')).toBeVisible()
+    const bRow = page.locator('.vault-row').filter({ hasText: 'Vault italiano' })
+    await bRow.getByRole('button', { name: 'Passa al vault' }).click()
+    await expect(page.getByTestId('shell-workspace')).toHaveText('Vault italiano')
+    expect((await request.post(`/vaults/${active.vault_id}/activate`)).ok()).toBeTruthy()
+    expect((await request.delete(`/vaults/${vaultBId}`)).status()).toBe(204)
+  } finally {
+    await rm(vaultB, { recursive: true, force: true })
+  }
+})
