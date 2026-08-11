@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import lele_manager.launcher as launcher
+from lele_manager.core.vault_registry import ActiveVaultContext
 
 
 @contextmanager
@@ -50,13 +51,11 @@ def test_prepare_runtime_creates_required_directories(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    data = tmp_path / "data" / "lessons.jsonl"
-    model = tmp_path / "cache" / "topic_model.joblib"
+    data = tmp_path / "data" / "vaults" / "id" / "lessons.jsonl"
+    model = tmp_path / "cache" / "vaults" / "id" / "topic_model.joblib"
     vault = tmp_path / "vault"
 
-    monkeypatch.setattr(launcher, "resolve_data_path", lambda: data)
-    monkeypatch.setattr(launcher, "resolve_model_path", lambda: model)
-    monkeypatch.setattr(launcher, "resolve_vault_dir", lambda: vault)
+    monkeypatch.setattr(launcher, "active_vault_context", lambda: ActiveVaultContext("id", "Test", vault, data, data.parent / "candidates.json", model, "id"))
 
     assert launcher.prepare_runtime() == (data, model, vault)
 

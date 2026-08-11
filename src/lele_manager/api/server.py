@@ -19,11 +19,10 @@ from lele_manager.application.lesson_candidate import (
     CandidateRepositoryError,
     CandidateState,
 )
-from lele_manager.core.paths import candidates_path, duplicate_decisions_path
+from lele_manager.core.paths import duplicate_decisions_path
 from lele_manager.core.duplicate_decisions import (
     DuplicateDecisionStore,
     DuplicateDecisionStoreError,
-    current_vault_scope,
     material_fingerprint,
 )
 from lele_manager.application.lesson_writing import (
@@ -58,16 +57,23 @@ from lele_manager.core.projection_store import (
 from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
 from lele_manager.core.doctor import DoctorOperationalError, check_markdown_files
 from lele_manager.core.export import search_results_to_markdown
-from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
     build_vault_tree,
     find_markdown_by_id,
     find_markdown_paths_by_id,
     import_vault_to_jsonl,
-    require_vault_dir,
     resolve_vault_dir,
     default_relative_path,
     write_lesson_markdown,
+)
+from lele_manager.core.vault_registry import (
+    ActiveVaultContext,
+    VaultConflictError,
+    VaultNotFoundError,
+    VaultPathError,
+    VaultRegistryError,
+    VaultRegistryStore,
+    active_vault_context,
 )
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
 from lele_manager.ml.similarity import LessonSimilarityIndex
@@ -87,11 +93,27 @@ DUPLICATE_DECISIONS_PATH: Path | None = None
 
 
 def get_data_path() -> Path:
-    return DATA_PATH if DATA_PATH is not None else resolve_data_path()
+    return DATA_PATH if DATA_PATH is not None else active_vault_context().projection_path
 
 
 def get_model_path() -> Path:
-    return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
+    return MODEL_PATH if MODEL_PATH is not None else active_vault_context().topic_model_path
+
+
+def get_active_vault_context() -> ActiveVaultContext:
+    """One immutable context for operations crossing canonical and derived state."""
+    # Module-level path overrides are an intentionally narrow test seam. They
+    # never come from production configuration and therefore cannot become a
+    # second persisted active-Vault authority.
+    if DATA_PATH is not None or MODEL_PATH is not None:
+        vault = resolve_vault_dir()
+        projection = DATA_PATH if DATA_PATH is not None else vault / ".lele-test-lessons.jsonl"
+        model = MODEL_PATH if MODEL_PATH is not None else vault / ".lele-test-topic-model.joblib"
+        return ActiveVaultContext("test-override", vault.name or "Vault", vault, projection, projection.parent / "candidates.json", model, "test-override")
+    try:
+        return active_vault_context()
+    except VaultRegistryError as exc:
+        raise HTTPException(status_code=503, detail={"code": exc.code, "message": str(exc)}) from exc
 
 
 def get_duplicate_decisions_path() -> Path:
@@ -465,6 +487,22 @@ class DiagnosticsPreviewResponse(BaseModel):
 class VaultStatusResponse(BaseModel):
     vault_dir: str
     exists: bool
+    vault_id: str | None = None
+    display_name: str | None = None
+
+
+class VaultRegistryItemResponse(BaseModel):
+    id: str
+    name: str
+    path: str
+    active: bool
+    available: bool
+    lesson_count: int | None = None
+
+
+class VaultRegistryMutation(BaseModel):
+    name: str = Field(min_length=1)
+    path: str | None = None
 
 
 class DashboardCandidateSummary(BaseModel):
@@ -706,8 +744,10 @@ def _file_mtime_ns(path: Path) -> int:
         return 0
 
 
-def _similarity_cache_key(data_path: Path, model_path: Path) -> tuple[int, int]:
-    return (_file_mtime_ns(data_path), _file_mtime_ns(model_path))
+def _similarity_cache_key(data_path: Path, model_path: Path) -> tuple[str, str, str, int, int]:
+    # Artifact paths and stable identity prevent equal mtimes from crossing Vaults.
+    context = get_active_vault_context()
+    return (context.vault_id, str(data_path), str(model_path), _file_mtime_ns(data_path), _file_mtime_ns(model_path))
 
 
 def _normalize_tags(raw: object) -> set[str]:
@@ -797,7 +837,7 @@ def _build_similar_meta(
         return None
     data_path = get_data_path()
     model_path = get_model_path()
-    data_mtime_ns, model_mtime_ns = _similarity_cache_key(
+    _vault_id, _data_path, _model_path, data_mtime_ns, model_mtime_ns = _similarity_cache_key(
         data_path=data_path, model_path=model_path
     )
     return SimilarMeta(
@@ -1093,6 +1133,7 @@ def _runtime_paths_for_api() -> List[RuntimePathResponse]:
     for key in (
         "vault",
         "application_data",
+        "vault_registry",
         "lesson_projection",
         "candidate_staging",
         "duplicate_decisions",
@@ -1230,7 +1271,7 @@ def dashboard_summary() -> DashboardSummaryResponse:
 
     candidates: Optional[DashboardCandidateSummary]
     try:
-        staged_candidates = JsonCandidateRepository(candidates_path()).list()
+        staged_candidates = JsonCandidateRepository(get_active_vault_context().candidates_path).list()
     except CandidateRepositoryError:
         candidates = None
     else:
@@ -1305,9 +1346,10 @@ def duplicates(
         exact_only=exact_only,
         limit=None,
     )
-    vault_dir = resolve_vault_dir()
+    context = get_active_vault_context()
+    vault_dir = context.vault_dir
     store = DuplicateDecisionStore(get_duplicate_decisions_path())
-    scope = current_vault_scope(vault_dir)
+    scope = context.duplicate_decision_scope
     suppressed_pairs = 0
     unresolved: list[DuplicatePairResponse] = []
     for pair in report.pairs:
@@ -1357,7 +1399,8 @@ def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisio
     if not available:
         raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
     try:
-        vault_dir = require_vault_dir()
+        context = get_active_vault_context()
+        vault_dir = context.vault_dir
         left = _canonical_duplicate_lesson(vault_dir, body.left_id)
         right = _canonical_duplicate_lesson(vault_dir, body.right_id)
     except FileNotFoundError as exc:
@@ -1370,7 +1413,7 @@ def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisio
         raise _duplicate_error(409, "duplicate_pair_stale", "One or both canonical lessons changed; refresh duplicate review.")
     try:
         decision = DuplicateDecisionStore(get_duplicate_decisions_path()).save_not_duplicates(
-            scope=current_vault_scope(vault_dir), left_id=body.left_id,
+            scope=context.duplicate_decision_scope, left_id=body.left_id,
             left_fingerprint=body.left_fingerprint, right_id=body.right_id,
             right_fingerprint=body.right_fingerprint,
         )
@@ -1386,7 +1429,7 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
     if not available:
         raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
     try:
-        vault_dir = require_vault_dir()
+        vault_dir = get_active_vault_context().vault_dir
         survivor = _canonical_duplicate_lesson(vault_dir, body.survivor_id)
         superseded = _canonical_duplicate_lesson(vault_dir, body.superseded_id)
     except FileNotFoundError as exc:
@@ -1884,8 +1927,11 @@ def train_topic() -> TrainResponse:
 
 
 def _sync_vault_import() -> VaultImportResponse:
-    vault_dir = require_vault_dir()
-    data_path = get_data_path()
+    context = get_active_vault_context()
+    vault_dir = context.vault_dir
+    if not vault_dir.is_dir():
+        raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
+    data_path = context.projection_path
     result = import_vault_to_jsonl(vault_dir, data_path)
     invalidate_similarity_cache()
     return VaultImportResponse(
@@ -1908,7 +1954,7 @@ def _write_lesson_to_vault(
     payload: LessonVaultWrite,
     relative_path: Optional[str] = None,
 ) -> Path:
-    vault_dir = require_vault_dir()
+    vault_dir = get_active_vault_context().vault_dir
     tags = payload.tags or []
     date_str = _lesson_date_or_today(payload.date)
     return write_lesson_markdown(
@@ -2008,13 +2054,110 @@ def _raise_lesson_deletion_error(error: Exception) -> None:
 
 @app.get("/vault/status", response_model=VaultStatusResponse)
 def vault_status() -> VaultStatusResponse:
-    vault_dir = resolve_vault_dir()
-    return VaultStatusResponse(vault_dir=str(vault_dir), exists=vault_dir.is_dir())
+    context = get_active_vault_context()
+    return VaultStatusResponse(
+        vault_dir=str(context.vault_dir), exists=context.vault_dir.is_dir(),
+        vault_id=context.vault_id, display_name=context.display_name,
+    )
+
+
+def _registry_item(item: object, active_id: str) -> VaultRegistryItemResponse:
+    # RegisteredVault is intentionally kept out of the HTTP schema.
+    vault = cast(Any, item)
+    path = vault.path
+    return VaultRegistryItemResponse(
+        id=vault.id, name=vault.name, path=str(path), active=vault.id == active_id,
+        available=path.is_dir(), lesson_count=None,
+    )
+
+
+def _registry_error(exc: VaultRegistryError) -> HTTPException:
+    status = 404 if isinstance(exc, VaultNotFoundError) else 409 if isinstance(exc, VaultConflictError) else 503
+    return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.get("/vaults", response_model=list[VaultRegistryItemResponse])
+def list_vaults() -> list[VaultRegistryItemResponse]:
+    try:
+        store = VaultRegistryStore()
+        context = store.context()
+        return [_registry_item(item, context.vault_id) for item in store.list()]
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.post("/vaults/create", response_model=VaultRegistryItemResponse, status_code=201)
+def create_vault(body: VaultRegistryMutation) -> VaultRegistryItemResponse:
+    if body.path is None:
+        raise HTTPException(status_code=422, detail="path is required")
+    try:
+        store = VaultRegistryStore()
+        store.bootstrap()
+        item = store.create(body.name, body.path)
+        return _registry_item(item, store.active().id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.post("/vaults/register", response_model=VaultRegistryItemResponse, status_code=201)
+def register_vault(body: VaultRegistryMutation) -> VaultRegistryItemResponse:
+    if body.path is None:
+        raise HTTPException(status_code=422, detail="path is required")
+    try:
+        store = VaultRegistryStore()
+        store.bootstrap()
+        item = store.register(body.name, body.path)
+        return _registry_item(item, store.active().id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.patch("/vaults/{vault_id}", response_model=VaultRegistryItemResponse)
+def rename_vault(vault_id: str, body: VaultRegistryMutation) -> VaultRegistryItemResponse:
+    try:
+        store = VaultRegistryStore()
+        item = store.rename(vault_id, body.name)
+        return _registry_item(item, store.active().id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.delete("/vaults/{vault_id}", status_code=204)
+def remove_vault(vault_id: str) -> Response:
+    try:
+        VaultRegistryStore().remove(vault_id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+    return Response(status_code=204)
+
+
+@app.post("/vaults/{vault_id}/activate", response_model=VaultStatusResponse)
+def activate_vault(vault_id: str) -> VaultStatusResponse:
+    """Reconcile the target read-only before changing active identity."""
+    try:
+        store = VaultRegistryStore()
+        target = next((item for item in store.list() if item.id == vault_id), None)
+        if target is None:
+            raise VaultNotFoundError("Vault was not found")
+        if not target.path.is_dir():
+            raise VaultPathError("Vault path is unavailable")
+        target_context = store.context_for(target)
+        # Selection never repairs or writes canonical Markdown.
+        import_vault_to_jsonl(target.path, target_context.projection_path, write_missing_frontmatter=False)
+        store.activate(vault_id)
+        invalidate_similarity_cache()
+        return VaultStatusResponse(vault_dir=str(target.path), exists=True, vault_id=target.id, display_name=target.name)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail={"code": "vault_activation_failed", "message": "Could not switch Vault; previous Vault remains active."}) from exc
 
 
 @app.get("/vault/tree", response_model=VaultTreeResponse)
 def vault_tree() -> VaultTreeResponse:
-    vault_dir = require_vault_dir()
+    vault_dir = get_active_vault_context().vault_dir
+    if not vault_dir.is_dir():
+        raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
     tree = build_vault_tree(vault_dir)
     return VaultTreeResponse(vault_dir=str(vault_dir), tree=tree.to_dict())
 
@@ -2023,7 +2166,9 @@ def vault_tree() -> VaultTreeResponse:
 def vault_doctor() -> VaultDoctorReportResponse:
     """Inspect the configured vault without modifying it."""
     try:
-        vault_dir = require_vault_dir()
+        vault_dir = get_active_vault_context().vault_dir
+        if not vault_dir.is_dir():
+            raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
         report = check_markdown_files([], vault_dir=vault_dir)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -2071,7 +2216,7 @@ def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
 def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
     """Aggiorna una LeLe: write-back su vault `.md` + re-import JSONL."""
     try:
-        vault_dir = require_vault_dir()
+        vault_dir = get_active_vault_context().vault_dir
         existing = find_markdown_by_id(vault_dir, lesson_id)
         rel_path = existing.relative_to(vault_dir).as_posix() if existing else None
         _write_lesson_to_vault(
@@ -2091,7 +2236,7 @@ def delete_lesson(lesson_id: str) -> LessonDeleteResponse:
     """Delete one canonical Markdown lesson, then refresh its projection."""
     try:
         result = delete_canonical_lesson(
-            vault_dir=require_vault_dir(),
+            vault_dir=get_active_vault_context().vault_dir,
             lesson_id=lesson_id,
             refresh=_sync_vault_import,
             invalidate_cache=invalidate_similarity_cache,
@@ -2115,7 +2260,7 @@ def bulk_delete_lessons(body: BulkLessonDeleteRequest) -> BulkLessonDeleteRespon
     failures are reported while later requested targets continue to run.
     """
     try:
-        vault_dir = require_vault_dir()
+        vault_dir = get_active_vault_context().vault_dir
     except FileNotFoundError as exc:
         _raise_lesson_deletion_error(exc)
         raise AssertionError("unreachable")

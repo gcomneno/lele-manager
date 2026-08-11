@@ -80,21 +80,21 @@ def lessons_path() -> Path:
     1) LELE_DATA_PATH (deprecated, file-level)  -> warning
     2) data_dir()/lessons.jsonl
     """
-    env_depr = os.environ.get(ENV_DATA_PATH_DEPRECATED)
-    if env_depr:
+    # A file-level override cannot safely follow an active Vault switch. It is
+    # retained only as a legacy artifact source, never as a managed runtime
+    # authority.
+    if os.environ.get(ENV_DATA_PATH_DEPRECATED):
         _warn_deprecated_env(ENV_DATA_PATH_DEPRECATED, ENV_DATA_DIR)
-        p = Path(env_depr).expanduser().resolve()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        return p
+    from .vault_registry import active_vault_context
 
-    p = data_dir() / DEFAULT_DB_FILENAME
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    return active_vault_context().projection_path
 
 
 def candidates_path() -> Path:
     """Full path to the local TritaLeLe candidate staging document."""
-    return data_dir() / DEFAULT_CANDIDATES_FILENAME
+    from .vault_registry import active_vault_context
+
+    return active_vault_context().candidates_path
 
 
 def duplicate_decisions_path() -> Path:
@@ -114,13 +114,8 @@ def topic_model_path() -> Path:
     1) LELE_MODEL_PATH (deprecated, file-level) -> warning
     2) cache_dir()/topic_model.joblib
     """
-    env_depr = os.environ.get(ENV_MODEL_PATH_DEPRECATED)
-    if env_depr:
+    if os.environ.get(ENV_MODEL_PATH_DEPRECATED):
         _warn_deprecated_env(ENV_MODEL_PATH_DEPRECATED, ENV_CACHE_DIR)
-        p = Path(env_depr).expanduser().resolve()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        return p
+    from .vault_registry import active_vault_context
 
-    p = cache_dir() / DEFAULT_TOPIC_MODEL_FILENAME
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    return active_vault_context().topic_model_path

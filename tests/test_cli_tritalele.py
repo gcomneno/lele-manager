@@ -17,6 +17,7 @@ from lele_manager.application.lesson_candidate import (
 from lele_manager.cli import lele as lele_cli
 from lele_manager.cli import tritalele
 from lele_manager.core.paths import candidates_path
+from lele_manager.core.vault_registry import active_vault_context
 
 
 def run_cli(argv: list[str]) -> int:
@@ -30,15 +31,13 @@ def run_cli(argv: list[str]) -> int:
 def local_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> dict[str, Path]:
-    paths = {
-        "data": tmp_path / "data",
-        "candidates": tmp_path / "data" / "candidates.json",
-        "lessons": tmp_path / "data" / "lessons.jsonl",
-        "vault": tmp_path / "vault",
-    }
+    paths = {"data": tmp_path / "data", "vault": tmp_path / "vault"}
     monkeypatch.setenv("LELE_DATA_DIR", str(paths["data"]))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("LELE_VAULT_DIR", str(paths["vault"]))
     monkeypatch.delenv("LELE_DATA_PATH", raising=False)
+    context = active_vault_context()
+    paths.update(candidates=context.candidates_path, lessons=context.projection_path)
     return paths
 
 
@@ -382,7 +381,14 @@ def test_candidate_path_uses_data_dir_and_ignores_deprecated_lessons_path(
     monkeypatch.setenv("LELE_DATA_DIR", str(data_dir))
     monkeypatch.setenv("LELE_DATA_PATH", str(tmp_path / "legacy-lessons.jsonl"))
 
-    assert candidates_path() == data_dir / "candidates.json"
+    first = active_vault_context()
+    assert candidates_path() == first.candidates_path
+    assert candidates_path().is_relative_to(data_dir / "vaults" / first.vault_id)
+    other = tmp_path / "other"
+    other.mkdir()
+    from lele_manager.core.vault_registry import VaultRegistryStore
+    second = VaultRegistryStore().register("Other", other)
+    assert VaultRegistryStore().context_for(second).candidates_path != candidates_path()
 
 
 def test_path_resolution_failure_is_a_controlled_configuration_error(
@@ -885,13 +891,13 @@ def test_partial_approval_reports_recovery_data_and_retry_is_idempotent(
         capsys,
         name="partial-approval.md",
     )
-    local_paths["data"].chmod(0o500)
+    local_paths["candidates"].parent.chmod(0o500)
     try:
         assert run_cli(
             ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
         ) == 1
     finally:
-        local_paths["data"].chmod(0o700)
+        local_paths["candidates"].parent.chmod(0o700)
     captured = capsys.readouterr()
     assert captured.out == ""
     error = json.loads(captured.err)["error"]

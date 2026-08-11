@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -15,8 +16,6 @@ FIXTURE_DIR = ROOT / ".e2e-fixture"
 DATA_DIR = FIXTURE_DIR / "data"
 CACHE_DIR = FIXTURE_DIR / "cache"
 VAULT_DIR = FIXTURE_DIR / "vault"
-DATA_PATH = DATA_DIR / "lessons.jsonl"
-MODEL_PATH = CACHE_DIR / "topic_model.joblib"
 
 RECORDS = [
     {
@@ -79,24 +78,29 @@ def reset_fixture() -> None:
 
 
 def prepare_vault() -> None:
-    """Create one healthy canonical lesson in the isolated E2E vault."""
-    topic_dir = VAULT_DIR / "python"
-    topic_dir.mkdir(parents=True)
-    (topic_dir / "2025-01-01.e2e.md").write_text(
-        """---
-id: python/2025-01-01.e2e
-topic: python
-source: note
-importance: 3
-tags:
-  - python
-date: '2025-01-01'
-title: E2E fixture
----
-Healthy E2E vault lesson.
-""",
-        encoding="utf-8",
-    )
+    """Create canonical Markdown for every projected fixture record.
+
+    A refresh must retain the same fixture dataset; keeping a separate global
+    JSONL fixture would hide the very multi-Vault boundary exercised by E2E.
+    """
+    for record in RECORDS:
+        lesson_id = record["id"]
+        topic_dir = VAULT_DIR / str(record["topic"])
+        topic_dir.mkdir(parents=True, exist_ok=True)
+        tags = "\n".join(f"  - {tag}" for tag in record["tags"])
+        (topic_dir / f"{lesson_id.replace('/', '--')}.md").write_text(
+            "---\n"
+            f"id: {lesson_id}\n"
+            f"topic: {record['topic']}\n"
+            f"source: {record['source']}\n"
+            f"importance: {record['importance']}\n"
+            f"tags:\n{tags}\n"
+            f"date: '{record['date']}'\n"
+            f"title: {record['title']}\n"
+            "---\n"
+            f"{record['text']}\n",
+            encoding="utf-8",
+        )
 
 
 def main() -> int:
@@ -112,18 +116,29 @@ def main() -> int:
     reset_fixture()
     prepare_vault()
 
-    with DATA_PATH.open("w", encoding="utf-8") as stream:
+    # Create the fixture through the real registry bootstrap path, then use
+    # its stable identity for every derived artifact.
+    os.environ["LELE_DATA_DIR"] = str(DATA_DIR)
+    os.environ["LELE_CACHE_DIR"] = str(CACHE_DIR)
+    os.environ["LELE_VAULT_DIR"] = str(VAULT_DIR)
+    from lele_manager.core.vault_registry import active_vault_context
+
+    context = active_vault_context()
+
+    context.projection_path.parent.mkdir(parents=True, exist_ok=True)
+    with context.projection_path.open("w", encoding="utf-8") as stream:
         for record in RECORDS:
             stream.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    dataframe = pd.read_json(DATA_PATH, lines=True)
+    dataframe = pd.read_json(context.projection_path, lines=True)
     config = TopicModelConfig(text_features=TextFeatureConfig(min_df=1))
     pipeline = train_topic_model(dataframe, config=config)
-    save_topic_model(pipeline, MODEL_PATH)
+    context.topic_model_path.parent.mkdir(parents=True, exist_ok=True)
+    save_topic_model(pipeline, context.topic_model_path)
 
     print(
         "E2E fixture ready: "
-        f"data={DATA_DIR}, cache={CACHE_DIR}, vault={VAULT_DIR} "
+        f"data={DATA_DIR}, cache={CACHE_DIR}, vault={VAULT_DIR}, id={context.vault_id} "
         f"({len(RECORDS)} lessons)"
     )
     return 0

@@ -13,6 +13,7 @@ from lele_manager.core.vault import (
     import_vault_to_jsonl,
     write_lesson_markdown,
 )
+from lele_manager.core.vault_registry import VaultRegistryStore
 
 
 @pytest.fixture
@@ -189,7 +190,21 @@ def test_api_vault_doctor_returns_read_only_report(
 def test_api_vault_doctor_returns_not_found_for_missing_vault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LELE_VAULT_DIR", str(tmp_path / "missing-vault"))
+    data = tmp_path / "data"
+    existing = tmp_path / "registered-vault"
+    existing.mkdir()
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(existing))
+    store = VaultRegistryStore()
+    active = store.bootstrap()
+    missing = tmp_path / "missing-vault"
+    store.path.write_text(
+        '{"schema_version": 1, "active_vault_id": "' + active.id
+        + '", "vaults": [{"id": "' + active.id + '", "name": "Missing", "path": "'
+        + str(missing) + '", "registered_at": "' + active.registered_at + '"}]}',
+        encoding="utf-8",
+    )
 
     response = TestClient(app).get("/vault/doctor")
 

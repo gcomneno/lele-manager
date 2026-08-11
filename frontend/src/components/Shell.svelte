@@ -78,18 +78,13 @@
     loadNavigationGroupState(),
   )
 
-  function basename(path: string): string {
-    const parts = path.split(/[\\/]+/).filter(Boolean)
-    return parts.at(-1) ?? path
-  }
-
   onMount(() => {
     let active = true
 
     void api.vaultStatus().then((vault) => {
       if (!active) return
 
-      workspaceName = basename(vault.vault_dir)
+      workspaceName = vault.display_name ?? vault.vault_dir
     }).catch(() => {
       // Workspace context is best-effort and must never block the shell.
     })

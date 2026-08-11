@@ -328,6 +328,16 @@ Creare la directory configurata oppure impostare:
 
 ```bash
 export LELE_VAULT_DIR="/percorso/assoluto/LeLeVault"
+
+## Gestione Vault
+
+La schermata Vault gestisce i Vault locali registrati. **Crea Vault** crea una
+directory nuova e vuota; **Registra Vault esistente** aggiunge una directory
+senza importare o modificare i Markdown. L'attivazione aggiorna la proiezione in
+sola lettura e ricarica l'area di lavoro. Rinomina cambia solo il nome mostrato.
+**Rimuovi dal Manager** non elimina mai i file su disco e non può rimuovere il
+Vault attivo. Al primo avvio `LELE_VAULT_DIR` inizializza il Vault iniziale; in
+seguito il registro persistente è autorevole.
 ```
 
 ### Dataset o modello non disponibili
