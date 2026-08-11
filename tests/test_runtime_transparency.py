@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+
+import pytest
 
 from lele_manager.core import runtime_transparency
 from lele_manager.core.runtime_transparency import describe_runtime_paths
+from lele_manager.core.vault_registry import VaultRegistryCorruptError, VaultRegistryStore
 
 
 class _FakePlatformDirs:
@@ -156,3 +160,79 @@ def test_semantic_roles_match_storage_contract(
     assert paths["lesson_projection"].role == "derived_rebuildable_artifact"
     assert paths["topic_model"].role == "derived_rebuildable_artifact"
     assert paths["cache"].role == "cache_temporary_state"
+
+
+def test_valid_registry_is_the_read_only_runtime_authority(monkeypatch, tmp_path: Path) -> None:
+    data, cache = tmp_path / "data", tmp_path / "cache"
+    vault_a, vault_b = tmp_path / "a", tmp_path / "b"
+    vault_a.mkdir()
+    vault_b.mkdir()
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(cache))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault_a))
+    store = VaultRegistryStore()
+    store.bootstrap()
+    active_b = store.register("B", vault_b)
+    store.activate(active_b.id)
+    registry = data / "vault-registry.json"
+    before = registry.read_bytes()
+    # A stale bootstrap variable must not change managed runtime diagnostics.
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault_a))
+    paths = _by_key()
+    assert paths["vault"].path == vault_b.resolve()
+    assert paths["lesson_projection"].path == data / "vaults" / active_b.id / "lessons.jsonl"
+    assert paths["candidate_staging"].path == data / "vaults" / active_b.id / "candidates.json"
+    assert paths["topic_model"].path == cache / "vaults" / active_b.id / "topic_model.joblib"
+    assert paths["vault"].provenance.kind == "managed_registry"
+    assert registry.read_bytes() == before
+
+
+def test_managed_registry_diagnostics_never_create_scoped_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data, cache, vault = tmp_path / "data", tmp_path / "cache", tmp_path / "vault"
+    data.mkdir()
+    vault.mkdir()
+    vault_id = "11111111-1111-4111-8111-111111111111"
+    registry = data / "vault-registry.json"
+    registry.write_text(json.dumps({
+        "schema_version": 1,
+        "active_vault_id": vault_id,
+        "vaults": [{
+            "id": vault_id,
+            "name": "A",
+            "path": str(vault),
+            "registered_at": "2026-08-11T00:00:00+00:00",
+        }],
+    }), encoding="utf-8")
+    canonical = vault / "canonical.md"
+    canonical.write_text("canonical bytes", encoding="utf-8")
+    before_registry, before_canonical = registry.read_bytes(), canonical.read_bytes()
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(cache))
+
+    paths = {item.key: item.path for item in describe_runtime_paths()}
+
+    assert paths["lesson_projection"] == data / "vaults" / vault_id / "lessons.jsonl"
+    assert paths["candidate_staging"] == data / "vaults" / vault_id / "candidates.json"
+    assert paths["topic_model"] == cache / "vaults" / vault_id / "topic_model.joblib"
+    assert not cache.exists()
+    assert not paths["lesson_projection"].exists()
+    assert not paths["candidate_staging"].exists()
+    assert not paths["topic_model"].exists()
+    assert registry.read_bytes() == before_registry
+    assert canonical.read_bytes() == before_canonical
+
+
+def test_malformed_registry_is_not_hidden_by_legacy_environment(monkeypatch, tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    registry = data / "vault-registry.json"
+    raw = b"not json"
+    registry.write_bytes(raw)
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(tmp_path / "legacy"))
+    with pytest.raises(VaultRegistryCorruptError):
+        describe_runtime_paths()
+    assert registry.read_bytes() == raw
+    assert not (tmp_path / "legacy").exists()

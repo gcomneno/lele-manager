@@ -19,7 +19,7 @@ from typing import Any, Mapping
 import unicodedata
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _STORE_LOCK = Lock()
 
 
@@ -86,7 +86,7 @@ def material_fingerprint(lesson: Mapping[str, Any]) -> str:
 
 
 def current_vault_scope(vault_dir: Path) -> str:
-    """Return the current temporary scope; #192 owns stable vault IDs."""
+    """Legacy helper retained for callers outside the active runtime boundary."""
     return str(vault_dir.resolve())
 
 
@@ -115,15 +115,21 @@ class DuplicateDecisionStore:
 
     def _load(self) -> dict[str, Any]:
         if not self.path.exists():
-            return {"schema_version": _SCHEMA_VERSION, "scopes": {}}
+            return {"schema_version": _SCHEMA_VERSION, "scopes": {}, "legacy_scopes": {}}
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise DuplicateDecisionStoreError("duplicate decision state is unreadable") from exc
-        if not isinstance(data, dict) or data.get("schema_version") != _SCHEMA_VERSION:
+        if not isinstance(data, dict) or data.get("schema_version") not in (1, _SCHEMA_VERSION):
             raise DuplicateDecisionStoreError("duplicate decision state has an unsupported schema")
         if not isinstance(data.get("scopes"), dict):
             raise DuplicateDecisionStoreError("duplicate decision state is malformed")
+        if data.get("schema_version") == 1:
+            # Preserve every unmatched legacy path scope rather than losing a
+            # user decision. Registry bootstrap migrates its known active path.
+            return {"schema_version": _SCHEMA_VERSION, "scopes": {}, "legacy_scopes": data["scopes"]}
+        if not isinstance(data.get("legacy_scopes", {}), dict):
+            raise DuplicateDecisionStoreError("duplicate decision legacy state is malformed")
         return data
 
     def _write(self, data: dict[str, Any]) -> None:
@@ -142,6 +148,21 @@ class DuplicateDecisionStore:
             except OSError:
                 pass
             raise DuplicateDecisionStoreError("duplicate decision state could not be saved") from exc
+
+    def migrate_legacy_scope(self, legacy_path_scope: str, vault_id: str) -> None:
+        """Atomically map a v1 resolved-path scope to immutable Vault identity."""
+        with _STORE_LOCK:
+            data = self._load()
+            legacy = data.setdefault("legacy_scopes", {})
+            entries = legacy.pop(legacy_path_scope, None)
+            if entries is not None:
+                if not isinstance(entries, list):
+                    raise DuplicateDecisionStoreError("duplicate decision legacy scope is malformed")
+                destination = data.setdefault("scopes", {}).setdefault(vault_id, [])
+                if not isinstance(destination, list):
+                    raise DuplicateDecisionStoreError("duplicate decision scope is malformed")
+                destination.extend(entries)
+            self._write(data)
 
     def is_suppressed(
         self, *, scope: str, left_id: str, left_fingerprint: str, right_id: str, right_fingerprint: str

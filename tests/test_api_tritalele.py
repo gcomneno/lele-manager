@@ -25,6 +25,7 @@ from lele_manager.application.lesson_candidate import CandidateState
 from lele_manager.application.raw_source import SourceKind
 from lele_manager.application.raw_source_ingestion import PartialIngestionError
 from lele_manager.core.paths import candidates_path
+from lele_manager.core.vault_registry import VaultRegistryStore, active_vault_context
 from lele_manager.core.vault import write_lesson_markdown
 
 
@@ -46,6 +47,7 @@ def isolated_api_state(
 ) -> Iterator[None]:
     app.dependency_overrides.clear()
     monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("LELE_VAULT_DIR", str(tmp_path / "vault"))
     yield
     app.dependency_overrides.clear()
@@ -54,6 +56,12 @@ def isolated_api_state(
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
+
+
+@pytest.fixture
+def active_context():
+    """The one registered runtime boundary used by this test's API calls."""
+    return active_vault_context()
 
 
 def raw_payload(
@@ -128,6 +136,35 @@ def prepare_accepted_candidate(
     )
     assert accepted.status_code == 200, accepted.text
     return item_id, int(accepted.json()["revision"])
+
+
+def test_approval_uses_one_cached_vault_snapshot_per_request(
+    client: TestClient, tmp_path: Path
+) -> None:
+    context_a = active_vault_context()
+    vault_b = tmp_path / "vault-b"
+    vault_b.mkdir()
+    item_b = VaultRegistryStore().register("B", vault_b)
+    # Prepare an A candidate, then make the approval dependency appear to
+    # switch after its first resolution. FastAPI must cache that first snapshot
+    # for both repository and canonical/projection service construction.
+    app.dependency_overrides[tritalele.get_active_vault_context] = lambda: context_a
+    item_id, revision = prepare_accepted_candidate(client, title="Snapshot A")
+    calls = 0
+
+    def changing_context():
+        nonlocal calls
+        calls += 1
+        return context_a if calls == 1 else VaultRegistryStore().context_for(item_b)
+
+    app.dependency_overrides[tritalele.get_active_vault_context] = changing_context
+    response = client.post(
+        f"{API}/candidates/{item_id}/approve", json={"expected_revision": revision}
+    )
+    assert response.status_code == 200, response.text
+    assert calls == 1
+    assert list(context_a.vault_dir.rglob("*.md"))
+    assert not list(vault_b.rglob("*.md"))
 
 
 def test_openapi_exposes_exact_versioned_surface_and_schemas() -> None:
@@ -229,13 +266,14 @@ def test_domain_level_raw_source_inputs_return_structured_400(
 def test_preview_is_deterministic_and_never_mutates_storage(
     client: TestClient,
     tmp_path: Path,
+    active_context,
     source_kind: str,
     logical_name: str,
     content: str,
 ) -> None:
-    candidate_file = tmp_path / "data" / "candidates.json"
+    candidate_file = active_context.candidates_path
     vault = tmp_path / "vault"
-    projection = tmp_path / "data" / "lessons.jsonl"
+    projection = active_context.projection_path
     payload = raw_payload(
         content,
         source_kind=source_kind,
@@ -267,16 +305,16 @@ def test_preview_is_deterministic_and_never_mutates_storage(
 
 
 def test_preview_preserves_existing_artifacts_byte_for_byte(
-    client: TestClient, tmp_path: Path
+    client: TestClient, tmp_path: Path, active_context
 ) -> None:
     existing = stage_one(client, content="Existing staged source.")
     assert existing["counts"]["created"] == 1  # type: ignore[index]
-    candidate_file = tmp_path / "data" / "candidates.json"
+    candidate_file = active_context.candidates_path
     before_candidates = candidate_file.read_bytes()
     vault_file = tmp_path / "vault" / "keep.md"
     vault_file.parent.mkdir(parents=True)
     vault_file.write_text("keep-vault", encoding="utf-8")
-    projection = tmp_path / "data" / "lessons.jsonl"
+    projection = active_context.projection_path
     projection.write_text("keep-projection\n", encoding="utf-8")
 
     response = client.post(
@@ -291,7 +329,7 @@ def test_preview_preserves_existing_artifacts_byte_for_byte(
 
 
 def test_stage_creates_only_candidates_and_replay_is_idempotent(
-    client: TestClient, tmp_path: Path
+    client: TestClient, tmp_path: Path, active_context
 ) -> None:
     payload = raw_payload(
         "First paragraph.\n\nSecond paragraph.\n\nThird paragraph.",
@@ -313,13 +351,13 @@ def test_stage_creates_only_candidates_and_replay_is_idempotent(
     assert preview_existing.status_code == 200
     assert preview_existing.json()["skipped_candidate_ids"] == first_body["candidate_ids"]
     assert preview_existing.json()["pending_candidate_ids"] == []
-    assert (tmp_path / "data" / "candidates.json").is_file()
+    assert active_context.candidates_path.is_file()
     assert not (tmp_path / "vault").exists()
-    assert not (tmp_path / "data" / "lessons.jsonl").exists()
+    assert not active_context.projection_path.exists()
 
 
 def test_preview_stage_revise_and_accept_never_publish(
-    client: TestClient, tmp_path: Path
+    client: TestClient, tmp_path: Path, active_context
 ) -> None:
     payload = raw_payload(
         "A candidate must remain outside the canonical vault until approval.",
@@ -327,7 +365,7 @@ def test_preview_stage_revise_and_accept_never_publish(
         max_characters=2_000,
     )
     vault = tmp_path / "vault"
-    projection = tmp_path / "data" / "lessons.jsonl"
+    projection = active_context.projection_path
 
     preview = client.post(f"{API}/ingestion/preview", json=payload)
     stage = client.post(f"{API}/ingestion/stage", json=payload)
@@ -419,9 +457,9 @@ def test_candidate_list_filtering_and_order_are_deterministic(
 
 
 def test_malformed_staging_is_a_sanitized_operational_error(
-    client: TestClient, tmp_path: Path
+    client: TestClient, tmp_path: Path, active_context
 ) -> None:
-    path = tmp_path / "data" / "candidates.json"
+    path = active_context.candidates_path
     path.parent.mkdir(parents=True)
     path.write_text("not-json /private/secret", encoding="utf-8")
 
@@ -663,9 +701,9 @@ def test_accept_and_reject_enforce_lifecycle_and_expected_revision(
     )
 
 
-def test_approval_is_ordered_and_idempotent(client: TestClient, tmp_path: Path) -> None:
+def test_approval_is_ordered_and_idempotent(client: TestClient, tmp_path: Path, active_context) -> None:
     item_id, revision = prepare_accepted_candidate(client)
-    projection = tmp_path / "data" / "lessons.jsonl"
+    projection = active_context.projection_path
     vault = tmp_path / "vault"
     assert not projection.exists()
 
@@ -894,7 +932,7 @@ def test_storage_failure_never_leaks_paths_or_exception_details(
     assert "CandidateReviewStorageError" not in response.text
 
 
-def test_full_api_happy_path(client: TestClient, tmp_path: Path) -> None:
+def test_full_api_happy_path(client: TestClient, tmp_path: Path, active_context) -> None:
     payload = raw_payload(
         "# API boundary\n\nA complete lesson candidate.",
         source_kind="markdown",
@@ -935,7 +973,7 @@ def test_full_api_happy_path(client: TestClient, tmp_path: Path) -> None:
     assert "Use a stable, versioned API boundary." in markdown_text
     final_candidate = client.get(f"{API}/candidates/{item_id}").json()
     assert final_candidate["state"] == "approved"
-    projection = tmp_path / "data" / "lessons.jsonl"
+    projection = active_context.projection_path
     assert projection.is_file()
     assert approval["lesson_id"] in projection.read_text(encoding="utf-8")
 

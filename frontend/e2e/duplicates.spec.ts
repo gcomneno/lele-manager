@@ -4,7 +4,20 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url))
-const modelPath = join(repositoryRoot, '.e2e-fixture', 'cache', 'topic_model.joblib')
+const fixtureRoot = join(repositoryRoot, '.e2e-fixture')
+
+async function activeModelPath(): Promise<string> {
+  const registry = JSON.parse(
+    await readFile(join(fixtureRoot, 'data', 'vault-registry.json'), 'utf8'),
+  ) as { active_vault_id: string }
+  return join(
+    fixtureRoot,
+    'cache',
+    'vaults',
+    registry.active_vault_id,
+    'topic_model.joblib',
+  )
+}
 
 const repeatedIdReport = {
   lessons_analyzed: 2,
@@ -122,6 +135,7 @@ test.describe('duplicate review', () => {
   })
 
   test('runs exact-only review while the model is unavailable', async ({ page }) => {
+    const modelPath = await activeModelPath()
     const model = await readFile(modelPath)
     await rm(modelPath)
     try {
@@ -179,6 +193,7 @@ test.describe('duplicate review', () => {
   })
 
   test('presents a model-unavailable error for a near-duplicate review', async ({ page }) => {
+    const modelPath = await activeModelPath()
     const model = await readFile(modelPath)
     await rm(modelPath)
     try {

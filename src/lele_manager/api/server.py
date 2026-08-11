@@ -5,8 +5,8 @@ import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, List, Literal, Mapping, Optional, cast
-from fastapi import FastAPI, HTTPException, Query
+from typing import Annotated, Any, List, Literal, Mapping, Optional, cast
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
 from datetime import datetime, timezone
@@ -19,11 +19,10 @@ from lele_manager.application.lesson_candidate import (
     CandidateRepositoryError,
     CandidateState,
 )
-from lele_manager.core.paths import candidates_path, duplicate_decisions_path
+from lele_manager.core.paths import duplicate_decisions_path
 from lele_manager.core.duplicate_decisions import (
     DuplicateDecisionStore,
     DuplicateDecisionStoreError,
-    current_vault_scope,
     material_fingerprint,
 )
 from lele_manager.application.lesson_writing import (
@@ -58,16 +57,23 @@ from lele_manager.core.projection_store import (
 from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
 from lele_manager.core.doctor import DoctorOperationalError, check_markdown_files
 from lele_manager.core.export import search_results_to_markdown
-from lele_manager.core.config import resolve_data_path, resolve_model_path
 from lele_manager.core.vault import (
     build_vault_tree,
     find_markdown_by_id,
     find_markdown_paths_by_id,
     import_vault_to_jsonl,
-    require_vault_dir,
     resolve_vault_dir,
     default_relative_path,
     write_lesson_markdown,
+)
+from lele_manager.core.vault_registry import (
+    ActiveVaultContext,
+    VaultConflictError,
+    VaultNotFoundError,
+    VaultPathError,
+    VaultRegistryError,
+    VaultRegistryStore,
+    active_vault_context,
 )
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
 from lele_manager.ml.similarity import LessonSimilarityIndex
@@ -87,11 +93,27 @@ DUPLICATE_DECISIONS_PATH: Path | None = None
 
 
 def get_data_path() -> Path:
-    return DATA_PATH if DATA_PATH is not None else resolve_data_path()
+    return DATA_PATH if DATA_PATH is not None else active_vault_context().projection_path
 
 
 def get_model_path() -> Path:
-    return MODEL_PATH if MODEL_PATH is not None else resolve_model_path()
+    return MODEL_PATH if MODEL_PATH is not None else active_vault_context().topic_model_path
+
+
+def get_active_vault_context() -> ActiveVaultContext:
+    """One immutable context for operations crossing canonical and derived state."""
+    # Module-level path overrides are an intentionally narrow test seam. They
+    # never come from production configuration and therefore cannot become a
+    # second persisted active-Vault authority.
+    if DATA_PATH is not None or MODEL_PATH is not None:
+        vault = resolve_vault_dir()
+        projection = DATA_PATH if DATA_PATH is not None else vault / ".lele-test-lessons.jsonl"
+        model = MODEL_PATH if MODEL_PATH is not None else vault / ".lele-test-topic-model.joblib"
+        return ActiveVaultContext("test-override", vault.name or "Vault", vault, projection, projection.parent / "candidates.json", model, "test-override")
+    try:
+        return active_vault_context()
+    except VaultRegistryError as exc:
+        raise HTTPException(status_code=503, detail={"code": exc.code, "message": str(exc)}) from exc
 
 
 def get_duplicate_decisions_path() -> Path:
@@ -403,6 +425,7 @@ class RuntimePathProvenanceResponse(BaseModel):
         "platform_default",
         "product_default",
         "runtime_override",
+        "managed_registry",
     ]
     variable: Optional[str] = None
     deprecated: bool = False
@@ -465,6 +488,22 @@ class DiagnosticsPreviewResponse(BaseModel):
 class VaultStatusResponse(BaseModel):
     vault_dir: str
     exists: bool
+    vault_id: str | None = None
+    display_name: str | None = None
+
+
+class VaultRegistryItemResponse(BaseModel):
+    id: str
+    name: str
+    path: str
+    active: bool
+    available: bool
+    lesson_count: int | None = None
+
+
+class VaultRegistryMutation(BaseModel):
+    name: str = Field(min_length=1)
+    path: str | None = None
 
 
 class DashboardCandidateSummary(BaseModel):
@@ -630,23 +669,24 @@ class TimelineResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Helper di I/O
 # -----------------------------------------------------------------------------
-def _ensure_model_dir() -> None:
-    get_model_path().parent.mkdir(parents=True, exist_ok=True)
+def _ensure_model_dir(model_path: Path | None = None) -> None:
+    (model_path or get_model_path()).parent.mkdir(parents=True, exist_ok=True)
 
 
-def load_lessons_df() -> pd.DataFrame:
+def load_lessons_df(context: ActiveVaultContext | None = None) -> pd.DataFrame:
     """
     Carica il JSONL delle LeLe in un DataFrame.
     Se il file non esiste, restituisce un DataFrame vuoto con colonne standard.
     Gestisce errori di parsing in modo esplicito.
     """
+    data_path = context.projection_path if context is not None else get_data_path()
     try:
-        records = projection_store(get_data_path()).snapshot().list()
+        records = projection_store(data_path).snapshot().list()
         df = records_to_legacy_dataframe(records)
     except ProjectionStoreError as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Errore nel parsing di {get_data_path()}: {e}",
+            detail=f"Errore nel parsing di {data_path}: {e}",
         ) from e
 
     # Assicuriamoci che almeno queste colonne esistano
@@ -706,8 +746,12 @@ def _file_mtime_ns(path: Path) -> int:
         return 0
 
 
-def _similarity_cache_key(data_path: Path, model_path: Path) -> tuple[int, int]:
-    return (_file_mtime_ns(data_path), _file_mtime_ns(model_path))
+def _similarity_cache_key(
+    data_path: Path, model_path: Path, context: ActiveVaultContext | None = None,
+) -> tuple[str, str, str, int, int]:
+    # Artifact paths and stable identity prevent equal mtimes from crossing Vaults.
+    context = context or get_active_vault_context()
+    return (context.vault_id, str(data_path), str(model_path), _file_mtime_ns(data_path), _file_mtime_ns(model_path))
 
 
 def _normalize_tags(raw: object) -> set[str]:
@@ -792,13 +836,14 @@ def _build_similar_meta(
     min_score: float,
     query_topic: Optional[str] = None,
     query_tags: set[str] | None = None,
+    context: ActiveVaultContext | None = None,
 ) -> Optional[SimilarMeta]:
     if not explain:
         return None
-    data_path = get_data_path()
-    model_path = get_model_path()
-    data_mtime_ns, model_mtime_ns = _similarity_cache_key(
-        data_path=data_path, model_path=model_path
+    data_path = context.projection_path if context is not None else get_data_path()
+    model_path = context.topic_model_path if context is not None else get_model_path()
+    _vault_id, _data_path, _model_path, data_mtime_ns, model_mtime_ns = _similarity_cache_key(
+        data_path=data_path, model_path=model_path, context=context
     )
     return SimilarMeta(
         data_mtime_ns=int(data_mtime_ns),
@@ -825,7 +870,7 @@ def invalidate_similarity_cache() -> None:
         app.state.sim_index_key = None
 
 
-def build_similarity_index(df: pd.DataFrame):
+def build_similarity_index(df: pd.DataFrame, context: ActiveVaultContext | None = None):
     """
     Costruisce (o riusa) un LessonSimilarityIndex usando il topic model già allenato.
     Cached in API layer (#26).
@@ -835,8 +880,8 @@ def build_similarity_index(df: pd.DataFrame):
             status_code=400, detail="Nessuna LeLe presente nel dataset."
         )
 
-    model_path = get_model_path()
-    data_path = get_data_path()
+    model_path = context.topic_model_path if context is not None else get_model_path()
+    data_path = context.projection_path if context is not None else get_data_path()
 
     if not model_path.exists():
         raise HTTPException(
@@ -850,7 +895,7 @@ def build_similarity_index(df: pd.DataFrame):
         app.state.sim_index = None
         app.state.sim_index_key = None
 
-    key = _similarity_cache_key(data_path=data_path, model_path=model_path)
+    key = _similarity_cache_key(data_path=data_path, model_path=model_path, context=context)
 
     with app.state.sim_index_lock:
         if app.state.sim_index is not None and app.state.sim_index_key == key:
@@ -1084,15 +1129,19 @@ def _runtime_path_response(
 
 
 def _runtime_paths_for_api() -> List[RuntimePathResponse]:
-    descriptions = {
-        item.key: item
-        for item in describe_runtime_paths()
-    }
+    try:
+        descriptions = {item.key: item for item in describe_runtime_paths()}
+    except VaultRegistryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
 
     output: List[RuntimePathResponse] = []
     for key in (
         "vault",
         "application_data",
+        "vault_registry",
         "lesson_projection",
         "candidate_staging",
         "duplicate_decisions",
@@ -1216,21 +1265,22 @@ def _count_vault_markdown_files(node: object) -> int:
 @app.get("/dashboard/summary", response_model=DashboardSummaryResponse)
 def dashboard_summary() -> DashboardSummaryResponse:
     """Return bounded, side-effect-free facts used by the product dashboard."""
-    health_state = health()
-    vault_state = vault_status()
+    context = get_active_vault_context()
+    health_state = _health_from_context(context)
+    vault_exists = context.vault_dir.is_dir()
 
     vault_markdown_files: Optional[int] = None
-    if vault_state.exists:
-        tree = build_vault_tree(Path(vault_state.vault_dir))
+    if vault_exists:
+        tree = build_vault_tree(context.vault_dir)
         vault_markdown_files = _count_vault_markdown_files(tree.to_dict())
 
     stats: Optional[StatsSummaryResponse] = None
     if health_state.has_data:
-        stats = stats_summary()
+        stats = _stats_summary_from_context(context)
 
     candidates: Optional[DashboardCandidateSummary]
     try:
-        staged_candidates = JsonCandidateRepository(candidates_path()).list()
+        staged_candidates = JsonCandidateRepository(context.candidates_path).list()
     except CandidateRepositoryError:
         candidates = None
     else:
@@ -1247,7 +1297,7 @@ def dashboard_summary() -> DashboardSummaryResponse:
 
     return DashboardSummaryResponse(
         health_status=health_state.status,
-        vault_exists=vault_state.exists,
+        vault_exists=vault_exists,
         vault_markdown_files=vault_markdown_files,
         projection_exists=health_state.has_data,
         model_exists=health_state.has_model,
@@ -1256,18 +1306,20 @@ def dashboard_summary() -> DashboardSummaryResponse:
     )
 
 
+def _health_from_context(context: ActiveVaultContext) -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        has_data=context.projection_path.exists(),
+        has_model=context.topic_model_path.exists(),
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """
     Stato rapido del servizio: dati e modello presenti/sì-no.
     """
-    has_data = get_data_path().exists()
-    has_model = get_model_path().exists()
-    return HealthResponse(
-        status="ok",
-        has_data=has_data,
-        has_model=has_model,
-    )
+    return _health_from_context(get_active_vault_context())
 
 
 @app.get("/duplicates", response_model=DuplicateReportResponse)
@@ -1290,11 +1342,12 @@ def duplicates(
     ),
 ) -> DuplicateReportResponse:
     """Analyse all candidates, suppress valid decisions, then apply display limit."""
-    df = load_lessons_df()
+    context = get_active_vault_context()
+    df = load_lessons_df(context)
     transformer = None
     feature_matrix = None
     if not exact_only and len(df) > 1:
-        index = build_similarity_index(df)
+        index = build_similarity_index(df, context)
         transformer = index.transformer
         feature_matrix = index.feature_matrix
     report = find_duplicates(
@@ -1305,9 +1358,9 @@ def duplicates(
         exact_only=exact_only,
         limit=None,
     )
-    vault_dir = resolve_vault_dir()
+    vault_dir = context.vault_dir
     store = DuplicateDecisionStore(get_duplicate_decisions_path())
-    scope = current_vault_scope(vault_dir)
+    scope = context.duplicate_decision_scope
     suppressed_pairs = 0
     unresolved: list[DuplicatePairResponse] = []
     for pair in report.pairs:
@@ -1357,7 +1410,8 @@ def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisio
     if not available:
         raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
     try:
-        vault_dir = require_vault_dir()
+        context = get_active_vault_context()
+        vault_dir = context.vault_dir
         left = _canonical_duplicate_lesson(vault_dir, body.left_id)
         right = _canonical_duplicate_lesson(vault_dir, body.right_id)
     except FileNotFoundError as exc:
@@ -1370,7 +1424,7 @@ def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisio
         raise _duplicate_error(409, "duplicate_pair_stale", "One or both canonical lessons changed; refresh duplicate review.")
     try:
         decision = DuplicateDecisionStore(get_duplicate_decisions_path()).save_not_duplicates(
-            scope=current_vault_scope(vault_dir), left_id=body.left_id,
+            scope=context.duplicate_decision_scope, left_id=body.left_id,
             left_fingerprint=body.left_fingerprint, right_id=body.right_id,
             right_fingerprint=body.right_fingerprint,
         )
@@ -1382,11 +1436,14 @@ def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisio
 @app.post("/duplicates/merge", response_model=DuplicateMergeResponse)
 def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
     """Write a human-reviewed survivor, delete only then, and refresh once."""
-    available, problem = _duplicate_pair_safety(body.survivor_id, body.superseded_id)
+    context = get_active_vault_context()
+    vault_dir = context.vault_dir
+    available, problem = _duplicate_pair_safety(
+        body.survivor_id, body.superseded_id, vault_dir
+    )
     if not available:
         raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
     try:
-        vault_dir = require_vault_dir()
         survivor = _canonical_duplicate_lesson(vault_dir, body.survivor_id)
         superseded = _canonical_duplicate_lesson(vault_dir, body.superseded_id)
     except FileNotFoundError as exc:
@@ -1442,7 +1499,7 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
         failure=failure,
     )
     try:
-        _sync_vault_import()
+        _sync_vault_import(context)
     except Exception as exc:
         raise _duplicate_error(
             503, "duplicate_merge_refresh_failed",
@@ -1647,6 +1704,7 @@ def export_search(
 )
 def similar_lessons(
     lesson_id: str,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -1666,7 +1724,7 @@ def similar_lessons(
     """
     Restituisce LeLe simili a quella indicata, usando il modello di similarità.
     """
-    df = load_lessons_df()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
@@ -1680,7 +1738,7 @@ def similar_lessons(
 
     query_text = str(matches.iloc[0]["text"])
 
-    index = build_similarity_index(df)
+    index = build_similarity_index(df, context)
     results_raw = similar_by_lesson_id(
         df=df,
         lesson_id=lesson_id,
@@ -1704,6 +1762,7 @@ def similar_lessons(
         min_score=min_score,
         query_topic=query_topic if explain else None,
         query_tags=query_tags if explain else None,
+        context=context,
     )
 
     return SimilarResponse(
@@ -1719,7 +1778,14 @@ def get_lesson(lesson_id: str) -> Lesson:
     Recupera una singola LeLe per ID.
     Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
     """
-    df = load_lessons_df()
+    return _get_lesson_from_context(lesson_id, get_active_vault_context())
+
+
+def _get_lesson_from_context(
+    lesson_id: str, context: ActiveVaultContext
+) -> Lesson:
+    """Read a lesson from an already captured vault snapshot."""
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(status_code=404, detail="Nessuna LeLe presente.")
 
@@ -1780,6 +1846,7 @@ def add_lesson(lesson_in: LessonCreate) -> Lesson:
 @app.post("/similar", response_model=SimilarResponse, response_model_exclude_none=True)
 def similar_from_text(
     body: SimilarTextRequest,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -1791,14 +1858,14 @@ def similar_from_text(
     if not text:
         raise HTTPException(status_code=400, detail="text must be non-empty")
 
-    df = load_lessons_df()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
         )
 
     # build_similarity_index() gestisce 503 se manca il modello.
-    index = build_similarity_index(df)  # cached
+    index = build_similarity_index(df, context)  # cached
     results_raw = similar_by_text(
         df,
         text,
@@ -1819,6 +1886,7 @@ def similar_from_text(
         top_k=body.top_k,
         min_score=body.min_score,
         query_tags=query_tags if explain and query_tags else None,
+        context=context,
     )
 
     return SimilarResponse(query=text, results=items, meta=meta)
@@ -1834,7 +1902,12 @@ def train_topic() -> TrainResponse:
     - non deve mai tornare 500 per errori "utente" (es. 1 solo topic)
     - filtra righe senza text/topic validi
     """
-    df = load_lessons_df()
+    return _train_topic_for_context(get_active_vault_context())
+
+
+def _train_topic_for_context(context: ActiveVaultContext) -> TrainResponse:
+    """Train against one immutable projection/model context."""
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400,
@@ -1870,8 +1943,8 @@ def train_topic() -> TrainResponse:
 
         raise HTTPException(status_code=400, detail=msg)
 
-    _ensure_model_dir()
-    model_path = get_model_path()
+    model_path = context.topic_model_path
+    _ensure_model_dir(model_path)
     save_topic_model(pipeline, str(model_path) if model_path else None)
     invalidate_similarity_cache()
 
@@ -1883,9 +1956,12 @@ def train_topic() -> TrainResponse:
     )
 
 
-def _sync_vault_import() -> VaultImportResponse:
-    vault_dir = require_vault_dir()
-    data_path = get_data_path()
+def _sync_vault_import(context: ActiveVaultContext | None = None) -> VaultImportResponse:
+    context = context or get_active_vault_context()
+    vault_dir = context.vault_dir
+    if not vault_dir.is_dir():
+        raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
+    data_path = context.projection_path
     result = import_vault_to_jsonl(vault_dir, data_path)
     invalidate_similarity_cache()
     return VaultImportResponse(
@@ -1907,8 +1983,9 @@ def _write_lesson_to_vault(
     lesson_id: str,
     payload: LessonVaultWrite,
     relative_path: Optional[str] = None,
+    context: ActiveVaultContext | None = None,
 ) -> Path:
-    vault_dir = require_vault_dir()
+    vault_dir = (context or get_active_vault_context()).vault_dir
     tags = payload.tags or []
     date_str = _lesson_date_or_today(payload.date)
     return write_lesson_markdown(
@@ -2008,13 +2085,110 @@ def _raise_lesson_deletion_error(error: Exception) -> None:
 
 @app.get("/vault/status", response_model=VaultStatusResponse)
 def vault_status() -> VaultStatusResponse:
-    vault_dir = resolve_vault_dir()
-    return VaultStatusResponse(vault_dir=str(vault_dir), exists=vault_dir.is_dir())
+    context = get_active_vault_context()
+    return VaultStatusResponse(
+        vault_dir=str(context.vault_dir), exists=context.vault_dir.is_dir(),
+        vault_id=context.vault_id, display_name=context.display_name,
+    )
+
+
+def _registry_item(item: object, active_id: str) -> VaultRegistryItemResponse:
+    # RegisteredVault is intentionally kept out of the HTTP schema.
+    vault = cast(Any, item)
+    path = vault.path
+    return VaultRegistryItemResponse(
+        id=vault.id, name=vault.name, path=str(path), active=vault.id == active_id,
+        available=path.is_dir(), lesson_count=None,
+    )
+
+
+def _registry_error(exc: VaultRegistryError) -> HTTPException:
+    status = 404 if isinstance(exc, VaultNotFoundError) else 409 if isinstance(exc, VaultConflictError) else 503
+    return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.get("/vaults", response_model=list[VaultRegistryItemResponse])
+def list_vaults() -> list[VaultRegistryItemResponse]:
+    try:
+        store = VaultRegistryStore()
+        context = store.context()
+        return [_registry_item(item, context.vault_id) for item in store.list()]
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.post("/vaults/create", response_model=VaultRegistryItemResponse, status_code=201)
+def create_vault(body: VaultRegistryMutation) -> VaultRegistryItemResponse:
+    if body.path is None:
+        raise HTTPException(status_code=422, detail="path is required")
+    try:
+        store = VaultRegistryStore()
+        store.bootstrap()
+        item = store.create(body.name, body.path)
+        return _registry_item(item, store.active().id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.post("/vaults/register", response_model=VaultRegistryItemResponse, status_code=201)
+def register_vault(body: VaultRegistryMutation) -> VaultRegistryItemResponse:
+    if body.path is None:
+        raise HTTPException(status_code=422, detail="path is required")
+    try:
+        store = VaultRegistryStore()
+        store.bootstrap()
+        item = store.register(body.name, body.path)
+        return _registry_item(item, store.active().id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.patch("/vaults/{vault_id}", response_model=VaultRegistryItemResponse)
+def rename_vault(vault_id: str, body: VaultRegistryMutation) -> VaultRegistryItemResponse:
+    try:
+        store = VaultRegistryStore()
+        item = store.rename(vault_id, body.name)
+        return _registry_item(item, store.active().id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+
+
+@app.delete("/vaults/{vault_id}", status_code=204)
+def remove_vault(vault_id: str) -> Response:
+    try:
+        VaultRegistryStore().remove(vault_id)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+    return Response(status_code=204)
+
+
+@app.post("/vaults/{vault_id}/activate", response_model=VaultStatusResponse)
+def activate_vault(vault_id: str) -> VaultStatusResponse:
+    """Reconcile the target read-only before changing active identity."""
+    try:
+        store = VaultRegistryStore()
+        target = next((item for item in store.list() if item.id == vault_id), None)
+        if target is None:
+            raise VaultNotFoundError("Vault was not found")
+        if not target.path.is_dir():
+            raise VaultPathError("Vault path is unavailable")
+        target_context = store.context_for(target)
+        # Selection never repairs or writes canonical Markdown.
+        import_vault_to_jsonl(target.path, target_context.projection_path, write_missing_frontmatter=False)
+        store.activate(vault_id)
+        invalidate_similarity_cache()
+        return VaultStatusResponse(vault_dir=str(target.path), exists=True, vault_id=target.id, display_name=target.name)
+    except VaultRegistryError as exc:
+        raise _registry_error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail={"code": "vault_activation_failed", "message": "Could not switch Vault; previous Vault remains active."}) from exc
 
 
 @app.get("/vault/tree", response_model=VaultTreeResponse)
 def vault_tree() -> VaultTreeResponse:
-    vault_dir = require_vault_dir()
+    vault_dir = get_active_vault_context().vault_dir
+    if not vault_dir.is_dir():
+        raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
     tree = build_vault_tree(vault_dir)
     return VaultTreeResponse(vault_dir=str(vault_dir), tree=tree.to_dict())
 
@@ -2023,7 +2197,9 @@ def vault_tree() -> VaultTreeResponse:
 def vault_doctor() -> VaultDoctorReportResponse:
     """Inspect the configured vault without modifying it."""
     try:
-        vault_dir = require_vault_dir()
+        vault_dir = get_active_vault_context().vault_dir
+        if not vault_dir.is_dir():
+            raise FileNotFoundError(f"Vault directory not found: {vault_dir}")
         report = check_markdown_files([], vault_dir=vault_dir)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -2057,43 +2233,46 @@ def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
         lesson_id = rel.removesuffix(".md")
 
     try:
-        _write_lesson_to_vault(lesson_id=lesson_id, payload=body)
-        _sync_vault_import()
+        context = get_active_vault_context()
+        _write_lesson_to_vault(lesson_id=lesson_id, payload=body, context=context)
+        _sync_vault_import(context)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return get_lesson(lesson_id)
+    return _get_lesson_from_context(lesson_id, context)
 
 
 @app.put("/lessons/{lesson_id:path}", response_model=Lesson)
 def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
     """Aggiorna una LeLe: write-back su vault `.md` + re-import JSONL."""
     try:
-        vault_dir = require_vault_dir()
+        context = get_active_vault_context()
+        vault_dir = context.vault_dir
         existing = find_markdown_by_id(vault_dir, lesson_id)
         rel_path = existing.relative_to(vault_dir).as_posix() if existing else None
         _write_lesson_to_vault(
-            lesson_id=lesson_id, payload=body, relative_path=rel_path
+            lesson_id=lesson_id, payload=body, relative_path=rel_path, context=context
         )
-        _sync_vault_import()
+        _sync_vault_import(context)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return get_lesson(lesson_id)
+    return _get_lesson_from_context(lesson_id, context)
 
 
 @app.delete("/lessons/{lesson_id:path}", response_model=LessonDeleteResponse)
 def delete_lesson(lesson_id: str) -> LessonDeleteResponse:
     """Delete one canonical Markdown lesson, then refresh its projection."""
     try:
+        context = get_active_vault_context()
         result = delete_canonical_lesson(
-            vault_dir=require_vault_dir(),
+            vault_dir=context.vault_dir,
             lesson_id=lesson_id,
-            refresh=_sync_vault_import,
+            refresh=lambda: _sync_vault_import(context),
             invalidate_cache=invalidate_similarity_cache,
         )
     except (
@@ -2115,7 +2294,8 @@ def bulk_delete_lessons(body: BulkLessonDeleteRequest) -> BulkLessonDeleteRespon
     failures are reported while later requested targets continue to run.
     """
     try:
-        vault_dir = require_vault_dir()
+        context = get_active_vault_context()
+        vault_dir = context.vault_dir
     except FileNotFoundError as exc:
         _raise_lesson_deletion_error(exc)
         raise AssertionError("unreachable")
@@ -2148,7 +2328,7 @@ def bulk_delete_lessons(body: BulkLessonDeleteRequest) -> BulkLessonDeleteRespon
         )
 
     try:
-        _sync_vault_import()
+        _sync_vault_import(context)
     except Exception as exc:
         recovery = _bulk_delete_response(
             requested_count=len(body.lesson_ids),
@@ -2185,14 +2365,15 @@ def ops_refresh(
     ),
 ) -> OpsRefreshResponse:
     """Import vault → JSONL e opzionalmente train topic model (come lele-api-refresh)."""
+    context = get_active_vault_context()
     try:
-        import_result = _sync_vault_import()
+        import_result = _sync_vault_import(context)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     train_result: Optional[TrainResponse] = None
     if train:
-        train_result = train_topic()
+        train_result = _train_topic_for_context(context)
 
     return OpsRefreshResponse(import_result=import_result, train_result=train_result)
 
@@ -2200,7 +2381,14 @@ def ops_refresh(
 @app.get("/stats/summary", response_model=StatsSummaryResponse)
 def stats_summary() -> StatsSummaryResponse:
     """Statistiche aggregate sul dataset LeLe (dashboard / CLI)."""
-    df = load_lessons_df()
+    return _stats_summary_from_dataframe(load_lessons_df())
+
+
+def _stats_summary_from_context(context: ActiveVaultContext) -> StatsSummaryResponse:
+    return _stats_summary_from_dataframe(load_lessons_df(context))
+
+
+def _stats_summary_from_dataframe(df: pd.DataFrame) -> StatsSummaryResponse:
     raw = compute_stats_summary(df)
     return StatsSummaryResponse(
         n_lessons=raw["n_lessons"],
@@ -2302,6 +2490,7 @@ else:
 )
 def similar_from_text_batch(
     body: SimilarBatchRequest,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -2312,13 +2501,13 @@ def similar_from_text_batch(
     Non modifica il contratto di POST /similar.
     Preserva l'ordine delle richieste.
     """
-    df = load_lessons_df()
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
             status_code=400, detail="Dataset vuoto, nessuna LeLe disponibile."
         )
 
-    index = build_similarity_index(df)  # cached
+    index = build_similarity_index(df, context)  # cached
 
     out_items: List[SimilarResponse] = []
     for req in body.items:
@@ -2346,6 +2535,7 @@ def similar_from_text_batch(
             top_k=req.top_k,
             min_score=req.min_score,
             query_tags=query_tags if explain and query_tags else None,
+            context=context,
         )
         out_items.append(SimilarResponse(query=text, results=items, meta=meta))
 
@@ -2360,6 +2550,7 @@ def similar_from_text_batch(
 )
 def editor_suggest(
     body: SimilarTextRequest,
+    context: Annotated[ActiveVaultContext, Depends(get_active_vault_context)],
     explain: bool = Query(
         default=False, description="Se true, include meta e rank per debug."
     ),
@@ -2369,4 +2560,4 @@ def editor_suggest(
 
     Thin wrapper: same behavior/contract as POST /similar.
     """
-    return similar_from_text(body=body, explain=explain)
+    return similar_from_text(body=body, context=context, explain=explain)

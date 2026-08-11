@@ -18,7 +18,7 @@ def test_similar_warm_is_faster_than_cold(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         server,
         "load_lessons_df",
-        lambda: pd.DataFrame(
+        lambda *_args: pd.DataFrame(
             [
                 {"id": "1", "text": "hello world", "topic": "t"},
                 {"id": "2", "text": "hello there", "topic": "t"},
@@ -31,6 +31,7 @@ def test_similar_warm_is_faster_than_cold(monkeypatch, tmp_path: Path):
     model_path = tmp_path / "topic_model.joblib"
     model_path.write_bytes(b"dummy")
     monkeypatch.setattr(server, "get_model_path", lambda: model_path)
+    monkeypatch.setattr(server, "MODEL_PATH", model_path)
 
     # Avoid real pipeline I/O
     monkeypatch.setattr(server, "load_topic_model", lambda *_a, **_kw: object())
