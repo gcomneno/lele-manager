@@ -218,7 +218,28 @@ class VaultRegistryStore:
 
     @staticmethod
     def context_for(item: RegisteredVault) -> ActiveVaultContext:
-        return ActiveVaultContext(item.id, item.name, item.path, data_dir() / "vaults" / item.id / "lessons.jsonl", data_dir() / "vaults" / item.id / "candidates.json", cache_dir() / "vaults" / item.id / "topic_model.joblib", item.id)
+        return VaultRegistryStore.context_for_roots(item, data_dir(), cache_dir())
+
+    @staticmethod
+    def context_for_roots(
+        item: RegisteredVault, data_root: Path, cache_root: Path
+    ) -> ActiveVaultContext:
+        """Build a managed context from already-resolved roots without I/O.
+
+        Runtime operations use :meth:`context_for`, whose root helpers create
+        their directories as part of normal startup behavior.  Transparency
+        and diagnostics instead use this pure constructor so merely reporting
+        paths cannot bootstrap any managed state.
+        """
+        return ActiveVaultContext(
+            item.id,
+            item.name,
+            item.path,
+            data_root / "vaults" / item.id / "lessons.jsonl",
+            data_root / "vaults" / item.id / "candidates.json",
+            cache_root / "vaults" / item.id / "topic_model.joblib",
+            item.id,
+        )
 
     def _assert_new(self, name: str, path: Path, vaults: List[RegisteredVault]) -> None:
         if not name.strip():

@@ -262,11 +262,11 @@ def test_delete_lesson_removes_exact_canonical_file_then_refreshes_projection(
     refresh_called = False
     original_refresh = server_mod._sync_vault_import
 
-    def checked_refresh() -> object:
+    def checked_refresh(context: object = None) -> object:
         nonlocal refresh_called
         refresh_called = True
         assert not target.exists()
-        return original_refresh()
+        return original_refresh(context)
 
     monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
     response = TestClient(app).delete(
@@ -319,7 +319,7 @@ def test_delete_lesson_reports_partial_refresh_after_canonical_delete(
     target, other = _write_delete_fixture(vault)
     import_vault_to_jsonl(vault, data)
 
-    def failed_refresh() -> None:
+    def failed_refresh(_context: object = None) -> None:
         assert not target.exists()
         raise OSError("projection unavailable")
 
@@ -423,13 +423,13 @@ def test_bulk_delete_removes_only_requested_sources_and_refreshes_once(
     original_refresh = server_mod._sync_vault_import
     refresh_count = 0
 
-    def checked_refresh() -> object:
+    def checked_refresh(context: object = None) -> object:
         nonlocal refresh_count
         refresh_count += 1
         assert not paths["bulk/a"].exists()
         assert not paths["bulk/b"].exists()
         assert paths["bulk/c"].exists()
-        return original_refresh()
+        return original_refresh(context)
 
     monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
     response = TestClient(app).post(
@@ -468,13 +468,13 @@ def test_bulk_delete_continues_after_not_found_and_storage_failure(
             raise OSError("read-only storage")
         return original_unlink(self, *args, **kwargs)
 
-    def checked_refresh() -> object:
+    def checked_refresh(context: object = None) -> object:
         nonlocal refresh_count
         refresh_count += 1
         assert not paths["bulk/a"].exists()
         assert not paths["bulk/c"].exists()
         assert paths["bulk/b"].exists()
-        return original_refresh()
+        return original_refresh(context)
 
     monkeypatch.setattr(Path, "unlink", fail_b_unlink)
     monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
@@ -529,7 +529,7 @@ def test_bulk_delete_refresh_failure_returns_exact_canonical_recovery(
     paths = _write_bulk_delete_fixture(vault)
     import_vault_to_jsonl(vault, data)
 
-    def failed_refresh() -> None:
+    def failed_refresh(_context: object = None) -> None:
         assert not paths["bulk/a"].exists()
         assert not paths["bulk/b"].exists()
         raise OSError("projection unavailable")
@@ -570,12 +570,12 @@ def test_bulk_delete_invalidates_similarity_cache_before_one_refresh(
         events.append("invalidate")
         original_invalidate()
 
-    def checked_refresh() -> object:
+    def checked_refresh(context: object = None) -> object:
         events.append("refresh")
         assert events.count("invalidate") == 2
         assert not paths["bulk/a"].exists()
         assert not paths["bulk/b"].exists()
-        return original_refresh()
+        return original_refresh(context)
 
     monkeypatch.setattr(server_mod, "invalidate_similarity_cache", record_invalidation)
     monkeypatch.setattr(server_mod, "_sync_vault_import", checked_refresh)
