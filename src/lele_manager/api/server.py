@@ -1265,21 +1265,22 @@ def _count_vault_markdown_files(node: object) -> int:
 @app.get("/dashboard/summary", response_model=DashboardSummaryResponse)
 def dashboard_summary() -> DashboardSummaryResponse:
     """Return bounded, side-effect-free facts used by the product dashboard."""
-    health_state = health()
-    vault_state = vault_status()
+    context = get_active_vault_context()
+    health_state = _health_from_context(context)
+    vault_exists = context.vault_dir.is_dir()
 
     vault_markdown_files: Optional[int] = None
-    if vault_state.exists:
-        tree = build_vault_tree(Path(vault_state.vault_dir))
+    if vault_exists:
+        tree = build_vault_tree(context.vault_dir)
         vault_markdown_files = _count_vault_markdown_files(tree.to_dict())
 
     stats: Optional[StatsSummaryResponse] = None
     if health_state.has_data:
-        stats = stats_summary()
+        stats = _stats_summary_from_context(context)
 
     candidates: Optional[DashboardCandidateSummary]
     try:
-        staged_candidates = JsonCandidateRepository(get_active_vault_context().candidates_path).list()
+        staged_candidates = JsonCandidateRepository(context.candidates_path).list()
     except CandidateRepositoryError:
         candidates = None
     else:
@@ -1296,7 +1297,7 @@ def dashboard_summary() -> DashboardSummaryResponse:
 
     return DashboardSummaryResponse(
         health_status=health_state.status,
-        vault_exists=vault_state.exists,
+        vault_exists=vault_exists,
         vault_markdown_files=vault_markdown_files,
         projection_exists=health_state.has_data,
         model_exists=health_state.has_model,
@@ -1305,18 +1306,20 @@ def dashboard_summary() -> DashboardSummaryResponse:
     )
 
 
+def _health_from_context(context: ActiveVaultContext) -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        has_data=context.projection_path.exists(),
+        has_model=context.topic_model_path.exists(),
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """
     Stato rapido del servizio: dati e modello presenti/sì-no.
     """
-    has_data = get_data_path().exists()
-    has_model = get_model_path().exists()
-    return HealthResponse(
-        status="ok",
-        has_data=has_data,
-        has_model=has_model,
-    )
+    return _health_from_context(get_active_vault_context())
 
 
 @app.get("/duplicates", response_model=DuplicateReportResponse)
@@ -1339,11 +1342,12 @@ def duplicates(
     ),
 ) -> DuplicateReportResponse:
     """Analyse all candidates, suppress valid decisions, then apply display limit."""
-    df = load_lessons_df()
+    context = get_active_vault_context()
+    df = load_lessons_df(context)
     transformer = None
     feature_matrix = None
     if not exact_only and len(df) > 1:
-        index = build_similarity_index(df)
+        index = build_similarity_index(df, context)
         transformer = index.transformer
         feature_matrix = index.feature_matrix
     report = find_duplicates(
@@ -1354,7 +1358,6 @@ def duplicates(
         exact_only=exact_only,
         limit=None,
     )
-    context = get_active_vault_context()
     vault_dir = context.vault_dir
     store = DuplicateDecisionStore(get_duplicate_decisions_path())
     scope = context.duplicate_decision_scope
@@ -1433,11 +1436,14 @@ def mark_not_duplicates(body: DuplicateNotDuplicatesRequest) -> DuplicateDecisio
 @app.post("/duplicates/merge", response_model=DuplicateMergeResponse)
 def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
     """Write a human-reviewed survivor, delete only then, and refresh once."""
-    available, problem = _duplicate_pair_safety(body.survivor_id, body.superseded_id)
+    context = get_active_vault_context()
+    vault_dir = context.vault_dir
+    available, problem = _duplicate_pair_safety(
+        body.survivor_id, body.superseded_id, vault_dir
+    )
     if not available:
         raise _duplicate_error(409, "duplicate_pair_ambiguous", problem or "Ambiguous pair")
     try:
-        vault_dir = get_active_vault_context().vault_dir
         survivor = _canonical_duplicate_lesson(vault_dir, body.survivor_id)
         superseded = _canonical_duplicate_lesson(vault_dir, body.superseded_id)
     except FileNotFoundError as exc:
@@ -1493,7 +1499,7 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
         failure=failure,
     )
     try:
-        _sync_vault_import()
+        _sync_vault_import(context)
     except Exception as exc:
         raise _duplicate_error(
             503, "duplicate_merge_refresh_failed",
@@ -1772,7 +1778,14 @@ def get_lesson(lesson_id: str) -> Lesson:
     Recupera una singola LeLe per ID.
     Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
     """
-    df = load_lessons_df()
+    return _get_lesson_from_context(lesson_id, get_active_vault_context())
+
+
+def _get_lesson_from_context(
+    lesson_id: str, context: ActiveVaultContext
+) -> Lesson:
+    """Read a lesson from an already captured vault snapshot."""
+    df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(status_code=404, detail="Nessuna LeLe presente.")
 
@@ -1889,7 +1902,11 @@ def train_topic() -> TrainResponse:
     - non deve mai tornare 500 per errori "utente" (es. 1 solo topic)
     - filtra righe senza text/topic validi
     """
-    context = get_active_vault_context()
+    return _train_topic_for_context(get_active_vault_context())
+
+
+def _train_topic_for_context(context: ActiveVaultContext) -> TrainResponse:
+    """Train against one immutable projection/model context."""
     df = load_lessons_df(context)
     if df.empty:
         raise HTTPException(
@@ -2224,7 +2241,7 @@ def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return get_lesson(lesson_id)
+    return _get_lesson_from_context(lesson_id, context)
 
 
 @app.put("/lessons/{lesson_id:path}", response_model=Lesson)
@@ -2244,17 +2261,18 @@ def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return get_lesson(lesson_id)
+    return _get_lesson_from_context(lesson_id, context)
 
 
 @app.delete("/lessons/{lesson_id:path}", response_model=LessonDeleteResponse)
 def delete_lesson(lesson_id: str) -> LessonDeleteResponse:
     """Delete one canonical Markdown lesson, then refresh its projection."""
     try:
+        context = get_active_vault_context()
         result = delete_canonical_lesson(
-            vault_dir=get_active_vault_context().vault_dir,
+            vault_dir=context.vault_dir,
             lesson_id=lesson_id,
-            refresh=_sync_vault_import,
+            refresh=lambda: _sync_vault_import(context),
             invalidate_cache=invalidate_similarity_cache,
         )
     except (
@@ -2276,7 +2294,8 @@ def bulk_delete_lessons(body: BulkLessonDeleteRequest) -> BulkLessonDeleteRespon
     failures are reported while later requested targets continue to run.
     """
     try:
-        vault_dir = get_active_vault_context().vault_dir
+        context = get_active_vault_context()
+        vault_dir = context.vault_dir
     except FileNotFoundError as exc:
         _raise_lesson_deletion_error(exc)
         raise AssertionError("unreachable")
@@ -2309,7 +2328,7 @@ def bulk_delete_lessons(body: BulkLessonDeleteRequest) -> BulkLessonDeleteRespon
         )
 
     try:
-        _sync_vault_import()
+        _sync_vault_import(context)
     except Exception as exc:
         recovery = _bulk_delete_response(
             requested_count=len(body.lesson_ids),
@@ -2346,14 +2365,15 @@ def ops_refresh(
     ),
 ) -> OpsRefreshResponse:
     """Import vault → JSONL e opzionalmente train topic model (come lele-api-refresh)."""
+    context = get_active_vault_context()
     try:
-        import_result = _sync_vault_import()
+        import_result = _sync_vault_import(context)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     train_result: Optional[TrainResponse] = None
     if train:
-        train_result = train_topic()
+        train_result = _train_topic_for_context(context)
 
     return OpsRefreshResponse(import_result=import_result, train_result=train_result)
 
@@ -2361,7 +2381,14 @@ def ops_refresh(
 @app.get("/stats/summary", response_model=StatsSummaryResponse)
 def stats_summary() -> StatsSummaryResponse:
     """Statistiche aggregate sul dataset LeLe (dashboard / CLI)."""
-    df = load_lessons_df()
+    return _stats_summary_from_dataframe(load_lessons_df())
+
+
+def _stats_summary_from_context(context: ActiveVaultContext) -> StatsSummaryResponse:
+    return _stats_summary_from_dataframe(load_lessons_df(context))
+
+
+def _stats_summary_from_dataframe(df: pd.DataFrame) -> StatsSummaryResponse:
     raw = compute_stats_summary(df)
     return StatsSummaryResponse(
         n_lessons=raw["n_lessons"],

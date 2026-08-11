@@ -97,7 +97,7 @@ def test_suppression_precedes_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         {"id": "c", "text": "lower", "topic": "x"},
         {"id": "d", "text": "lower", "topic": "x"},
     ])
-    monkeypatch.setattr(server, "load_lessons_df", lambda: frame)
+    monkeypatch.setattr(server, "load_lessons_df", lambda *_args: frame)
     top_left, top_right = frame.iloc[0].to_dict(), frame.iloc[1].to_dict()
     DuplicateDecisionStore(server.get_duplicate_decisions_path()).save_not_duplicates(
         scope=active_vault_context().vault_id, left_id="a", left_fingerprint=material_fingerprint(top_left),
@@ -172,10 +172,10 @@ def test_merge_writes_selected_survivor_then_deletes_other_once(
     calls = 0
     original_refresh = server._sync_vault_import
 
-    def refresh_once() -> object:
+    def refresh_once(context: object = None) -> object:
         nonlocal calls
         calls += 1
-        return original_refresh()
+        return original_refresh(context)
 
     monkeypatch.setattr(server, "_sync_vault_import", refresh_once)
     response = client.post("/duplicates/merge", json={
@@ -210,10 +210,10 @@ def test_merge_preserves_the_explicit_survivor_path(
     refreshes = 0
     original_refresh = server._sync_vault_import
 
-    def refresh_once() -> object:
+    def refresh_once(context: object = None) -> object:
         nonlocal refreshes
         refreshes += 1
-        return original_refresh()
+        return original_refresh(context)
 
     monkeypatch.setattr(server, "_sync_vault_import", refresh_once)
     response = client.post("/duplicates/merge", json={
@@ -277,7 +277,7 @@ def test_merge_delete_failure_keeps_written_survivor_and_reports_truth(
     def fail_delete(**_: object) -> object:
         raise LessonDeletionStorageError("delete failed")
 
-    def refresh() -> None:
+    def refresh(_context: object = None) -> None:
         nonlocal refreshes
         refreshes += 1
         if refresh_fails:

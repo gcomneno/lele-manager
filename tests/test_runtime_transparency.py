@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -184,6 +185,43 @@ def test_valid_registry_is_the_read_only_runtime_authority(monkeypatch, tmp_path
     assert paths["topic_model"].path == cache / "vaults" / active_b.id / "topic_model.joblib"
     assert paths["vault"].provenance.kind == "managed_registry"
     assert registry.read_bytes() == before
+
+
+def test_managed_registry_diagnostics_never_create_scoped_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data, cache, vault = tmp_path / "data", tmp_path / "cache", tmp_path / "vault"
+    data.mkdir()
+    vault.mkdir()
+    vault_id = "11111111-1111-4111-8111-111111111111"
+    registry = data / "vault-registry.json"
+    registry.write_text(json.dumps({
+        "schema_version": 1,
+        "active_vault_id": vault_id,
+        "vaults": [{
+            "id": vault_id,
+            "name": "A",
+            "path": str(vault),
+            "registered_at": "2026-08-11T00:00:00+00:00",
+        }],
+    }), encoding="utf-8")
+    canonical = vault / "canonical.md"
+    canonical.write_text("canonical bytes", encoding="utf-8")
+    before_registry, before_canonical = registry.read_bytes(), canonical.read_bytes()
+    monkeypatch.setenv("LELE_DATA_DIR", str(data))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(cache))
+
+    paths = {item.key: item.path for item in describe_runtime_paths()}
+
+    assert paths["lesson_projection"] == data / "vaults" / vault_id / "lessons.jsonl"
+    assert paths["candidate_staging"] == data / "vaults" / vault_id / "candidates.json"
+    assert paths["topic_model"] == cache / "vaults" / vault_id / "topic_model.joblib"
+    assert not cache.exists()
+    assert not paths["lesson_projection"].exists()
+    assert not paths["candidate_staging"].exists()
+    assert not paths["topic_model"].exists()
+    assert registry.read_bytes() == before_registry
+    assert canonical.read_bytes() == before_canonical
 
 
 def test_malformed_registry_is_not_hidden_by_legacy_environment(monkeypatch, tmp_path: Path) -> None:

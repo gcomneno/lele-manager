@@ -125,7 +125,11 @@ def describe_runtime_paths(
     # managed authority, while a malformed one is deliberately surfaced to the
     # caller instead of being hidden behind the legacy environment fallback.
     store = VaultRegistryStore(data_dir / "vault-registry.json")
-    context = store.context_for(store.active()) if store.exists() else None
+    context = (
+        store.context_for_roots(store.active(), data_dir, cache_dir)
+        if store.exists()
+        else None
+    )
     if context is not None:
         managed = RuntimePathProvenance(kind="managed_registry")
         vault_path = context.vault_dir
