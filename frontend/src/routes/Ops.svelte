@@ -2,7 +2,10 @@
   import {
     api,
     type HealthResponse,
+    type ManagedVault,
     type TrainResponse,
+    type VaultDangerOperation,
+    type VaultDangerPreview,
     type VaultDoctorProblem,
     type VaultDoctorReportResponse,
   } from '../lib/api'
@@ -19,6 +22,17 @@
   let error = $state('')
   let doctorError = $state('')
   let log = $state<string[]>([])
+  let dangerVaults = $state<ManagedVault[]>([])
+  let dangerVaultId = $state('')
+  let dangerOperation = $state<VaultDangerOperation>('empty')
+  let dangerDestinationId = $state('')
+  let dangerPreview = $state<VaultDangerPreview | null>(null)
+  let dangerConfirmation = $state('')
+  let dangerBackup = $state(true)
+  let dangerBusy = $state(false)
+  let dangerMessage = $state('')
+  let dangerError = $state(false)
+  let dangerRequestVersion = $state(0)
 
   function pushLog(line: string) {
     const ts = new Date().toLocaleTimeString()
@@ -224,7 +238,115 @@
     }
   }
 
+  function invalidateDangerPlan(message = '') {
+    dangerRequestVersion += 1
+    dangerPreview = null
+    dangerConfirmation = ''
+    dangerMessage = message
+    dangerError = false
+  }
+
+  function ensureDangerDestination() {
+    const destinations = dangerVaults.filter((vault) => vault.available && vault.id !== dangerVaultId)
+    if (!destinations.some((vault) => vault.id === dangerDestinationId)) {
+      dangerDestinationId = destinations[0]?.id ?? ''
+    }
+  }
+
+  async function loadDangerVaults() {
+    const version = ++dangerRequestVersion
+    try {
+      const vaults = await api.vaults()
+      if (version !== dangerRequestVersion) return
+      dangerVaults = vaults
+      if (!dangerVaults.some((vault) => vault.id === dangerVaultId && vault.available)) {
+        dangerVaultId = dangerVaults.find((vault) => vault.available)?.id ?? ''
+      }
+      ensureDangerDestination()
+    } catch (e) {
+      if (version === dangerRequestVersion) {
+        dangerMessage = e instanceof Error ? e.message : $messages.opsDangerFailed
+        dangerError = true
+      }
+    }
+  }
+
+  function dangerRequest() {
+    return {
+      vault_id: dangerVaultId,
+      operation: dangerOperation,
+      ...(dangerOperation === 'merge_delete_source' ? { destination_vault_id: dangerDestinationId } : {}),
+    }
+  }
+
+  function dangerPreviewMatchesCurrent() {
+    if (!dangerPreview) return false
+    return dangerPreview.vault_id === dangerVaultId
+      && dangerPreview.operation === dangerOperation
+      && (dangerOperation !== 'merge_delete_source' || dangerPreview.destination_vault_id === dangerDestinationId)
+  }
+
+  async function previewDanger() {
+    if (!dangerVaultId || (dangerOperation === 'merge_delete_source' && !dangerDestinationId)) return
+    const request = dangerRequest()
+    const version = ++dangerRequestVersion
+    dangerBusy = true
+    dangerError = false
+    dangerMessage = $messages.opsDangerPreviewing
+    try {
+      const preview = await api.previewVaultDanger(request)
+      if (version === dangerRequestVersion) {
+        dangerPreview = preview
+        dangerConfirmation = ''
+        dangerMessage = ''
+      }
+    } catch (e) {
+      if (version === dangerRequestVersion) {
+        dangerPreview = null
+        dangerMessage = e instanceof Error ? e.message : $messages.opsDangerFailed
+        dangerError = true
+      }
+    } finally {
+      if (version === dangerRequestVersion) dangerBusy = false
+    }
+  }
+
+  async function executeDanger() {
+    if (!dangerPreviewMatchesCurrent() || !dangerPreview) {
+      invalidateDangerPlan($messages.opsDangerNeedsPreview)
+      dangerError = true
+      return
+    }
+    if (dangerConfirmation !== dangerPreview.confirmation_text) return
+    dangerBusy = true
+    dangerError = false
+    dangerMessage = $messages.opsDangerExecuting
+    try {
+      const result = await api.executeVaultDanger({
+        ...dangerRequest(),
+        plan_digest: dangerPreview.plan_digest,
+        confirmation: dangerConfirmation,
+        backup_before: dangerBackup,
+      })
+      dangerMessage = result.partial ? $messages.opsDangerPartial : $messages.opsDangerSuccess
+      if (result.backup_path) {
+        dangerMessage += ` ${formatMessage($messages.opsDangerBackupSaved, { path: result.backup_path })}`
+      }
+      dangerError = result.partial
+      dangerPreview = null
+      dangerConfirmation = ''
+      await loadDangerVaults()
+      await refreshHealth()
+    } catch (e) {
+      dangerMessage = e instanceof Error ? e.message : $messages.opsDangerFailed
+      dangerError = true
+    } finally {
+      dangerBusy = false
+    }
+  }
+
   refreshHealth()
+  loadDangerVaults()
 </script>
 
 <div class="ops">
@@ -345,6 +467,75 @@
     {/if}
   </section>
 
+  <section class="card danger-zone" aria-live="polite">
+    <h3>{$messages.opsDangerTitle}</h3>
+    <p class="meta">{$messages.opsDangerDescription}</p>
+
+    <div class="danger-grid">
+      <label>{$messages.opsDangerVault}
+        <select bind:value={dangerVaultId} onchange={() => { invalidateDangerPlan(); ensureDangerDestination() }} disabled={dangerBusy}>
+          {#each dangerVaults.filter((vault) => vault.available) as vault (vault.id)}
+            <option value={vault.id}>{vault.name} — {vault.path}{vault.active ? ` (${$messages.opsDangerActive})` : ''}</option>
+          {/each}
+        </select>
+      </label>
+      <label>{$messages.opsDangerOperation}
+        <select bind:value={dangerOperation} onchange={() => { invalidateDangerPlan(); ensureDangerDestination() }} disabled={dangerBusy}>
+          <option value="empty">{$messages.opsDangerEmpty}</option>
+          <option value="reset">{$messages.opsDangerReset}</option>
+          <option value="delete">{$messages.opsDangerDelete}</option>
+          <option value="merge_delete_source">{$messages.opsDangerMergeDelete}</option>
+        </select>
+      </label>
+      {#if dangerOperation === 'merge_delete_source'}
+        <label>{$messages.opsDangerDestination}
+          <select bind:value={dangerDestinationId} onchange={() => invalidateDangerPlan()} disabled={dangerBusy}>
+            {#each dangerVaults.filter((vault) => vault.available && vault.id !== dangerVaultId) as vault (vault.id)}
+              <option value={vault.id}>{vault.name} — {vault.path}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+    </div>
+
+    <div class="actions">
+      <button class="btn" onclick={previewDanger} disabled={dangerBusy || !dangerVaultId || (dangerOperation === 'merge_delete_source' && !dangerDestinationId)}>
+        {dangerBusy ? $messages.opsDangerPreviewing : $messages.opsDangerPreview}
+      </button>
+    </div>
+
+    {#if dangerPreview}
+      <div class="danger-preview">
+        <h4>{$messages.opsDangerPreviewTitle}</h4>
+        <p><strong>{dangerPreview.vault_name}</strong> — <code>{dangerPreview.vault_path}</code></p>
+        <p class="meta">
+          {formatMessage($messages.opsDangerApprovedCount, { count: dangerPreview.approved_count })}
+          · {formatMessage($messages.opsDangerEntriesCount, { count: dangerPreview.filesystem_entry_count })}
+          · {formatMessage($messages.opsDangerDecisionsCount, { count: dangerPreview.duplicate_decision_count })}
+        </p>
+        {#if dangerPreview.destination_name}
+          <p>{$messages.opsDangerDestination}: <strong>{dangerPreview.destination_name}</strong> — <code>{dangerPreview.destination_path}</code></p>
+        {/if}
+        {#if dangerPreview.merge_verified}<p class="ok">{$messages.opsDangerMergeVerified}</p>{/if}
+        <div class="danger-scope">
+          <div><strong>{$messages.opsDangerDeletes}</strong><ul>{#each dangerPreview.deletes as item}<li>{item}</li>{/each}</ul></div>
+          <div><strong>{$messages.opsDangerKeeps}</strong><ul>{#each dangerPreview.keeps as item}<li>{item}</li>{/each}</ul></div>
+        </div>
+        <label class="danger-backup"><input type="checkbox" bind:checked={dangerBackup} disabled={dangerBusy} /> {$messages.opsDangerBackup}</label>
+        <p class="meta">{$messages.opsDangerBackupHelp}</p>
+        <label>{formatMessage($messages.opsDangerTypeConfirmation, { confirmation: dangerPreview.confirmation_text })}
+          <input bind:value={dangerConfirmation} autocomplete="off" disabled={dangerBusy} />
+        </label>
+        <div class="actions">
+          <button class="btn btn-danger" onclick={executeDanger} disabled={dangerBusy || dangerConfirmation !== dangerPreview.confirmation_text}>
+            {dangerBusy ? $messages.opsDangerExecuting : $messages.opsDangerExecute}
+          </button>
+        </div>
+      </div>
+    {/if}
+    {#if dangerMessage}<p class={dangerError ? 'error' : 'ok'}>{dangerMessage}</p>{/if}
+  </section>
+
   <section class="card">
     <h3>{$messages.opsActivityLog}</h3>
     {#if log.length === 0}
@@ -443,6 +634,47 @@
     margin-top: 0;
   }
 
+  .danger-zone {
+    border-color: var(--err);
+  }
+
+  .danger-grid,
+  .danger-scope {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin: 14px 0;
+  }
+
+  .danger-grid label,
+  .danger-preview label {
+    display: grid;
+    gap: 6px;
+  }
+
+  .danger-preview {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .danger-scope ul {
+    margin: 6px 0 0;
+    padding-left: 20px;
+  }
+
+  .danger-backup {
+    grid-template-columns: auto 1fr !important;
+    justify-content: start;
+    align-items: center;
+    margin-top: 12px;
+  }
+
+  .btn-danger {
+    border-color: var(--err);
+    color: var(--err);
+  }
+
   pre {
     background: #f3efe8;
     padding: 12px;
@@ -523,7 +755,9 @@
 
   @media (max-width: 560px) {
     .health-grid,
-    .maintenance-actions {
+    .maintenance-actions,
+    .danger-grid,
+    .danger-scope {
       grid-template-columns: 1fr;
     }
   }

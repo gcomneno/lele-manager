@@ -285,6 +285,44 @@ export interface VaultTransferSourceLesson {
   source_path: string
 }
 
+export type VaultDangerOperation = 'empty' | 'reset' | 'delete' | 'merge_delete_source'
+
+export interface VaultDangerPreview {
+  plan_digest: string
+  operation: VaultDangerOperation
+  vault_id: string
+  vault_name: string
+  vault_path: string
+  active: boolean
+  approved_count: number
+  filesystem_entry_count: number
+  candidate_state_present: boolean
+  duplicate_decision_count: number
+  confirmation_text: string
+  deletes: string[]
+  keeps: string[]
+  destination_vault_id: string | null
+  destination_name: string | null
+  destination_path: string | null
+  merge_verified: boolean
+}
+
+export interface VaultDangerResult {
+  preview: VaultDangerPreview
+  backup_path: string | null
+  canonical_deleted: number
+  canonical_complete: boolean
+  canonical_error: string | null
+  editorial_cleared: boolean | null
+  editorial_error: string | null
+  derived_cleared: boolean | null
+  derived_error: string | null
+  vault_directory_deleted: boolean | null
+  registry_removed: boolean | null
+  registry_error: string | null
+  partial: boolean
+}
+
 export interface LessonVaultWrite {
   text: string
   topic: string
@@ -729,6 +767,25 @@ export const api = {
 
   vaultTransferSourceLessons: (id: string) =>
     request<VaultTransferSourceLesson[]>(`/vault-transfers/sources/${encodeURIComponent(id)}/lessons`),
+
+  previewVaultDanger: (body: {
+    vault_id: string
+    operation: VaultDangerOperation
+    destination_vault_id?: string | null
+  }) => request<VaultDangerPreview>('/vault-danger/preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }),
+
+  executeVaultDanger: (body: {
+    vault_id: string
+    operation: VaultDangerOperation
+    destination_vault_id?: string | null
+    plan_digest: string
+    confirmation: string
+    backup_before: boolean
+  }) => request<VaultDangerResult>('/vault-danger/execute', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }),
 
   createVault: (name: string, path: string) => request<ManagedVault>('/vaults/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

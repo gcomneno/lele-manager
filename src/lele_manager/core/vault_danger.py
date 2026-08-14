@@ -24,9 +24,8 @@ from lele_manager.core.vault_snapshot import (
     SnapshotPlanStaleError,
     SnapshotTargetError,
     delete_canonical_file,
-    delete_scoped_state_file,
+    invalidate_scoped_derived_artifact,
     read_canonical_markdown_files,
-    read_scoped_state_file,
     verify_canonical_file,
 )
 
@@ -112,6 +111,58 @@ class VaultDangerResult:
 
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _assert_safe_scoped_state(path: Path, label: str) -> Path:
+    """Validate one fixed root/vaults/id/file path without creating state."""
+    try:
+        root = path.parents[2]
+    except IndexError as exc:
+        raise VaultDangerTargetError(f"{label} managed path is malformed") from exc
+    try:
+        root_node = root.lstat()
+    except FileNotFoundError:
+        return path
+    except OSError as exc:
+        raise VaultDangerTargetError(f"{label} could not be safely inspected") from exc
+    if stat.S_ISLNK(root_node.st_mode) or not stat.S_ISDIR(root_node.st_mode):
+        raise VaultDangerTargetError(f"{label} managed root is unsafe")
+    current = root
+    for part in path.relative_to(root).parts[:-1]:
+        current = current / part
+        try:
+            node = current.lstat()
+        except FileNotFoundError:
+            return path
+        except OSError as exc:
+            raise VaultDangerTargetError(f"{label} could not be safely inspected") from exc
+        if stat.S_ISLNK(node.st_mode) or not stat.S_ISDIR(node.st_mode):
+            raise VaultDangerTargetError(f"{label} managed directory is unsafe")
+    try:
+        node = path.lstat()
+    except FileNotFoundError:
+        return path
+    except OSError as exc:
+        raise VaultDangerTargetError(f"{label} could not be safely inspected") from exc
+    if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode):
+        raise VaultDangerTargetError(f"{label} is unsafe")
+    return path
+
+
+def _read_scoped_state_file(path: Path, label: str) -> bytes | None:
+    path = _assert_safe_scoped_state(path, label)
+    try:
+        node = path.lstat()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise VaultDangerTargetError(f"{label} could not be safely inspected") from exc
+    if node.st_size > 32 * 1024 * 1024:
+        raise VaultDangerTargetError(f"{label} exceeds size limits")
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise VaultDangerTargetError(f"{label} could not be safely read") from exc
 
 
 def _context_value(context: ActiveVaultContext) -> dict[str, str]:
@@ -278,7 +329,7 @@ def preview_vault_danger(
         tree_entries = _scan_managed_tree(target.vault_dir)
 
     candidate_state = (
-        read_scoped_state_file(target.candidates_path, "candidate state")
+        _read_scoped_state_file(target.candidates_path, "candidate state")
         if operation in ("reset", "delete", "merge_delete_source")
         else None
     )
@@ -417,7 +468,7 @@ def _remove_empty_directories(root: Path, tree_entries: tuple[str, ...]) -> None
 def _clear_editorial(context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> tuple[bool, str | None]:
     errors: list[str] = []
     try:
-        delete_scoped_state_file(context.candidates_path, "candidate state")
+        invalidate_scoped_derived_artifact(context.candidates_path, "candidate state")
     except SnapshotTargetError as exc:
         errors.append(str(exc))
     try:
@@ -438,7 +489,7 @@ def _clear_derived(
         (context.topic_model_path, "topic model"),
     ):
         try:
-            delete_scoped_state_file(path, label)
+            invalidate_scoped_derived_artifact(path, label)
         except SnapshotTargetError as exc:
             errors.append(str(exc))
     try:

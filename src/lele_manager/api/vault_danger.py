@@ -10,10 +10,13 @@ from lele_manager.core.duplicate_decisions import (
     DuplicateDecisionStore,
     DuplicateDecisionStoreError,
 )
-from lele_manager.core.paths import data_dir, duplicate_decisions_path
+from lele_manager.core.paths import (
+    DEFAULT_DUPLICATE_DECISIONS_FILENAME,
+    data_dir,
+    resolved_data_dir,
+)
 from lele_manager.core.vault import import_vault_to_jsonl
 from lele_manager.core.vault_danger import (
-    DangerOperation,
     VaultDangerBackupError,
     VaultDangerConfirmationError,
     VaultDangerError,
@@ -170,7 +173,10 @@ def _destination(body: VaultDangerPreviewRequest) -> ActiveVaultContext | None:
 
 
 def _decisions() -> DuplicateDecisionStore:
-    return DuplicateDecisionStore(duplicate_decisions_path())
+    # Preview stays side-effect free: resolving the data root must not mkdir.
+    return DuplicateDecisionStore(
+        resolved_data_dir() / DEFAULT_DUPLICATE_DECISIONS_FILENAME
+    )
 
 
 def _invalidate_cache(request: Request, context: ActiveVaultContext) -> None:

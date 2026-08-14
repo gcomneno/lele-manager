@@ -406,3 +406,16 @@ Transfers never copy candidate/editorial staging or duplicate-review decisions.
 The hardened canonical filesystem boundary is shared with snapshot work from
 #218. Future #194 is reserved for separately confirmed destructive whole-Vault
 Danger Zone workflows; this transfer feature never deletes a Vault.
+
+## System Danger Zone
+
+System contains a visually separate **Danger zone** for destructive operations on one explicitly selected registered Vault. Every operation is preview-first: the preview shows the Vault display name, resolved path, approved-lesson count, affected scoped state, what will be deleted, what will remain, and the exact typed confirmation phrase. Changing the target, operation, relevant managed state, registry context, or merge destination makes the old plan stale.
+
+- **Empty Vault** deletes approved canonical Markdown and then reconciles derived projection/search state. Registration, the Vault directory, candidate staging, and duplicate decisions remain.
+- **Reset Vault completely** deletes canonical Markdown, candidate staging, Vault-scoped duplicate decisions, projection, and topic-model state, while preserving the registration and directory.
+- **Delete Vault from disk** is allowed only for an inactive Vault. It refuses symlinks, special nodes, and non-Markdown regular files rather than deleting data LeLe Manager cannot prove it owns. After the managed directory is removed, scoped application state and the registry entry are removed separately and partial failures are reported.
+- **Merge and delete source** is a separate destructive operation after #193. It is enabled only when every source lesson can be re-proved in the explicit destination with the same stable ID and byte-for-byte identical canonical Markdown. No session receipt or semantic fingerprint can authorize source deletion.
+
+The optional **Create snapshot backup before continuing** reuses the maintained Vault snapshot format. If selected, the snapshot must be created and persisted successfully before the first destructive canonical mutation; backup failure blocks deletion. Snapshot backup covers managed canonical Markdown plus scoped candidate and duplicate-review state, not arbitrary foreign files.
+
+Canonical and derived outcomes are reported independently. A partial canonical deletion triggers reconciliation to the actual remaining canonical state where possible; a derived cleanup failure never rewrites the reported canonical outcome. No danger-zone action switches the active Vault or targets another registered Vault implicitly.

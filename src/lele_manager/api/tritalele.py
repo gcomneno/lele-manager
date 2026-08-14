@@ -819,3 +819,13 @@ def approve_candidate(
     except CandidateApprovalError as error:
         _raise_approval_error(error)
     return _approval_response(result)
+
+# `server.py` historically imports this module's `router` as the application
+# extension router. Keep the versioned TritaLeLe paths intact while aggregating
+# the independent System danger-zone boundary without coupling it to server.py.
+from lele_manager.api.vault_danger import router as vault_danger_router
+
+_application_router = APIRouter()
+_application_router.include_router(router)
+_application_router.include_router(vault_danger_router)
+router = _application_router
