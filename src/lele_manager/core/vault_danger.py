@@ -347,6 +347,8 @@ def preview_vault_danger(
         _verify_merged_source(canonical, destination_canonical)
         merge_verified = True
 
+    deletes: tuple[str, ...]
+    keeps: tuple[str, ...]
     if operation == "empty":
         deletes = ("all approved canonical Markdown lessons", "target Vault derived projection/model refreshed")
         keeps = ("Vault registration", "Vault directory", "candidate staging", "duplicate decisions")
