@@ -228,6 +228,63 @@ export interface VaultRestoreResponse {
   preview: VaultRestorePreview
 }
 
+export type VaultTransferOperation = 'merge' | 'copy' | 'move'
+export type VaultTransferResolution = 'transfer' | 'keep_destination' | 'skip'
+export type VaultTransferClassification = 'new' | 'identical' | 'already_present' | 'same_id' | 'path_conflict' | 'likely_duplicate'
+
+export interface VaultTransferSelection {
+  lesson_id: string
+  resolution?: VaultTransferResolution | null
+}
+
+export interface VaultTransferItemPreview {
+  lesson_id: string
+  source_path: string
+  source_sha256: string
+  destination_path: string
+  destination_sha256: string | null
+  classification: VaultTransferClassification
+  resolution: VaultTransferResolution | null
+  duplicate_lesson_ids: string[]
+}
+
+export interface VaultTransferPreview {
+  plan_digest: string
+  operation: VaultTransferOperation
+  source_vault_id: string
+  source_name: string
+  source_path: string
+  destination_vault_id: string
+  destination_name: string
+  destination_path: string
+  items: VaultTransferItemPreview[]
+}
+
+export interface VaultTransferResult {
+  lesson_id: string
+  source_path: string
+  destination_path: string
+  outcome: string
+  destination_canonical: string
+  destination_derived: string
+  source_canonical: string
+  source_derived: string
+}
+
+export interface VaultTransferResponse {
+  preview: VaultTransferPreview
+  items: VaultTransferResult[]
+  destination_derived_reconciled: boolean | null
+  destination_derived_error: string | null
+  source_derived_reconciled: boolean | null
+  source_derived_error: string | null
+}
+
+export interface VaultTransferSourceLesson {
+  lesson_id: string
+  source_path: string
+}
+
 export interface LessonVaultWrite {
   text: string
   topic: string
@@ -650,6 +707,28 @@ export const api = {
       headers: { 'Content-Type': 'application/zip' },
       body: artifact,
     }),
+
+  previewVaultTransfer: (body: {
+    source_vault_id: string
+    destination_vault_id: string
+    operation: VaultTransferOperation
+    selections: VaultTransferSelection[]
+  }) => request<VaultTransferPreview>('/vault-transfers/preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }),
+
+  executeVaultTransfer: (body: {
+    source_vault_id: string
+    destination_vault_id: string
+    operation: VaultTransferOperation
+    selections: VaultTransferSelection[]
+    plan_digest: string
+  }) => request<VaultTransferResponse>('/vault-transfers/execute', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }),
+
+  vaultTransferSourceLessons: (id: string) =>
+    request<VaultTransferSourceLesson[]>(`/vault-transfers/sources/${encodeURIComponent(id)}/lessons`),
 
   createVault: (name: string, path: string) => request<ManagedVault>('/vaults/create', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

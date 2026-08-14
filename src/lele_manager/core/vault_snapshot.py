@@ -185,8 +185,8 @@ def _json_load(raw: bytes, label: str) -> Any:
         raise SnapshotValidationError(f"{label} is not valid JSON") from exc
 
 
-def _relative_markdown_files(vault_dir: Path) -> dict[str, bytes]:
-    """Return the complete managed Markdown namespace without following links.
+def read_canonical_markdown_files(vault_dir: Path) -> dict[str, bytes]:
+    """Return the maintained canonical Markdown namespace without following links.
 
     The maintained Vault importer and tree both recurse over every ``*.md``
     file below the Vault root.  Consequently every such regular file is
@@ -382,7 +382,7 @@ def _validate_decisions(value: Any) -> tuple[dict[str, str], ...]:
 
 def create_snapshot(context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> bytes:
     """Create a portable snapshot without changing registry selection or state."""
-    canonical = _relative_markdown_files(context.vault_dir)
+    canonical = read_canonical_markdown_files(context.vault_dir)
     _validate_markdown_payload(canonical)
     stored_candidates = _read_regular_state_file(context.candidates_path, "candidate state")
     if stored_candidates is not None:
@@ -557,7 +557,7 @@ def validate_snapshot(raw: bytes) -> ValidatedSnapshot:
 
 
 def _target_state_digest(context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> str:
-    canonical = _relative_markdown_files(context.vault_dir)
+    canonical = read_canonical_markdown_files(context.vault_dir)
     candidates = _read_regular_state_file(context.candidates_path, "candidate state") or b""
     state = {
         "canonical": [{"path": path, "sha256": _digest(data)} for path, data in canonical.items()],
@@ -583,7 +583,7 @@ def _preview_digest(validated: ValidatedSnapshot, context: ActiveVaultContext, t
 
 
 def preview_restore(validated: ValidatedSnapshot, context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> RestorePreview:
-    current = _relative_markdown_files(context.vault_dir)
+    current = read_canonical_markdown_files(context.vault_dir)
     with zipfile.ZipFile(io.BytesIO(validated.raw)) as archive:
         incoming = {item.path: archive.read(f"{CANONICAL_PREFIX}{item.path}") for item in validated.canonical}
     additions = tuple(sorted(set(incoming) - set(current)))
@@ -615,6 +615,71 @@ def _assert_safe_destination(root: Path, rel: str) -> Path:
     except ValueError as exc:
         raise SnapshotTargetError("target destination escapes registered Vault") from exc
     return target
+
+
+def validate_new_canonical_destination(root: Path, relative_path: str) -> Path:
+    """Validate a new canonical target without creating files or directories.
+
+    Cross-Vault workflows use this narrow boundary instead of trusting a
+    source-relative path as a filesystem path.  The caller must still use
+    :func:`write_new_canonical_file` at its mutation boundary because another
+    process can occupy a name after this validation.
+    """
+    target = _assert_safe_destination(root, relative_path)
+    try:
+        target.lstat()
+    except FileNotFoundError:
+        return target
+    except OSError as exc:
+        raise SnapshotTargetError("target Vault destination could not be safely inspected") from exc
+    raise SnapshotTargetError("target Vault canonical destination is occupied")
+
+
+def write_new_canonical_file(root: Path, relative_path: str, data: bytes) -> Path:
+    """Atomically create, never replace, one safe canonical Markdown file."""
+    target = validate_new_canonical_destination(root, relative_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target = validate_new_canonical_destination(root, relative_path)
+    fd, temporary_name = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        # link(2) is deliberately used instead of replace(2): a late
+        # collision is a controlled failure, never an implicit overwrite.
+        target = validate_new_canonical_destination(root, relative_path)
+        os.link(temporary_name, target)
+        return target
+    except FileExistsError as exc:
+        raise SnapshotTargetError("target Vault canonical destination is occupied") from exc
+    except OSError as exc:
+        raise SnapshotTargetError("target Vault canonical destination could not be written") from exc
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
+
+
+def verify_canonical_file(root: Path, relative_path: str, expected: bytes) -> Path:
+    """Verify one canonical regular file still contains the exact expected bytes."""
+    target = _assert_safe_destination(root, relative_path)
+    try:
+        node = target.lstat()
+    except OSError as exc:
+        raise SnapshotTargetError("Vault canonical lesson is unavailable") from exc
+    if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode):
+        raise SnapshotTargetError("Vault canonical lesson is unsafe")
+    if _read_bounded_regular_file(target, node, "Vault Markdown") != expected:
+        raise SnapshotPlanStaleError("canonical lesson changed after preview")
+    return target
+
+
+def delete_canonical_file(root: Path, relative_path: str, expected: bytes) -> None:
+    """Delete one exact, previously verified canonical source lesson."""
+    target = verify_canonical_file(root, relative_path, expected)
+    try:
+        target.unlink()
+    except OSError as exc:
+        raise SnapshotTargetError("source Vault canonical lesson could not be deleted") from exc
 
 
 def _atomic_write(path: Path, data: bytes, *, managed_root: Path | None = None, relative_path: str | None = None) -> None:
@@ -666,7 +731,7 @@ def _assert_restore_scoped_boundaries(context: ActiveVaultContext) -> None:
 
 
 def _restore_apply(validated: ValidatedSnapshot, context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> None:
-    current = _relative_markdown_files(context.vault_dir)
+    current = read_canonical_markdown_files(context.vault_dir)
     with zipfile.ZipFile(io.BytesIO(validated.raw)) as archive:
         incoming = {item.path: archive.read(f"{CANONICAL_PREFIX}{item.path}") for item in validated.canonical}
     changed = {path for path in set(current) | set(incoming) if current.get(path) != incoming.get(path)}
