@@ -318,6 +318,7 @@ export interface VaultDangerResult {
   derived_cleared: boolean | null
   derived_error: string | null
   vault_directory_deleted: boolean | null
+  vault_directory_error: string | null
   registry_removed: boolean | null
   registry_error: string | null
   partial: boolean

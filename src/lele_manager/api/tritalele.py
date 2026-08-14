@@ -64,6 +64,7 @@ from lele_manager.application.raw_source_ingestion import (
     RawSourceIngestionResult,
     RawSourceIngestionService,
 )
+from lele_manager.api.vault_danger import router as vault_danger_router
 from lele_manager.core.vault_registry import ActiveVaultContext, active_vault_context
 
 
@@ -823,8 +824,6 @@ def approve_candidate(
 # `server.py` historically imports this module's `router` as the application
 # extension router. Keep the versioned TritaLeLe paths intact while aggregating
 # the independent System danger-zone boundary without coupling it to server.py.
-from lele_manager.api.vault_danger import router as vault_danger_router
-
 _application_router = APIRouter()
 _application_router.include_router(router)
 _application_router.include_router(vault_danger_router)

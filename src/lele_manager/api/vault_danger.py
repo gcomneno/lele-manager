@@ -103,6 +103,7 @@ class VaultDangerResultResponse(BaseModel):
     derived_cleared: bool | None = None
     derived_error: str | None = None
     vault_directory_deleted: bool | None = None
+    vault_directory_error: str | None = None
     registry_removed: bool | None = None
     registry_error: str | None = None
     partial: bool
@@ -142,6 +143,7 @@ def _result_response(result: VaultDangerResult) -> VaultDangerResultResponse:
         derived_cleared=result.derived_cleared,
         derived_error=result.derived_error,
         vault_directory_deleted=result.vault_directory_deleted,
+        vault_directory_error=result.vault_directory_error,
         registry_removed=result.registry_removed,
         registry_error=result.registry_error,
         partial=result.partial,

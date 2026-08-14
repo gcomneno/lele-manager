@@ -91,6 +91,7 @@ class VaultDangerResult:
     derived_cleared: bool | None
     derived_error: str | None
     vault_directory_deleted: bool | None
+    vault_directory_error: str | None
     registry_removed: bool | None
     registry_error: str | None
 
@@ -321,7 +322,7 @@ def preview_vault_danger(
     if destination is not None and destination.vault_id == target.vault_id:
         raise VaultDangerError("source and destination Vaults must be distinct")
     if operation in ("delete", "merge_delete_source") and target.vault_id == active_vault_id:
-        raise VaultDangerError("activate another Vault before deleting this Vault from disk")
+        raise VaultDangerTargetError("activate another Vault before deleting this Vault from disk")
 
     canonical = read_canonical_markdown_files(target.vault_dir)
     tree_entries: tuple[str, ...] = ()
@@ -441,7 +442,12 @@ def _verify_all_canonical(root: Path, canonical: dict[str, bytes]) -> None:
 
 
 def _delete_canonical_set(root: Path, canonical: dict[str, bytes]) -> tuple[int, str | None]:
-    _verify_all_canonical(root, canonical)
+    try:
+        _verify_all_canonical(root, canonical)
+    except (SnapshotPlanStaleError, SnapshotTargetError) as exc:
+        raise VaultDangerPlanStaleError(
+            "canonical state changed after destructive preflight"
+        ) from exc
     deleted = 0
     for relative_path, expected in sorted(canonical.items()):
         try:
@@ -564,6 +570,7 @@ def execute_vault_danger(
     derived_cleared: bool | None = None
     derived_error: str | None = None
     directory_deleted: bool | None = None
+    directory_error: str | None = None
     registry_removed: bool | None = None
     registry_error: str | None = None
 
@@ -585,6 +592,7 @@ def execute_vault_danger(
             None,
             derived_cleared,
             derived_error,
+            None,
             None,
             None,
             None,
@@ -617,6 +625,7 @@ def execute_vault_danger(
             None,
             None,
             None,
+            None,
         )
 
     tree_entries = _scan_managed_tree(final_target.vault_dir)
@@ -626,7 +635,7 @@ def execute_vault_danger(
             directory_deleted = True
         except VaultDangerTargetError as exc:
             directory_deleted = False
-            canonical_error = str(exc)
+            directory_error = str(exc)
     else:
         directory_deleted = False
 
@@ -661,6 +670,7 @@ def execute_vault_danger(
         derived_cleared,
         derived_error,
         directory_deleted,
+        directory_error,
         registry_removed,
         registry_error,
     )
