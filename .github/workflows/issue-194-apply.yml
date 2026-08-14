@@ -18,6 +18,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: feat/issue-194-vault-danger-zone
+      - name: Diagnose frontend anchors
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('frontend/src/routes/Ops.svelte').read_text(encoding='utf-8')
+          anchors = {
+              'dangerRequest': "  function dangerRequest() {\n",
+              'listItem': '<li>{item}</li>',
+              'decisionLines': "          · {formatMessage($messages.opsDangerEntriesCount, { count: dangerPreview.filesystem_entry_count })}\n          · {formatMessage($messages.opsDangerDecisionsCount, { count: dangerPreview.duplicate_decision_count })}\n",
+          }
+          for name, anchor in anchors.items():
+              print(name, text.count(anchor))
+          PY
       - name: Apply guarded transformations
         run: python .automation/issue-194-apply.py
       - name: Commit transformed sources
