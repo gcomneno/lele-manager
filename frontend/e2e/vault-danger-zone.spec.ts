@@ -35,6 +35,7 @@ test('System Danger zone previews and empties an explicit Vault without changing
     await expect(danger).toContainText('1 approved lessons')
     const execute = danger.getByRole('button', { name: 'Execute destructive operation' })
     await expect(execute).toBeDisabled()
+    await danger.getByLabel('Create snapshot backup before continuing').uncheck()
 
     await danger.getByLabel(/Type exactly/).fill('EMPTY Issue 194 Empty')
     await expect(execute).toBeEnabled()
@@ -79,6 +80,7 @@ test('merge-and-delete source requires exact destination proof and removes only 
     await danger.getByRole('button', { name: 'Validate and preview' }).click()
 
     await expect(danger.getByText(/Every source lesson is already present/)).toBeVisible()
+    await danger.getByLabel('Create snapshot backup before continuing').uncheck()
     await danger.getByLabel(/Type exactly/).fill('DELETE Issue 194 Source')
     await danger.getByRole('button', { name: 'Execute destructive operation' }).click()
     await expect(danger.getByText(/Destructive operation completed\./)).toBeVisible()

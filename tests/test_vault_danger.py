@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import lele_manager.core.vault_danger as danger_module
 from lele_manager.core.duplicate_decisions import DuplicateDecisionStore
 from lele_manager.core.vault_danger import (
     VaultDangerBackupError,
@@ -333,3 +334,81 @@ def test_delete_removes_only_target_and_reports_registry_phase(tmp_path: Path) -
     assert removed == [B_ID]
     assert not target.vault_dir.exists()
     assert other_path.exists()
+
+
+def test_backup_race_stales_before_canonical_deletion(tmp_path: Path) -> None:
+    target = _context(tmp_path, B_ID, "B")
+    path = _write(target, "topic/one", "previewed")
+    decisions = _decisions(tmp_path)
+    preview = preview_vault_danger(
+        operation="empty", target=target, active_vault_id=A_ID, decisions=decisions
+    )
+
+    def backup_then_change(_context: ActiveVaultContext) -> str:
+        path.write_bytes(_lesson("topic/one", "changed during backup"))
+        return "/backup.snapshot.zip"
+
+    with pytest.raises(VaultDangerPlanStaleError):
+        _execute(
+            preview=preview,
+            target=target,
+            decisions=decisions,
+            backup_before=True,
+            create_backup=backup_then_change,
+        )
+
+    assert path.read_bytes() == _lesson("topic/one", "changed during backup")
+
+
+def test_reset_preserves_editorial_state_changed_after_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = _context(tmp_path, B_ID, "B")
+    _write(target, "topic/one")
+    target.candidates_path.parent.mkdir(parents=True)
+    target.candidates_path.write_text("old")
+    decisions = _decisions(tmp_path)
+    preview = preview_vault_danger(
+        operation="reset", target=target, active_vault_id=A_ID, decisions=decisions
+    )
+    original = danger_module._delete_canonical_set
+
+    def delete_then_change(root: Path, canonical: dict[str, bytes]) -> tuple[int, str | None]:
+        result = original(root, canonical)
+        target.candidates_path.write_text("newer")
+        return result
+
+    monkeypatch.setattr(danger_module, "_delete_canonical_set", delete_then_change)
+    result = _execute(preview=preview, target=target, decisions=decisions)
+
+    assert result.canonical_complete is True
+    assert result.editorial_cleared is False
+    assert "newer state was preserved" in (result.editorial_error or "")
+    assert target.candidates_path.read_text() == "newer"
+
+
+def test_late_foreign_file_after_canonical_delete_is_truthful_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = _context(tmp_path, B_ID, "B")
+    _write(target, "topic/one")
+    decisions = _decisions(tmp_path)
+    preview = preview_vault_danger(
+        operation="delete", target=target, active_vault_id=A_ID, decisions=decisions
+    )
+    original = danger_module._delete_canonical_set
+    foreign = target.vault_dir / "arrived-late.txt"
+
+    def delete_then_add_foreign(root: Path, canonical: dict[str, bytes]) -> tuple[int, str | None]:
+        result = original(root, canonical)
+        foreign.write_text("preserve me")
+        return result
+
+    monkeypatch.setattr(danger_module, "_delete_canonical_set", delete_then_add_foreign)
+    result = _execute(preview=preview, target=target, decisions=decisions)
+
+    assert result.canonical_complete is True
+    assert result.vault_directory_deleted is False
+    assert "non-Markdown file" in (result.vault_directory_error or "")
+    assert result.registry_removed is None
+    assert foreign.read_text() == "preserve me"

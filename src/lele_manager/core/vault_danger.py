@@ -67,9 +67,12 @@ class VaultDangerPreview:
     vault_path: str
     active: bool
     approved_count: int
+    canonical_digest: str
     filesystem_entry_count: int
     candidate_state_present: bool
+    candidate_sha256: str | None
     duplicate_decision_count: int
+    duplicate_decisions_digest: str | None
     confirmation_text: str
     deletes: tuple[str, ...]
     keeps: tuple[str, ...]
@@ -185,6 +188,14 @@ def _canonical_state(files: dict[str, bytes]) -> list[dict[str, str]]:
     ]
 
 
+def _canonical_digest(files: dict[str, bytes]) -> str:
+    return _sha((canonical_json(_canonical_state(files)) + "\n").encode("utf-8"))
+
+
+def _decisions_digest(entries: list[dict[str, str]]) -> str:
+    return _sha((canonical_json(entries) + "\n").encode("utf-8"))
+
+
 def _confirmation(operation: DangerOperation, name: str) -> str:
     verb = "EMPTY" if operation == "empty" else "RESET" if operation == "reset" else "DELETE"
     return f"{verb} {name}"
@@ -236,8 +247,8 @@ def _scan_managed_tree(root: Path) -> tuple[str, ...]:
     return tuple(sorted(entries))
 
 
-def _lesson_ids(files: dict[str, bytes]) -> dict[str, bytes]:
-    result: dict[str, bytes] = {}
+def _lesson_ids(files: dict[str, bytes]) -> dict[str, tuple[str, bytes]]:
+    result: dict[str, tuple[str, bytes]] = {}
     for relative_path, raw in files.items():
         try:
             frontmatter, _body = parse_markdown_with_frontmatter(raw.decode("utf-8"))
@@ -258,7 +269,7 @@ def _lesson_ids(files: dict[str, bytes]) -> dict[str, bytes]:
             raise VaultDangerMergeVerificationError(
                 "canonical lesson stable ID is ambiguous"
             )
-        result[lesson_id] = raw
+        result[lesson_id] = (relative_path, raw)
     return result
 
 
@@ -267,8 +278,9 @@ def _verify_merged_source(source: dict[str, bytes], destination: dict[str, bytes
     destination_ids = _lesson_ids(destination)
     missing = [
         lesson_id
-        for lesson_id, raw in sorted(source_ids.items())
-        if destination_ids.get(lesson_id) != raw
+        for lesson_id, (_source_path, raw) in sorted(source_ids.items())
+        if destination_ids.get(lesson_id) is None
+        or destination_ids[lesson_id][1] != raw
     ]
     if missing:
         raise VaultDangerMergeVerificationError(
@@ -350,25 +362,25 @@ def preview_vault_danger(
     deletes: tuple[str, ...]
     keeps: tuple[str, ...]
     if operation == "empty":
-        deletes = ("all approved canonical Markdown lessons", "target Vault derived projection/model refreshed")
-        keeps = ("Vault registration", "Vault directory", "candidate staging", "duplicate decisions")
+        deletes = ("canonical_markdown", "derived_refresh")
+        keeps = ("vault_registration", "vault_directory", "candidate_staging", "duplicate_decisions")
     elif operation == "reset":
         deletes = (
-            "all approved canonical Markdown lessons",
-            "candidate staging",
-            "Vault-scoped duplicate decisions",
-            "Vault-scoped projection/model state",
+            "canonical_markdown",
+            "candidate_staging",
+            "duplicate_decisions",
+            "derived_state",
         )
-        keeps = ("Vault registration", "Vault directory", "global application configuration")
+        keeps = ("vault_registration", "vault_directory", "global_configuration")
     else:
         deletes = (
-            "the managed Vault directory after proving it contains only canonical Markdown",
-            "candidate staging",
-            "Vault-scoped duplicate decisions",
-            "Vault-scoped projection/model state",
-            "Vault registry entry",
+            "vault_directory",
+            "candidate_staging",
+            "duplicate_decisions",
+            "derived_state",
+            "vault_registration",
         )
-        keeps = ("other registered Vaults", "global application configuration")
+        keeps = ("other_vaults", "global_configuration")
 
     plan_digest = _plan_digest(
         operation=operation,
@@ -389,9 +401,16 @@ def preview_vault_danger(
         vault_path=str(target.vault_dir),
         active=target.vault_id == active_vault_id,
         approved_count=len(canonical),
+        canonical_digest=_canonical_digest(canonical),
         filesystem_entry_count=len(tree_entries),
         candidate_state_present=candidate_state is not None,
+        candidate_sha256=_sha(candidate_state) if candidate_state is not None else None,
         duplicate_decision_count=len(decision_entries),
+        duplicate_decisions_digest=(
+            _decisions_digest(decision_entries)
+            if operation in ("reset", "delete", "merge_delete_source")
+            else None
+        ),
         confirmation_text=_confirmation(operation, target.display_name),
         deletes=deletes,
         keeps=keeps,
@@ -460,6 +479,42 @@ def _delete_canonical_set(root: Path, canonical: dict[str, bytes]) -> tuple[int,
     return deleted, None
 
 
+def _delete_merged_source_set(
+    source_root: Path,
+    canonical: dict[str, bytes],
+    destination: ActiveVaultContext,
+) -> tuple[int, str | None]:
+    try:
+        _verify_all_canonical(source_root, canonical)
+        destination_entries = _lesson_ids(read_canonical_markdown_files(destination.vault_dir))
+        source_entries = _lesson_ids(canonical)
+    except (
+        SnapshotPlanStaleError,
+        SnapshotTargetError,
+        VaultDangerMergeVerificationError,
+    ) as exc:
+        raise VaultDangerPlanStaleError(
+            "source or verified merge destination changed after destructive preflight"
+        ) from exc
+
+    deleted = 0
+    for lesson_id, (source_path, raw) in sorted(source_entries.items()):
+        destination_entry = destination_entries.get(lesson_id)
+        if destination_entry is None or destination_entry[1] != raw:
+            return deleted, "verified merge destination changed before source deletion"
+        destination_path, _destination_raw = destination_entry
+        try:
+            verify_canonical_file(destination.vault_dir, destination_path, raw)
+        except (SnapshotPlanStaleError, SnapshotTargetError):
+            return deleted, "verified merge destination changed before source deletion"
+        try:
+            delete_canonical_file(source_root, source_path, raw)
+        except (SnapshotPlanStaleError, SnapshotTargetError) as exc:
+            return deleted, str(exc)
+        deleted += 1
+    return deleted, None
+
+
 def _remove_empty_directories(root: Path, tree_entries: tuple[str, ...]) -> None:
     directories = [entry[4:] for entry in tree_entries if entry.startswith("dir:")]
     for relative_path in sorted(directories, key=lambda value: (value.count("/"), value), reverse=True):
@@ -473,7 +528,17 @@ def _remove_empty_directories(root: Path, tree_entries: tuple[str, ...]) -> None
         raise VaultDangerTargetError("Vault directory could not be removed") from exc
 
 
-def _clear_editorial(context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> tuple[bool, str | None]:
+def _clear_editorial(
+    context: ActiveVaultContext,
+    decisions: DuplicateDecisionStore,
+    *,
+    expected_candidate_state: bytes | None,
+    expected_decisions: list[dict[str, str]],
+) -> tuple[bool, str | None]:
+    current_candidate_state = _read_scoped_state_file(context.candidates_path, "candidate state")
+    current_decisions = decisions.export_scope(context.duplicate_decision_scope)
+    if current_candidate_state != expected_candidate_state or current_decisions != expected_decisions:
+        return False, "editorial state changed after preview; newer state was preserved"
     errors: list[str] = []
     try:
         invalidate_scoped_derived_artifact(context.candidates_path, "candidate state")
@@ -563,8 +628,55 @@ def execute_vault_danger(
                 raise
             raise VaultDangerBackupError("requested backup failed; destructive operation was not started") from exc
 
+    try:
+        post_backup_preview = preview_vault_danger(
+            operation=operation,
+            target=final_target,
+            active_vault_id=final_active_id,
+            decisions=decisions,
+            destination=final_destination,
+        )
+    except (VaultDangerError, SnapshotTargetError) as exc:
+        raise VaultDangerPlanStaleError(
+            "danger-zone state changed before destructive mutation"
+        ) from exc
+    if post_backup_preview.plan_digest != current.plan_digest:
+        raise VaultDangerPlanStaleError(
+            "danger-zone state changed before destructive mutation"
+        )
+    final_preview = post_backup_preview
+
+    expected_candidate_state: bytes | None = None
+    expected_decisions: list[dict[str, str]] = []
+    if operation in ("reset", "delete", "merge_delete_source"):
+        expected_candidate_state = _read_scoped_state_file(
+            final_target.candidates_path, "candidate state"
+        )
+        expected_decisions = decisions.export_scope(final_target.duplicate_decision_scope)
+        if (
+            (_sha(expected_candidate_state) if expected_candidate_state is not None else None)
+            != final_preview.candidate_sha256
+            or _decisions_digest(expected_decisions)
+            != final_preview.duplicate_decisions_digest
+        ):
+            raise VaultDangerPlanStaleError(
+                "editorial state changed before destructive mutation"
+            )
+
     canonical = read_canonical_markdown_files(final_target.vault_dir)
-    canonical_deleted, canonical_error = _delete_canonical_set(final_target.vault_dir, canonical)
+    if _canonical_digest(canonical) != final_preview.canonical_digest:
+        raise VaultDangerPlanStaleError(
+            "canonical state changed before destructive mutation"
+        )
+    if operation == "merge_delete_source":
+        assert final_destination is not None
+        canonical_deleted, canonical_error = _delete_merged_source_set(
+            final_target.vault_dir, canonical, final_destination
+        )
+    else:
+        canonical_deleted, canonical_error = _delete_canonical_set(
+            final_target.vault_dir, canonical
+        )
     canonical_complete = canonical_error is None and canonical_deleted == len(canonical)
 
     editorial_cleared: bool | None = None
@@ -602,7 +714,12 @@ def execute_vault_danger(
 
     if operation == "reset":
         if canonical_complete:
-            editorial_cleared, editorial_error = _clear_editorial(final_target, decisions)
+            editorial_cleared, editorial_error = _clear_editorial(
+                final_target,
+                decisions,
+                expected_candidate_state=expected_candidate_state,
+                expected_decisions=expected_decisions,
+            )
             derived_cleared, derived_error = _clear_derived(
                 final_target,
                 invalidate_cache=invalidate_cache,
@@ -630,9 +747,9 @@ def execute_vault_danger(
             None,
         )
 
-    tree_entries = _scan_managed_tree(final_target.vault_dir)
     if canonical_complete:
         try:
+            tree_entries = _scan_managed_tree(final_target.vault_dir)
             _remove_empty_directories(final_target.vault_dir, tree_entries)
             directory_deleted = True
         except VaultDangerTargetError as exc:
@@ -642,7 +759,12 @@ def execute_vault_danger(
         directory_deleted = False
 
     if directory_deleted:
-        editorial_cleared, editorial_error = _clear_editorial(final_target, decisions)
+        editorial_cleared, editorial_error = _clear_editorial(
+                final_target,
+                decisions,
+                expected_candidate_state=expected_candidate_state,
+                expected_decisions=expected_decisions,
+            )
         derived_cleared, derived_error = _clear_derived(
             final_target,
             invalidate_cache=invalidate_cache,

@@ -151,7 +151,7 @@ def _result_response(result: VaultDangerResult) -> VaultDangerResultResponse:
 
 
 def _store() -> VaultRegistryStore:
-    return VaultRegistryStore()
+    return VaultRegistryStore(resolved_data_dir() / "vault-registry.json")
 
 
 def _context(vault_id: str) -> ActiveVaultContext:

@@ -271,6 +271,21 @@
     }
   }
 
+  function dangerScopeLabel(value: string) {
+    const labels: Record<string, string> = {
+      canonical_markdown: $messages.opsDangerScopeCanonical,
+      derived_refresh: $messages.opsDangerScopeDerivedRefresh,
+      candidate_staging: $messages.opsDangerScopeCandidates,
+      duplicate_decisions: $messages.opsDangerScopeDecisions,
+      derived_state: $messages.opsDangerScopeDerived,
+      vault_registration: $messages.opsDangerScopeRegistration,
+      vault_directory: $messages.opsDangerScopeDirectory,
+      global_configuration: $messages.opsDangerScopeGlobalConfig,
+      other_vaults: $messages.opsDangerScopeOtherVaults,
+    }
+    return labels[value] ?? value
+  }
+
   function dangerRequest() {
     return {
       vault_id: dangerVaultId,
@@ -511,15 +526,14 @@
         <p class="meta">
           {formatMessage($messages.opsDangerApprovedCount, { count: dangerPreview.approved_count })}
           · {formatMessage($messages.opsDangerEntriesCount, { count: dangerPreview.filesystem_entry_count })}
-          · {formatMessage($messages.opsDangerDecisionsCount, { count: dangerPreview.duplicate_decision_count })}
         </p>
         {#if dangerPreview.destination_name}
           <p>{$messages.opsDangerDestination}: <strong>{dangerPreview.destination_name}</strong> — <code>{dangerPreview.destination_path}</code></p>
         {/if}
         {#if dangerPreview.merge_verified}<p class="ok">{$messages.opsDangerMergeVerified}</p>{/if}
         <div class="danger-scope">
-          <div><strong>{$messages.opsDangerDeletes}</strong><ul>{#each dangerPreview.deletes as item}<li>{item}</li>{/each}</ul></div>
-          <div><strong>{$messages.opsDangerKeeps}</strong><ul>{#each dangerPreview.keeps as item}<li>{item}</li>{/each}</ul></div>
+          <div><strong>{$messages.opsDangerDeletes}</strong><ul>{#each dangerPreview.deletes as item}<li>{dangerScopeLabel(item)}</li>{/each}</ul></div>
+          <div><strong>{$messages.opsDangerKeeps}</strong><ul>{#each dangerPreview.keeps as item}<li>{dangerScopeLabel(item)}</li>{/each}</ul></div>
         </div>
         <label class="danger-backup"><input type="checkbox" bind:checked={dangerBackup} disabled={dangerBusy} /> {$messages.opsDangerBackup}</label>
         <p class="meta">{$messages.opsDangerBackupHelp}</p>
