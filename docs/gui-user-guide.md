@@ -364,3 +364,45 @@ unavailable, or rebuild the topic model.
 LeLe Manager remains a local FastAPI/Svelte web application. See
 [ADR 0002](adr/0002-gui-packaging.md) for the evaluated alternatives and
 consequences.
+
+## Vault-to-Vault Merge, Copy, and Move
+
+The Vault page supports explicit transfers between two different registered
+Vaults. The visible direction is **Source Vault name → Destination Vault name**;
+UUIDs and filesystem paths remain visible in the preview for inspection.
+
+**Merge** and **Copy** are non-destructive defaults: only the checked approved
+canonical lessons are considered and the source stays intact. **Move** is
+destructive per lesson and is visibly separated from those operations.
+
+Always validate and preview before execution. Preview can classify a lesson as
+New, Identical, Already present, Same ID, Path conflict, or Likely duplicate.
+Same-ID/path/duplicate conflicts are never overwritten automatically. Choose
+**Keep destination** or **Skip**, then validate/preview again: changing a
+resolution invalidates the old plan by design.
+
+Execution is stateless and rejects a stale plan if source, destination,
+operation, explicit selection, resolutions, registered context, or canonical
+Markdown changed after preview. Changing the destination in the GUI also clears
+the displayed preview, and late asynchronous preview responses are discarded.
+
+Move is destination-first. LeLe Manager creates a new destination canonical
+file without replacement, or proves that an existing lesson with the same
+stable ID has byte-for-byte identical canonical Markdown. It reverifies those
+exact destination bytes before deleting the corresponding source lesson. A
+material/duplicate fingerprint alone is never sufficient for source deletion.
+Destination failure leaves source untouched; source-delete failure leaves the
+successful destination in place.
+
+Canonical Markdown and derived state have separate outcomes. A canonical write
+can succeed while destination projection/model/cache reconciliation fails. The
+canonical success remains authoritative and is reported as partial success; for
+Move, exact verified destination canonical success may still allow source
+deletion because derived state is rebuildable. Destination derived state is not
+rebuilt for exact/no-op or skipped items, and source derived state is rebuilt
+only after an actual source deletion.
+
+Transfers never copy candidate/editorial staging or duplicate-review decisions.
+The hardened canonical filesystem boundary is shared with snapshot work from
+#218. Future #194 is reserved for separately confirmed destructive whole-Vault
+Danger Zone workflows; this transfer feature never deletes a Vault.

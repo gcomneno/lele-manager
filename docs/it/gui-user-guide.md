@@ -376,3 +376,50 @@ topic.
 
 LeLe Manager resta un’applicazione web locale FastAPI/Svelte. Vedere
 [l’ADR 0002](../adr/0002-gui-packaging.md) per alternative e conseguenze.
+
+## Accorpa, Copia e Sposta tra Vault
+
+La pagina Vault supporta trasferimenti espliciti tra due Vault registrati e
+distinti. La direzione visibile è **Nome Vault sorgente → Nome Vault
+destinazione**; UUID e percorsi filesystem restano disponibili nell’anteprima
+per l’ispezione.
+
+**Accorpa** e **Copia** sono le operazioni non distruttive: vengono considerate
+solo le lesson canoniche approvate selezionate esplicitamente e la sorgente
+rimane intatta. **Sposta** è distruttivo per singola lesson ed è presentato in
+modo distinto.
+
+Prima dell’esecuzione è sempre obbligatorio validare e mostrare l’anteprima. Una
+lesson può risultare Nuova, Identica, Già presente, Stesso ID, Conflitto di
+percorso o Possibile duplicato. I conflitti di ID/percorso/duplicato non vengono
+mai sovrascritti automaticamente. Scegli **Mantieni destinazione** o **Salta** e
+poi valida/mostra di nuovo l’anteprima: cambiare una risoluzione invalida il
+piano precedente.
+
+L’esecuzione è stateless e rifiuta un piano obsoleto se, dopo l’anteprima,
+cambiano sorgente, destinazione, operazione, selezione esplicita, risoluzioni,
+contesto registrato o Markdown canonico. Anche cambiare destinazione nella GUI
+cancella l’anteprima mostrata e le risposte asincrone obsolete vengono scartate.
+
+Sposta applica il contratto destination-first. LeLe Manager crea il nuovo file
+canonico di destinazione senza sostituzione oppure prova che una lesson già
+esistente con lo stesso stable ID abbia Markdown canonico identico byte per
+byte. Subito prima della cancellazione verifica nuovamente quei byte esatti. Un
+material/duplicate fingerprint da solo non autorizza mai la cancellazione della
+sorgente. Un fallimento della destinazione lascia la sorgente intatta; un
+fallimento della cancellazione sorgente lascia la destinazione riuscita.
+
+Markdown canonico e stato derivato hanno esiti separati. Una scrittura canonica
+può riuscire mentre fallisce la riconciliazione di proiezione/modello/cache della
+destinazione. Il successo canonico resta autoritativo ed è riportato come
+successo parziale; con Sposta, una destinazione canonica esatta e verificata può
+comunque consentire la cancellazione sorgente perché lo stato derivato è
+ricostruibile. Lo stato derivato della destinazione non viene ricostruito per
+no-op esatti o elementi saltati, mentre quello della sorgente viene
+riconciliato solo dopo una cancellazione canonica effettiva.
+
+Il trasferimento non copia mai staging candidati/editoriale né decisioni sui
+duplicati. Il boundary filesystem canonico hardened è condiviso con il lavoro
+snapshot #218. Il futuro #194 resta dedicato ai workflow Danger Zone distruttivi
+sull’intero Vault con conferma separata; questa funzione non elimina mai un
+Vault.

@@ -5,7 +5,7 @@ import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Annotated, Any, List, Literal, Mapping, Optional, cast
+from typing import Annotated, Any, Callable, List, Literal, Mapping, Optional, cast
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
@@ -88,6 +88,16 @@ from lele_manager.core.vault_snapshot import (
     prepare_scoped_mutation_path,
     preview_restore,
     validate_snapshot,
+)
+from lele_manager.core.vault_transfer import (
+    TransferPreview,
+    TransferResult,
+    VaultTransferConflictError,
+    VaultTransferError,
+    VaultTransferPlanStaleError,
+    execute_transfer,
+    list_transferable_lessons,
+    preview_transfer,
 )
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
 from lele_manager.ml.similarity import LessonSimilarityIndex
@@ -544,6 +554,80 @@ class VaultRestoreResponse(BaseModel):
     preview: VaultRestorePreviewResponse
 
 
+class VaultTransferSelection(BaseModel):
+    lesson_id: str = Field(min_length=1, max_length=512)
+    resolution: Literal["transfer", "keep_destination", "skip"] | None = None
+
+
+class VaultTransferRequest(BaseModel):
+    source_vault_id: str = Field(min_length=1, max_length=64)
+    destination_vault_id: str = Field(min_length=1, max_length=64)
+    operation: Literal["merge", "copy", "move"]
+    selections: List[VaultTransferSelection] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> "VaultTransferRequest":
+        if self.source_vault_id == self.destination_vault_id:
+            raise ValueError("source_vault_id and destination_vault_id must differ")
+        if any(not item.lesson_id.strip() for item in self.selections):
+            raise ValueError("selection lesson IDs must not be blank")
+        if len({item.lesson_id for item in self.selections}) != len(self.selections):
+            raise ValueError("selection lesson IDs must be unique")
+        return self
+
+
+class VaultTransferExecuteRequest(VaultTransferRequest):
+    plan_digest: str = Field(min_length=64, max_length=64)
+
+
+class VaultTransferItemPreviewResponse(BaseModel):
+    lesson_id: str
+    source_path: str
+    source_sha256: str
+    destination_path: str
+    destination_sha256: str | None = None
+    classification: Literal["new", "identical", "already_present", "same_id", "path_conflict", "likely_duplicate"]
+    resolution: Literal["transfer", "keep_destination", "skip"] | None = None
+    duplicate_lesson_ids: List[str]
+
+
+class VaultTransferPreviewResponse(BaseModel):
+    plan_digest: str
+    operation: str
+    source_vault_id: str
+    source_name: str
+    source_path: str
+    destination_vault_id: str
+    destination_name: str
+    destination_path: str
+    items: List[VaultTransferItemPreviewResponse]
+
+
+class VaultTransferItemResultResponse(BaseModel):
+    lesson_id: str
+    source_path: str
+    destination_path: str
+    outcome: str
+    destination_canonical: str
+    destination_derived: str
+    source_canonical: str
+    source_derived: str
+
+
+class VaultTransferResponse(BaseModel):
+    preview: VaultTransferPreviewResponse
+    items: List[VaultTransferItemResultResponse]
+    destination_derived_reconciled: bool | None = None
+    destination_derived_error: str | None = None
+    source_derived_reconciled: bool | None = None
+    source_derived_error: str | None = None
+
+
+class VaultTransferSourceLessonResponse(BaseModel):
+    lesson_id: str
+    source_path: str
+
+
 class DashboardCandidateSummary(BaseModel):
     total: int
     staged: int
@@ -906,6 +990,22 @@ def invalidate_similarity_cache() -> None:
     with lock:
         app.state.sim_index = None
         app.state.sim_index_key = None
+
+
+def invalidate_similarity_cache_for_context(context: ActiveVaultContext) -> None:
+    """Invalidate only a cached index belonging to one explicit Vault.
+
+    The API currently keeps at most one index, so clearing a cached index for a
+    different Vault would be needless cross-Vault derived-state mutation.
+    """
+    lock = getattr(app.state, "sim_index_lock", None)
+    if lock is None:
+        return
+    with lock:
+        key = getattr(app.state, "sim_index_key", None)
+        if key is not None and key[0] == context.vault_id:
+            app.state.sim_index = None
+            app.state.sim_index_key = None
 
 
 def build_similarity_index(df: pd.DataFrame, context: ActiveVaultContext | None = None):
@@ -1994,7 +2094,11 @@ def _train_topic_for_context(context: ActiveVaultContext) -> TrainResponse:
     )
 
 
-def _sync_vault_import(context: ActiveVaultContext | None = None) -> VaultImportResponse:
+def _sync_vault_import(
+    context: ActiveVaultContext | None = None,
+    *,
+    invalidate_cache: Callable[[], None] | None = None,
+) -> VaultImportResponse:
     context = context or get_active_vault_context()
     vault_dir = context.vault_dir
     if not vault_dir.is_dir():
@@ -2002,7 +2106,7 @@ def _sync_vault_import(context: ActiveVaultContext | None = None) -> VaultImport
     data_path = context.projection_path
     prepare_scoped_mutation_path(data_path, "lesson projection")
     result = import_vault_to_jsonl(vault_dir, data_path)
-    invalidate_similarity_cache()
+    (invalidate_cache or invalidate_similarity_cache)()
     return VaultImportResponse(
         message=f"Import completato: {result['n_lessons']} LeLe",
         n_lessons=int(result["n_lessons"]),
@@ -2220,6 +2324,55 @@ def _snapshot_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=status, detail=detail)
 
 
+def _transfer_preview_response(preview: TransferPreview) -> VaultTransferPreviewResponse:
+    return VaultTransferPreviewResponse(
+        plan_digest=preview.plan_digest,
+        operation=preview.operation,
+        source_vault_id=preview.source_vault_id,
+        source_name=preview.source_name,
+        source_path=preview.source_path,
+        destination_vault_id=preview.destination_vault_id,
+        destination_name=preview.destination_name,
+        destination_path=preview.destination_path,
+        items=[
+            VaultTransferItemPreviewResponse(
+                lesson_id=item.lesson_id,
+                source_path=item.source_path,
+                source_sha256=item.source_sha256,
+                destination_path=item.destination_path,
+                destination_sha256=item.destination_sha256,
+                classification=item.classification,
+                resolution=item.resolution,
+                duplicate_lesson_ids=list(item.duplicate_lesson_ids),
+            )
+            for item in preview.items
+        ],
+    )
+
+
+def _transfer_response(result: TransferResult) -> VaultTransferResponse:
+    return VaultTransferResponse(
+        preview=_transfer_preview_response(result.preview),
+        items=[VaultTransferItemResultResponse(**item.__dict__) for item in result.items],
+        destination_derived_reconciled=result.destination_derived_reconciled,
+        destination_derived_error=result.destination_derived_error,
+        source_derived_reconciled=result.source_derived_reconciled,
+        source_derived_error=result.source_derived_error,
+    )
+
+
+def _transfer_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, VaultTransferPlanStaleError):
+        status = 409
+    elif isinstance(exc, VaultTransferConflictError):
+        status = 409
+    elif isinstance(exc, (SnapshotTargetError, VaultPathError)):
+        status = 409
+    else:
+        status = 422
+    return HTTPException(status_code=status, detail={"code": getattr(exc, "code", "vault_transfer_invalid"), "message": str(exc)})
+
+
 @app.get("/vaults", response_model=list[VaultRegistryItemResponse])
 def list_vaults() -> list[VaultRegistryItemResponse]:
     try:
@@ -2295,6 +2448,65 @@ async def restore_vault_snapshot(
         derived_error=result.derived_error,
         preview=_snapshot_preview_response(result.preview),
     )
+
+
+def _transfer_contexts(body: VaultTransferRequest) -> tuple[ActiveVaultContext, ActiveVaultContext]:
+    source = _snapshot_context_for_registered_vault(body.source_vault_id)
+    destination = _snapshot_context_for_registered_vault(body.destination_vault_id)
+    if source.vault_id == destination.vault_id:
+        raise HTTPException(status_code=422, detail={"code": "vault_transfer_invalid", "message": "source and destination Vaults must be distinct"})
+    return source, destination
+
+
+def _transfer_selections(body: VaultTransferRequest) -> tuple[tuple[str, Literal["transfer", "keep_destination", "skip"] | None], ...]:
+    return tuple((item.lesson_id, item.resolution) for item in body.selections)
+
+
+@app.post("/vault-transfers/preview", response_model=VaultTransferPreviewResponse)
+def preview_vault_transfer(body: VaultTransferRequest) -> VaultTransferPreviewResponse:
+    """Build a read-only, stateless plan for selected canonical lessons."""
+    try:
+        source, destination = _transfer_contexts(body)
+        preview = preview_transfer(
+            operation=body.operation, source=source, destination=destination,
+            selections=_transfer_selections(body),
+        )
+    except (VaultTransferError, SnapshotTargetError) as exc:
+        raise _transfer_error(exc) from exc
+    return _transfer_preview_response(preview)
+
+
+@app.get("/vault-transfers/sources/{vault_id}/lessons", response_model=list[VaultTransferSourceLessonResponse])
+def list_vault_transfer_source_lessons(vault_id: str) -> list[VaultTransferSourceLessonResponse]:
+    """Read-only canonical lesson selection list for one registered Vault."""
+    try:
+        context = _snapshot_context_for_registered_vault(vault_id)
+        return [VaultTransferSourceLessonResponse(lesson_id=lesson_id, source_path=path) for lesson_id, path in list_transferable_lessons(context)]
+    except (VaultTransferError, SnapshotTargetError) as exc:
+        raise _transfer_error(exc) from exc
+
+
+@app.post("/vault-transfers/execute", response_model=VaultTransferResponse)
+def execute_vault_transfer(body: VaultTransferExecuteRequest) -> VaultTransferResponse:
+    """Execute only a matching stateless preview; never consult active Vault."""
+    try:
+        source, destination = _transfer_contexts(body)
+
+        def reconcile(context: ActiveVaultContext) -> None:
+            # An old topic model cannot be authoritative for changed Markdown.
+            invalidate_scoped_derived_artifact(context.topic_model_path, "topic model")
+            _sync_vault_import(context, invalidate_cache=lambda: invalidate_similarity_cache_for_context(context))
+
+        result = execute_transfer(
+            operation=body.operation, source=source, destination=destination,
+            selections=_transfer_selections(body), plan_digest=body.plan_digest,
+            resolve_source=lambda: _snapshot_context_for_registered_vault(body.source_vault_id),
+            resolve_destination=lambda: _snapshot_context_for_registered_vault(body.destination_vault_id),
+            reconcile_destination=reconcile, reconcile_source=reconcile,
+        )
+    except (VaultTransferError, SnapshotTargetError) as exc:
+        raise _transfer_error(exc) from exc
+    return _transfer_response(result)
 
 
 @app.post("/vaults/create", response_model=VaultRegistryItemResponse, status_code=201)

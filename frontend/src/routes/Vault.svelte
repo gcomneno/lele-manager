@@ -7,7 +7,7 @@
     FormActions,
     Panel,
   } from 'giadaware-ui-components/studio'
-  import { api, type ManagedVault, type VaultRestorePreview, type VaultTreeResponse } from '../lib/api'
+  import { api, type ManagedVault, type VaultRestorePreview, type VaultTransferOperation, type VaultTransferPreview, type VaultTransferResolution, type VaultTransferSourceLesson, type VaultTreeResponse } from '../lib/api'
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
   import VaultTree from '../components/VaultTree.svelte'
@@ -34,6 +34,18 @@
   let restoreBusy = $state(false)
   let restoreExecuting = $state(false)
   let previewRequestVersion = $state(0)
+  let transferSourceId = $state('')
+  let transferDestinationId = $state('')
+  let transferOperation = $state<VaultTransferOperation>('merge')
+  let transferLessons = $state<VaultTransferSourceLesson[]>([])
+  let selectedTransferLessonIds = $state<string[]>([])
+  let transferResolutions = $state<Record<string, VaultTransferResolution>>({})
+  let transferPreview = $state<VaultTransferPreview | null>(null)
+  let transferBusy = $state(false)
+  let transferExecuting = $state(false)
+  let transferMessage = $state('')
+  let transferTone = $state<FormStatusTone>('info')
+  let transferRequestVersion = $state(0)
 
   async function load() {
     loading = true
@@ -43,6 +55,11 @@
       const status = await api.vaultStatus()
       vaults = await api.vaults()
       if (!restoreTargetId) restoreTargetId = status.vault_id ?? ''
+      const availableVaults = vaults.filter((vault) => vault.available)
+      if (!transferSourceId || !availableVaults.some((vault) => vault.id === transferSourceId)) transferSourceId = status.vault_id ?? availableVaults[0]?.id ?? ''
+      ensureTransferDestination()
+      if (transferSourceId) await selectTransferSource()
+      else transferLessons = []
 
       if (!status.exists) {
         error = formatMessage(
@@ -215,6 +232,146 @@
     }
   }
 
+  function invalidateTransferPlan(message = '') {
+    transferRequestVersion += 1
+    transferPreview = null
+    transferMessage = message
+  }
+
+  function ensureTransferDestination() {
+    const destinations = vaults.filter((vault) => vault.available && vault.id !== transferSourceId)
+    if (!destinations.some((vault) => vault.id === transferDestinationId)) {
+      transferDestinationId = destinations[0]?.id ?? ''
+    }
+  }
+
+  function transferVaultName(id: string) {
+    return (vaults.find((vault) => vault.id === id)?.name ?? id) || '—'
+  }
+
+  async function selectTransferSource() {
+    invalidateTransferPlan()
+    ensureTransferDestination()
+    selectedTransferLessonIds = []
+    transferResolutions = {}
+    transferLessons = []
+    if (!transferSourceId) return
+    const sourceId = transferSourceId
+    const version = ++transferRequestVersion
+    transferBusy = true
+    try {
+      const lessons = await api.vaultTransferSourceLessons(sourceId)
+      if (version === transferRequestVersion && transferSourceId === sourceId) transferLessons = lessons
+    } catch (e) {
+      if (version === transferRequestVersion) {
+        transferMessage = e instanceof Error ? e.message : $messages.vaultTransferFailed
+        transferTone = 'error'
+      }
+    } finally { if (version === transferRequestVersion) transferBusy = false }
+  }
+
+  function toggleTransferLesson(lessonId: string, checked: boolean) {
+    selectedTransferLessonIds = checked
+      ? [...selectedTransferLessonIds, lessonId]
+      : selectedTransferLessonIds.filter((id) => id !== lessonId)
+    invalidateTransferPlan()
+  }
+
+  function transferSelections() {
+    return selectedTransferLessonIds.map((lesson_id) => ({ lesson_id, resolution: transferResolutions[lesson_id] ?? null }))
+  }
+
+  async function previewTransfer() {
+    if (!transferSourceId || !transferDestinationId || !selectedTransferLessonIds.length) {
+      transferMessage = $messages.vaultTransferNeedSelection
+      transferTone = 'error'
+      return
+    }
+    const sourceId = transferSourceId
+    const destinationId = transferDestinationId
+    const operation = transferOperation
+    const selections = transferSelections()
+    const version = ++transferRequestVersion
+    transferBusy = true
+    transferMessage = $messages.vaultTransferPreviewing
+    transferTone = 'info'
+    try {
+      const preview = await api.previewVaultTransfer({ source_vault_id: sourceId, destination_vault_id: destinationId, operation, selections })
+      if (version === transferRequestVersion && transferSourceId === sourceId && transferDestinationId === destinationId && transferOperation === operation) {
+        transferPreview = preview
+        transferMessage = ''
+      }
+    } catch (e) {
+      if (version === transferRequestVersion) {
+        transferPreview = null
+        transferMessage = e instanceof Error ? e.message : $messages.vaultTransferFailed
+        transferTone = 'error'
+      }
+    } finally { if (version === transferRequestVersion) transferBusy = false }
+  }
+
+  function setTransferResolution(lessonId: string, resolution: VaultTransferResolution) {
+    transferResolutions = { ...transferResolutions, [lessonId]: resolution }
+    invalidateTransferPlan($messages.vaultTransferResolutionNeedsPreview)
+    transferTone = 'info'
+  }
+
+  function transferClassification(value: string) {
+    const labels: Record<string, string> = {
+      new: $messages.vaultTransferClassNew,
+      same_id: $messages.vaultTransferClassSameId,
+      likely_duplicate: $messages.vaultTransferClassLikelyDuplicate,
+      path_conflict: $messages.vaultTransferClassPathConflict,
+      identical: $messages.vaultTransferClassIdentical,
+      already_present: $messages.vaultTransferClassAlreadyPresent,
+    }
+    return labels[value] ?? value
+  }
+
+  function transferPreviewMatchesCurrent() {
+    if (!transferPreview) return false
+    if (
+      transferPreview.source_vault_id !== transferSourceId
+      || transferPreview.destination_vault_id !== transferDestinationId
+      || transferPreview.operation !== transferOperation
+      || transferPreview.items.length !== selectedTransferLessonIds.length
+    ) return false
+    const selected = new Set(selectedTransferLessonIds)
+    return transferPreview.items.every((item) => {
+      if (!selected.has(item.lesson_id)) return false
+      const expectedResolution = transferResolutions[item.lesson_id]
+        ?? (item.classification === 'new' ? 'transfer' : (item.classification === 'identical' || item.classification === 'already_present' ? 'keep_destination' : null))
+      return item.resolution === expectedResolution
+    })
+  }
+
+  async function executeTransfer() {
+    if (!transferPreviewMatchesCurrent() || !transferPreview) {
+      transferPreview = null
+      transferMessage = $messages.vaultTransferNeedFreshPreview
+      transferTone = 'error'
+      return
+    }
+    transferBusy = true
+    transferExecuting = true
+    transferMessage = $messages.vaultTransferExecuting
+    transferTone = 'info'
+    try {
+      const result = await api.executeVaultTransfer({ source_vault_id: transferSourceId, destination_vault_id: transferDestinationId, operation: transferOperation, selections: transferSelections(), plan_digest: transferPreview.plan_digest })
+      const itemFailure = result.items.some((item) => item.outcome.endsWith('_failed'))
+      const partial = itemFailure || result.destination_derived_reconciled === false || result.source_derived_reconciled === false
+      const completedTone: FormStatusTone = partial ? 'error' : 'success'
+      const completedMessage = partial ? $messages.vaultTransferPartial : $messages.vaultTransferSuccess
+      transferPreview = null
+      await load()
+      transferTone = completedTone
+      transferMessage = completedMessage
+    } catch (e) {
+      transferMessage = e instanceof Error ? e.message : $messages.vaultTransferFailed
+      transferTone = 'error'
+    } finally { transferBusy = false; transferExecuting = false }
+  }
+
   onMount(load)
 </script>
 
@@ -269,6 +426,48 @@
     {/if}
     {#if snapshotMessage}<FormStatus message={snapshotMessage} tone={snapshotTone} />{/if}
     {#if restoreMessage}<FormStatus message={restoreMessage} tone={restoreTone} />{/if}
+  </section>
+  <section class="vault-management" aria-label={$messages.vaultTransfers}>
+    <h2>{$messages.vaultTransfers}</h2>
+    <p class="meta">{$messages.vaultTransferHelp}</p>
+    <label>{$messages.vaultTransferSource}
+      <select bind:value={transferSourceId} onchange={selectTransferSource} disabled={transferExecuting}>
+        {#each vaults.filter((vault) => vault.available) as vault (vault.id)}<option value={vault.id}>{vault.name} — {vault.path}</option>{/each}
+      </select>
+    </label>
+    <p aria-label={$messages.vaultTransferDirection}><strong>{transferVaultName(transferSourceId)}</strong> → <strong>{transferVaultName(transferDestinationId)}</strong></p>
+    <label>{$messages.vaultTransferDestination}
+      <select bind:value={transferDestinationId} onchange={() => invalidateTransferPlan()} disabled={transferExecuting}>
+        {#each vaults.filter((vault) => vault.available && vault.id !== transferSourceId) as vault (vault.id)}<option value={vault.id}>{vault.name} — {vault.path}</option>{/each}
+      </select>
+    </label>
+    <label>{$messages.vaultTransferOperation}
+      <select bind:value={transferOperation} onchange={() => invalidateTransferPlan()} disabled={transferExecuting}>
+        <option value="merge">{$messages.vaultTransferMerge}</option><option value="copy">{$messages.vaultTransferCopy}</option><option value="move">{$messages.vaultTransferMove}</option>
+      </select>
+    </label>
+    {#if transferOperation === 'move'}<p class="meta">{$messages.vaultTransferMoveWarning}</p>{/if}
+    <h3>{$messages.vaultTransferSelectLessons}</h3>
+    {#each transferLessons as lesson (lesson.lesson_id)}
+      <label><input type="checkbox" checked={selectedTransferLessonIds.includes(lesson.lesson_id)} onchange={(event) => toggleTransferLesson(lesson.lesson_id, (event.currentTarget as HTMLInputElement).checked)} disabled={transferExecuting} /> {lesson.lesson_id} — {lesson.source_path}</label>
+    {/each}
+    <FormActions><Button variant="secondary" onclick={previewTransfer} disabled={transferBusy || !selectedTransferLessonIds.length}>{$messages.vaultTransferPreview}</Button></FormActions>
+    {#if transferPreview}
+      <div class="restore-preview">
+        <h3>{$messages.vaultTransferPreviewTitle}</h3>
+        <p>{formatMessage($messages.vaultTransferSourceDetails, { name: transferPreview.source_name, id: transferPreview.source_vault_id, path: transferPreview.source_path })}</p>
+        <p>{formatMessage($messages.vaultTransferDestinationDetails, { name: transferPreview.destination_name, id: transferPreview.destination_vault_id, path: transferPreview.destination_path })}</p>
+        {#each transferPreview.items as item (item.lesson_id)}
+          <div><strong>{item.lesson_id}</strong>: {transferClassification(item.classification)} ({item.source_path} → {item.destination_path})
+            {#if item.classification !== 'new' && item.classification !== 'identical' && item.classification !== 'already_present'}
+              <label>{$messages.vaultTransferResolution}<select value={transferResolutions[item.lesson_id] ?? ''} onchange={(event) => setTransferResolution(item.lesson_id, (event.currentTarget as HTMLSelectElement).value as VaultTransferResolution)}><option value="">{$messages.vaultTransferResolve}</option><option value="keep_destination">{$messages.vaultTransferKeepDestination}</option><option value="skip">{$messages.vaultTransferSkip}</option></select></label>
+            {/if}
+          </div>
+        {/each}
+        <FormActions><Button onclick={executeTransfer} disabled={transferBusy || transferPreview.items.some((item) => item.resolution === null)}>{transferOperation === 'move' ? $messages.vaultTransferConfirmMove : $messages.vaultTransferConfirm}</Button></FormActions>
+      </div>
+    {/if}
+    {#if transferMessage}<FormStatus message={transferMessage} tone={transferTone} />{/if}
   </section>
   <FormActions
     class="vault-actions"
