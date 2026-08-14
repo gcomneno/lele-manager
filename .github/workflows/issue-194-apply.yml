@@ -1,0 +1,31 @@
+name: Issue 194 patch runner
+
+on:
+  push:
+    branches:
+      - feat/issue-194-vault-danger-zone
+    paths:
+      - .automation/issue-194-run
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/issue-194-vault-danger-zone
+      - name: Apply guarded transformations
+        run: python .automation/issue-194-apply.py
+      - name: Commit transformed sources
+        run: |
+          rm -f .automation/issue-194-run .automation/issue-194-apply.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: harden vault danger concurrency contracts"
+          git push origin HEAD:feat/issue-194-vault-danger-zone
