@@ -423,3 +423,16 @@ duplicati. Il boundary filesystem canonico hardened è condiviso con il lavoro
 snapshot #218. Il futuro #194 resta dedicato ai workflow Danger Zone distruttivi
 sull’intero Vault con conferma separata; questa funzione non elimina mai un
 Vault.
+
+## Zona pericolosa di Sistema
+
+Sistema contiene una **Zona pericolosa** visivamente separata per le operazioni distruttive su un Vault registrato selezionato esplicitamente. Ogni operazione richiede prima un’anteprima: vengono mostrati nome del Vault, percorso risolto, numero di LeLe approvate, stato scoped coinvolto, cosa verrà eliminato, cosa resterà e la frase esatta da digitare. Se cambiano target, operazione, stato gestito rilevante, contesto del registry o destinazione dell’accorpamento, il vecchio piano diventa obsoleto.
+
+- **Svuota Vault** elimina il Markdown canonico approvato e poi riconcilia proiezione/stato di ricerca derivati. Registrazione, directory del Vault, staging candidati e decisioni sui duplicati restano.
+- **Azzera completamente il Vault** elimina Markdown canonico, staging candidati, decisioni sui duplicati scoped al Vault, proiezione e modello topic, mantenendo registrazione e directory.
+- **Elimina Vault dal disco** è disponibile soltanto per un Vault non attivo. Rifiuta symlink, nodi speciali e file regolari non Markdown invece di cancellare dati che LeLe Manager non può dimostrare di possedere. Dopo la rimozione della directory gestita vengono rimossi separatamente stato applicativo scoped e voce di registry, riportando con precisione eventuali successi parziali.
+- **Accorpa ed elimina sorgente** è un’operazione distruttiva separata successiva a #193. È consentita soltanto quando ogni LeLe sorgente può essere nuovamente provata nella destinazione esplicita con stesso stable ID e Markdown canonico identico byte per byte. Nessuna ricevuta di sessione o fingerprint semantico può autorizzare la cancellazione della sorgente.
+
+L’opzione **Crea snapshot di backup prima di continuare** riusa il formato snapshot mantenuto. Se selezionata, creazione e persistenza del backup devono riuscire prima della prima mutazione canonica distruttiva; un errore di backup blocca la cancellazione. Lo snapshot contiene Markdown canonico gestito e stato scoped di candidati/decisioni duplicati, non file estranei arbitrari.
+
+Gli esiti canonici e derivati sono riportati separatamente. Una cancellazione canonica parziale provoca, quando possibile, la riconciliazione sullo stato canonico realmente rimasto; un errore di cleanup derivato non altera l’esito canonico riportato. Nessuna azione della Zona pericolosa cambia il Vault attivo o prende implicitamente di mira un altro Vault registrato.
