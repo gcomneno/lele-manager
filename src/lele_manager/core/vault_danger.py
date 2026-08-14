@@ -336,7 +336,10 @@ def preview_vault_danger(
     if operation in ("delete", "merge_delete_source") and target.vault_id == active_vault_id:
         raise VaultDangerTargetError("activate another Vault before deleting this Vault from disk")
 
-    canonical = read_canonical_markdown_files(target.vault_dir)
+    try:
+        canonical = read_canonical_markdown_files(target.vault_dir)
+    except SnapshotTargetError as exc:
+        raise VaultDangerTargetError(str(exc)) from exc
     tree_entries: tuple[str, ...] = ()
     if operation in ("delete", "merge_delete_source"):
         tree_entries = _scan_managed_tree(target.vault_dir)
@@ -355,7 +358,12 @@ def preview_vault_danger(
     destination_canonical: dict[str, bytes] | None = None
     merge_verified = False
     if destination is not None:
-        destination_canonical = read_canonical_markdown_files(destination.vault_dir)
+        try:
+            destination_canonical = read_canonical_markdown_files(destination.vault_dir)
+        except SnapshotTargetError as exc:
+            raise VaultDangerTargetError(
+                "destination Vault is unavailable or unsafe"
+            ) from exc
         _verify_merged_source(canonical, destination_canonical)
         merge_verified = True
 
@@ -591,13 +599,22 @@ def execute_vault_danger(
     resolve_destination: Callable[[], ActiveVaultContext] | None = None,
 ) -> VaultDangerResult:
     """Re-prove the preview and then execute the explicit destructive operation."""
-    current = preview_vault_danger(
-        operation=operation,
-        target=target,
-        active_vault_id=active_vault_id,
-        decisions=decisions,
-        destination=destination,
-    )
+    try:
+        current = preview_vault_danger(
+            operation=operation,
+            target=target,
+            active_vault_id=active_vault_id,
+            decisions=decisions,
+            destination=destination,
+        )
+    except (
+        VaultDangerMergeVerificationError,
+        VaultDangerTargetError,
+        SnapshotTargetError,
+    ) as exc:
+        raise VaultDangerPlanStaleError(
+            "danger-zone target or managed state changed after preview"
+        ) from exc
     if current.plan_digest != plan_digest:
         raise VaultDangerPlanStaleError("danger-zone target or managed state changed after preview")
     if confirmation != current.confirmation_text:
