@@ -48,7 +48,13 @@ from lele_manager.application.lesson_deletion import (
     delete_canonical_lesson,
 )
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
-from lele_manager.core.lifecycle import LifecycleState, normalize_lifecycle
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
+from lele_manager.core.lifecycle import (
+    LifecycleState,
+    normalize_lifecycle,
+    normalize_superseded_by,
+    validate_supersession_chain,
+)
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
     LessonOrder,
@@ -694,6 +700,20 @@ class LessonVaultWrite(BaseModel):
     tags: Optional[List[str]] = Field(default=None)
     date: Optional[str] = Field(default=None)
     title: Optional[str] = Field(default=None)
+    lifecycle: LifecycleState | None = Field(
+        default=None,
+        description=(
+            "Lifecycle canonico. Se omesso in update viene preservato; "
+            "active esplicito rimuove il marker non-active."
+        ),
+    )
+    superseded_by: str | None = Field(
+        default=None,
+        description=(
+            "Stable ID della sostituzione. Se omesso in update viene preservato; "
+            "null esplicito rimuove il riferimento."
+        ),
+    )
 
 
 class LessonVaultCreate(LessonVaultWrite):
@@ -2140,6 +2160,60 @@ def _lesson_date_or_today(date_val: Optional[str]) -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def _canonical_lifecycle_metadata(
+    vault_dir: Path,
+    lesson_id: str,
+) -> tuple[LifecycleState, str | None]:
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    if not matches:
+        return "active", None
+    if len(matches) != 1:
+        raise ValueError(f"canonical lesson id {lesson_id!r} is ambiguous")
+    frontmatter, _ = parse_markdown_with_frontmatter(
+        matches[0].read_text(encoding="utf-8")
+    )
+    return (
+        normalize_lifecycle(frontmatter.get("lifecycle")),
+        normalize_superseded_by(
+            frontmatter.get("superseded_by"),
+            lesson_id=lesson_id,
+        ),
+    )
+
+
+def _validate_supersession_target(
+    vault_dir: Path,
+    lesson_id: str,
+    superseded_by: str | None,
+) -> None:
+    if superseded_by is None:
+        return
+
+    def resolve(current_id: str) -> str | None:
+        matches = find_markdown_paths_by_id(vault_dir, current_id)
+        if not matches:
+            raise ValueError(
+                f"superseded_by target {current_id!r} does not exist in the active Vault"
+            )
+        if len(matches) != 1:
+            raise ValueError(
+                f"superseded_by target {current_id!r} is ambiguous in the active Vault"
+            )
+        frontmatter, _ = parse_markdown_with_frontmatter(
+            matches[0].read_text(encoding="utf-8")
+        )
+        return normalize_superseded_by(
+            frontmatter.get("superseded_by"),
+            lesson_id=current_id,
+        )
+
+    validate_supersession_chain(
+        lesson_id=lesson_id,
+        superseded_by=superseded_by,
+        resolve_superseded_by=resolve,
+    )
+
+
 def _write_lesson_to_vault(
     *,
     lesson_id: str,
@@ -2150,18 +2224,47 @@ def _write_lesson_to_vault(
     vault_dir = (context or get_active_vault_context()).vault_dir
     tags = payload.tags or []
     date_str = _lesson_date_or_today(payload.date)
-    return write_lesson_markdown(
-        vault_dir,
-        lesson_id=lesson_id,
-        body=payload.text,
-        topic=payload.topic.strip(),
-        source=payload.source.strip() or "note",
-        importance=int(payload.importance),
-        tags=[str(t).strip() for t in tags if str(t).strip()],
-        date=date_str,
-        title=payload.title.strip() if payload.title else None,
-        relative_path=relative_path,
-    )
+
+    with canonical_mutation_boundary():
+        current_lifecycle, current_superseded_by = _canonical_lifecycle_metadata(
+            vault_dir,
+            lesson_id,
+        )
+
+        lifecycle = (
+            normalize_lifecycle(payload.lifecycle)
+            if "lifecycle" in payload.model_fields_set
+            else current_lifecycle
+        )
+        superseded_by = (
+            normalize_superseded_by(
+                payload.superseded_by,
+                lesson_id=lesson_id,
+            )
+            if "superseded_by" in payload.model_fields_set
+            else current_superseded_by
+        )
+
+        _validate_supersession_target(
+            vault_dir,
+            lesson_id,
+            superseded_by,
+        )
+
+        return write_lesson_markdown(
+            vault_dir,
+            lesson_id=lesson_id,
+            body=payload.text,
+            topic=payload.topic.strip(),
+            source=payload.source.strip() or "note",
+            importance=int(payload.importance),
+            tags=[str(t).strip() for t in tags if str(t).strip()],
+            date=date_str,
+            title=payload.title.strip() if payload.title else None,
+            relative_path=relative_path,
+            lifecycle=lifecycle,
+            superseded_by=superseded_by,
+        )
 
 
 def _lesson_delete_response(result: LessonDeletionResult) -> LessonDeleteResponse:

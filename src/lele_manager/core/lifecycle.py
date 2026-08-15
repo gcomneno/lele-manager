@@ -1,6 +1,7 @@
 """Canonical lifecycle vocabulary and validation helpers for LeLe entries."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 
@@ -43,3 +44,20 @@ def normalize_superseded_by(value: object, *, lesson_id: str) -> str | None:
     if target == lesson_id:
         raise LifecycleValidationError("a lesson cannot supersede itself")
     return target
+
+def validate_supersession_chain(
+    *,
+    lesson_id: str,
+    superseded_by: str | None,
+    resolve_superseded_by: Callable[[str], str | None],
+) -> None:
+    """Reject a supersession chain that reaches the lesson being authored."""
+    current = superseded_by
+    visited = {lesson_id}
+    while current is not None:
+        if current in visited:
+            raise LifecycleValidationError(
+                "superseded_by must not create a supersession cycle"
+            )
+        visited.add(current)
+        current = resolve_superseded_by(current)
