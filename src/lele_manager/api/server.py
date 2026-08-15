@@ -1665,6 +1665,34 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
 
     result = body.result
     try:
+        current_lifecycle, current_superseded_by = _canonical_lifecycle_metadata(
+            vault_dir,
+            body.survivor_id,
+        )
+        lifecycle = (
+            normalize_lifecycle(result.lifecycle)
+            if "lifecycle" in result.model_fields_set
+            else current_lifecycle
+        )
+        superseded_by = (
+            normalize_superseded_by(
+                result.superseded_by,
+                lesson_id=body.survivor_id,
+            )
+            if "superseded_by" in result.model_fields_set
+            else current_superseded_by
+        )
+        if superseded_by == body.superseded_id:
+            raise ValueError(
+                "the surviving lesson cannot supersede the canonical lesson "
+                "that this merge will delete"
+            )
+        _validate_supersession_target(
+            vault_dir,
+            body.survivor_id,
+            superseded_by,
+        )
+
         write_canonical_lesson_source(
             vault_dir=vault_dir, lesson_id=body.survivor_id, body=result.text,
             topic=result.topic.strip(), source=result.source.strip() or "note",
@@ -1672,8 +1700,16 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
             tags=[str(tag).strip() for tag in (result.tags or []) if str(tag).strip()],
             date=_lesson_date_or_today(result.date),
             title=result.title.strip() if result.title else None,
+            lifecycle=lifecycle,
+            superseded_by=superseded_by,
             invalidate_cache=invalidate_similarity_cache,
         )
+    except ValueError as exc:
+        raise _duplicate_error(
+            400,
+            "duplicate_merge_invalid_lifecycle",
+            str(exc),
+        ) from exc
     except CanonicalLessonWriteNotFoundError as exc:
         raise _duplicate_error(404, "duplicate_pair_not_found", "The surviving canonical lesson was not found.") from exc
     except CanonicalLessonWriteAmbiguousError as exc:

@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
+
 from lele_manager.api import server
 from lele_manager.application.lesson_deletion import LessonDeletionStorageError
 from lele_manager.application.lesson_writing import CanonicalLessonWriteStorageError
@@ -352,3 +354,74 @@ def test_ambiguous_canonical_id_is_never_deleted(duplicate_env: tuple[Path, Path
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "lesson_delete_storage_failed"
     assert first.exists() and second.exists()
+
+def test_merge_preserves_omitted_survivor_lifecycle_metadata(
+    duplicate_env: tuple[Path, Path],
+) -> None:
+    vault, _ = duplicate_env
+    client = TestClient(server.app)
+
+    survivor_id = "alpha/b"
+    superseded_id = "alpha/a"
+    survivor_before = server._canonical_duplicate_lesson(vault, survivor_id)
+
+    write_lesson_markdown(
+        vault,
+        lesson_id="alpha/replacement",
+        body="Maintained replacement.",
+        topic="alpha",
+        source="test",
+        importance=3,
+        tags=["replacement"],
+        date="2026-08-15",
+        title="Replacement",
+    )
+    write_lesson_markdown(
+        vault,
+        lesson_id=survivor_id,
+        body=str(survivor_before["text"]),
+        topic=str(survivor_before["topic"]),
+        source=str(survivor_before["source"]),
+        importance=int(survivor_before["importance"]),
+        tags=list(survivor_before["tags"] or []),
+        date=str(survivor_before["date"]),
+        title=(
+            str(survivor_before["title"])
+            if survivor_before["title"] is not None
+            else None
+        ),
+        lifecycle="deprecated",
+        superseded_by="alpha/replacement",
+    )
+
+    survivor = server._canonical_duplicate_lesson(vault, survivor_id)
+    superseded = server._canonical_duplicate_lesson(vault, superseded_id)
+
+    response = client.post(
+        "/duplicates/merge",
+        json={
+            "survivor_id": survivor_id,
+            "superseded_id": superseded_id,
+            "expected_survivor_fingerprint": server.material_fingerprint(survivor),
+            "expected_superseded_fingerprint": server.material_fingerprint(superseded),
+            "result": {
+                "text": "Human reviewed survivor.",
+                "title": "Reviewed",
+                "topic": "alpha",
+                "source": "manual",
+                "importance": 5,
+                "tags": ["merged"],
+                "date": "2026-08-15",
+            },
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    survivor_path = find_markdown_by_id(vault, survivor_id)
+    assert survivor_path is not None
+    frontmatter, body = parse_markdown_with_frontmatter(
+        survivor_path.read_text(encoding="utf-8")
+    )
+    assert body.strip() == "Human reviewed survivor."
+    assert frontmatter["lifecycle"] == "deprecated"
+    assert frontmatter["superseded_by"] == "alpha/replacement"

@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
+from lele_manager.cli.import_from_dir import (
+    analyze_import_from_dir,
+    import_from_dir,
+    parse_markdown_with_frontmatter,
+)
 from lele_manager.api import server
 from lele_manager.core.lifecycle import LifecycleValidationError
 from lele_manager.core.vault_registry import ActiveVaultContext
@@ -300,3 +304,98 @@ def test_supersession_cycle_fails_without_rewriting_source(
         )
 
     assert target.read_bytes() == before
+
+def _raw_lifecycle_lesson(
+    vault: Path,
+    lesson_id: str,
+    *,
+    superseded_by: str | None = None,
+) -> Path:
+    path = vault / f"{lesson_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    supersession = (
+        f"superseded_by: {superseded_by}\n"
+        if superseded_by is not None
+        else ""
+    )
+    path.write_text(
+        "---\n"
+        f"id: {lesson_id}\n"
+        f"topic: {lesson_id.split('/', 1)[0]}\n"
+        "source: test\n"
+        "importance: 3\n"
+        "tags: [lifecycle]\n"
+        "date: 2026-08-15\n"
+        f"title: {lesson_id}\n"
+        f"{supersession}"
+        "---\n"
+        f"Body for {lesson_id}.\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_import_plan_blocks_unknown_supersession_target(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    source = _raw_lifecycle_lesson(
+        vault,
+        "python/source",
+        superseded_by="python/missing",
+    )
+
+    before = source.read_bytes()
+    plan = analyze_import_from_dir(
+        vault,
+        "overwrite",
+        None,
+        None,
+        None,
+        True,
+    )
+
+    assert plan.blocking is True
+    assert any(
+        problem.code == "invalid_supersession_graph"
+        and problem.field == "superseded_by"
+        and "does not exist" in problem.message
+        for problem in plan.validation_problems
+    )
+    assert plan.pending_source_writes == []
+    assert source.read_bytes() == before
+
+    with pytest.raises(SystemExit, match="Import bloccato"):
+        import_from_dir(
+            vault,
+            "overwrite",
+            None,
+            None,
+            None,
+            True,
+        )
+
+    assert source.read_bytes() == before
+
+
+def test_import_plan_blocks_supersession_cycle(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    _raw_lifecycle_lesson(vault, "python/a", superseded_by="python/b")
+    _raw_lifecycle_lesson(vault, "python/b", superseded_by="python/a")
+
+    plan = analyze_import_from_dir(
+        vault,
+        "overwrite",
+        None,
+        None,
+        None,
+        False,
+    )
+
+    assert plan.blocking is True
+    problems = [
+        problem
+        for problem in plan.validation_problems
+        if problem.code == "invalid_supersession_graph"
+    ]
+    assert problems
+    assert all(problem.field == "superseded_by" for problem in problems)
+    assert any("supersession cycle" in problem.message for problem in problems)

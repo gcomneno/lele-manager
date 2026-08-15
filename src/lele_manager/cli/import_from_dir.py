@@ -28,6 +28,7 @@ from lele_manager.core.lifecycle import (
     LifecycleValidationError,
     normalize_lifecycle,
     normalize_superseded_by,
+    validate_supersession_chain,
 )
 from lele_manager.core.projection_store import ProjectionStoreError
 
@@ -429,6 +430,42 @@ def analyze_import_from_dir(
         pending_source_by_id[lele_id] = pending_source
 
     if not plan.blocking:
+        ambiguous_ids = {duplicate.lesson_id for duplicate in plan.duplicates}
+
+        def resolve_superseded_by(current_id: str) -> str | None:
+            if current_id in ambiguous_ids:
+                raise LifecycleValidationError(
+                    f"superseded_by target {current_id!r} is ambiguous in the Vault"
+                )
+            current = records_by_id.get(current_id)
+            if current is None:
+                raise LifecycleValidationError(
+                    f"superseded_by target {current_id!r} does not exist in the Vault"
+                )
+            return current.superseded_by
+
+        for lesson_id in sorted(records_by_id):
+            record = records_by_id[lesson_id]
+            if record.superseded_by is None:
+                continue
+            try:
+                validate_supersession_chain(
+                    lesson_id=lesson_id,
+                    superseded_by=record.superseded_by,
+                    resolve_superseded_by=resolve_superseded_by,
+                )
+            except LifecycleValidationError as exc:
+                plan.validation_problems.append(
+                    ValidationProblem(
+                        code="invalid_supersession_graph",
+                        message=str(exc),
+                        path=record.path,
+                        field="superseded_by",
+                        blocking=True,
+                    )
+                )
+
+    if not plan.blocking:
         for lesson_id in sorted(pending_source_by_id):
             pending = pending_source_by_id[lesson_id]
             if pending is not None:
@@ -509,6 +546,17 @@ def import_from_dir(
     for problem in plan.validation_problems:
         if problem.code == "invalid_utf8":
             print(f"[warn] Impossibile leggere {problem.path} come UTF-8, salto.")
+
+    blocking_problems = [
+        problem for problem in plan.validation_problems if problem.blocking
+    ]
+    if blocking_problems:
+        first = blocking_problems[0]
+        location = f" ({first.path})" if first.path else ""
+        raise SystemExit(
+            f"[errore] Import bloccato da {first.code}{location}: {first.message}"
+        )
+
     if plan.pending_source_writes:
         print(
             f"[info] Aggiorno {len(plan.pending_source_writes)} file per "
