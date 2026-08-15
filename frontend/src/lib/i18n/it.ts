@@ -44,7 +44,7 @@ export const it = {
     'Candidati già presenti nello staging locale; il dashboard non esegue alcuna scansione.',
   dashboardCandidateStaged: 'In staging',
   dashboardCandidateReview: 'In revisione',
-  brandTagline: "Lo spazio locale per le tue 'Lessons Learned'",
+  brandTagline: 'Your Managed Second Brain',
 
   navDashboard: 'Dashboard',
   navBrowse: 'Esplora',

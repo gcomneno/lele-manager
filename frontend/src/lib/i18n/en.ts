@@ -42,7 +42,7 @@ export const en = {
     'Candidates already present in local staging; no scan is run by this dashboard.',
   dashboardCandidateStaged: 'Staged',
   dashboardCandidateReview: 'In review',
-  brandTagline: 'Your local space for your “Lessons Learned”',
+  brandTagline: 'Your Managed Second Brain',
 
   navDashboard: 'Dashboard',
   navBrowse: 'Browse',

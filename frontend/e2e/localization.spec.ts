@@ -21,7 +21,7 @@ test.describe('GUI localization', () => {
     await expect(
       page.getByTestId('brand-tagline'),
     ).toHaveText(
-      'Your local space for your “Lessons Learned”',
+      'Your Managed Second Brain',
     )
 
     await expect(
@@ -54,7 +54,7 @@ test.describe('GUI localization', () => {
     await expect(
       page.getByTestId('brand-tagline'),
     ).toHaveText(
-      "Lo spazio locale per le tue 'Lessons Learned'",
+      'Your Managed Second Brain',
     )
 
     await expect(

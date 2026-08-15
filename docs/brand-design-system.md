@@ -87,9 +87,10 @@ the repository-owned monkey mascot beside “GiadaWare™” and “Software ope
 source”. The sidebar is pinned to the viewport, so the signature remains
 visible on both short and long pages.
 
-The runtime tagline is exactly “Lo spazio locale per le tue 'Lessons
-Learned'”. Explicit spacing and line height prevent overlap inside the narrow
-brand column.
+The runtime brand lockup pairs `LeLe Manager` with the tagline
+`Your Managed Second Brain`. The product name remains visually dominant, while
+explicit spacing and line height prevent overlap inside the narrow brand
+column.
 
 The primary creation action keeps the accessible name “Nuova LeLe”. Its
 visible presentation uses “+ Nuova” followed by the GiadaWare monkey and a
