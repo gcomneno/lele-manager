@@ -108,8 +108,8 @@ navigation and avoids horizontal overflow.
 |---|---|
 | Dashboard | Inspect workspace readiness, bounded summaries and next useful actions |
 | Browse | Search, filter and export lessons |
-| Detail | Read one lesson and inspect explained similarity |
-| Editor | Create or update canonical Markdown lessons |
+| Detail | Read one lesson, inspect explained similarity, and review revision history |
+| Editor | Create or revision-aware update canonical Markdown lessons |
 | Timeline | Inspect lessons by month, year or topic |
 | Stats | Inspect counts, topics, tags and averages |
 | TritaLeLe | Preview, stage, review and explicitly approve candidates |
@@ -210,6 +210,51 @@ projection and search state; you do not need to use **System → Update all**.
 If the Markdown deletion succeeds but the derived refresh fails, the UI reports
 that partial outcome accurately: the canonical lesson is gone, while search and
 similarity may remain stale until a later refresh succeeds.
+
+## Revision history, diff, and rollback
+
+For an existing canonical LeLe, **Detail** includes a maintained revision
+history. The timeline is append-only and scoped to that stable lesson ID. Each
+entry identifies its revision number, action, timestamp, exact canonical
+fingerprint, optional reason, and rollback source where applicable.
+
+The first revision-aware change to a lesson that has no maintained history
+records its existing canonical Markdown as revision `#0` (**Baseline**) and the
+successful changed state as revision `#1` (**Edit**). Later successful edits
+append one revision each. An identical Save is a no-op and does not manufacture
+history.
+
+Use **Compare revisions** to choose two historical revision numbers and inspect
+their readable unified Markdown diff. The comparison is derived from complete
+stored canonical snapshots, so both frontmatter metadata and body changes are
+visible. The diff itself is not stored as authoritative history.
+
+The exact canonical Markdown fingerprint loaded by Editor is also its
+optimistic-concurrency token. If the file changes after you opened the Editor,
+Save is rejected as stale rather than silently reloading and overwriting the
+newer canonical state. Your current unsaved draft remains visible so you can
+decide how to reconcile it.
+
+To restore older content, choose **Restore this revision** and confirm the
+dialog. An optional reason can document the decision. A rollback never deletes
+or rewrites previous history: the selected snapshot is written as the new
+canonical Markdown and a new monotonic **Rollback** revision is appended.
+Because rollback may restore byte-for-byte older content, two different
+revision numbers can legitimately share the same canonical fingerprint. The
+latest revision number, not fingerprint equality, identifies the current
+timeline entry.
+
+Canonical persistence and derived reconciliation remain separate outcomes. If
+an edit or rollback writes canonical Markdown and revision history successfully
+but the projection refresh fails, the GUI reports that canonical success as a
+warning rather than pretending the write failed. Search and similarity may be
+temporarily stale; retry only the derived refresh when appropriate. After such a
+partial Editor save, the Editor adopts the newly committed canonical token so a
+later explicit Save does not reuse the stale pre-write token.
+
+Revision history is durable per-Vault editorial state. It does not replace the
+canonical Markdown source of truth, TritaLeLe candidate revision history, Git
+history, or rebuildable projection generations.
 
 ## Screenshots
 

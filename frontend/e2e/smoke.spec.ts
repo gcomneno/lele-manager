@@ -11,7 +11,9 @@ test.describe('GUI smoke', () => {
     expect(lessonId).toBeTruthy()
 
     await firstCard.click()
-    await expect(page.getByRole('heading', { level: 2 })).toContainText(lessonId!)
+    await expect(
+      page.getByRole('heading', { level: 2, name: lessonId!, exact: true }),
+    ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Why is it similar?', exact: true })).toBeVisible()
   })
 

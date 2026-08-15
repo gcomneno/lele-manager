@@ -162,7 +162,17 @@ def test_vault_write_readback_uses_the_write_context(
         {"id": "topic/new", **_lesson_payload("still from B")},
     ])
     update_calls = _flipping_resolver(monkeypatch, first, second)
-    updated = server.update_lesson("topic/new", server.LessonVaultWrite(**_lesson_payload("updated A")))
+    revision = server.read_canonical_lesson_revision(
+        vault_dir=first.vault_dir,
+        lesson_id="topic/new",
+    ).canonical_revision
+    updated = server.update_lesson(
+        "topic/new",
+        server.LessonVaultUpdate(
+            expected_revision=revision,
+            **_lesson_payload("updated A"),
+        ),
+    )
     assert updated.text == "updated A"
     assert update_calls == [first]
 
@@ -212,3 +222,67 @@ def test_ops_refresh_and_train_share_one_context(
     assert response.train_result is not None
     assert seen == [first, first]
     assert calls == [first]
+
+
+def test_get_lesson_pairs_canonical_fields_with_same_byte_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _context(tmp_path, "A")
+    lesson_id = "topic/coherent"
+
+    _write_canonical(context.vault_dir, lesson_id, "projection-era body")
+    projection_store(context.projection_path).publish([
+        {
+            "id": lesson_id,
+            **_lesson_payload("stale projection body"),
+            "title": "Stale projection title",
+            "lifecycle": "active",
+            "superseded_by": None,
+        },
+        {
+            "id": "topic/old",
+            **_lesson_payload("old"),
+            "superseded_by": lesson_id,
+        },
+    ])
+
+    # Simulate an external canonical edit without refreshing the derived
+    # projection. GET must never combine stale authoring fields with the fresh
+    # optimistic-concurrency token.
+    write_lesson_markdown(
+        context.vault_dir,
+        lesson_id=lesson_id,
+        body="external canonical body",
+        topic="external-topic",
+        source="external-source",
+        importance=5,
+        tags=["external", "canonical"],
+        date="2026-08-15",
+        title="External canonical title",
+        relative_path="topic/coherent.md",
+        lifecycle="review-needed",
+        superseded_by=None,
+    )
+
+    monkeypatch.setattr(server, "get_active_vault_context", lambda: context)
+
+    response = server.get_lesson(lesson_id)
+    exact = server.read_canonical_lesson_revision(
+        vault_dir=context.vault_dir,
+        lesson_id=lesson_id,
+    )
+
+    assert response.text == "external canonical body"
+    assert response.topic == "external-topic"
+    assert response.source == "external-source"
+    assert response.importance == 5
+    assert response.tags == ["external", "canonical"]
+    assert response.date == "2026-08-15"
+    assert response.title == "External canonical title"
+    assert response.lifecycle == "review-needed"
+    assert response.superseded_by is None
+    assert response.canonical_revision == exact.canonical_revision
+
+    # Reverse supersession is intentionally derived and may therefore still
+    # reflect the current projection snapshot.
+    assert response.supersedes == ["topic/old"]

@@ -101,6 +101,10 @@ def test_api_vault_tree_and_save(vault_env: tuple[Path, Path]) -> None:
     assert tree.status_code == 200
     assert "python" in str(tree.json())
 
+    detail = client.get(f"/lessons/{lesson_id}")
+    assert detail.status_code == 200
+    canonical_revision = detail.json()["canonical_revision"]
+
     update = client.put(
         f"/lessons/{lesson_id}",
         json={
@@ -110,6 +114,7 @@ def test_api_vault_tree_and_save(vault_env: tuple[Path, Path]) -> None:
             "importance": 5,
             "tags": ["python"],
             "date": "2026-07-05",
+            "expected_revision": canonical_revision,
         },
     )
     assert update.status_code == 200
@@ -614,3 +619,200 @@ def test_bulk_delete_can_publish_empty_projection(
     assert response.status_code == 200
     assert all(not path.exists() for path in paths.values())
     assert projection_store(data).snapshot().list() == ()
+
+
+def test_revision_history_diff_and_rollback_api(
+    vault_env: tuple[Path, Path],
+) -> None:
+    vault, _ = vault_env
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/history-api",
+            "text": "Before",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["python"],
+            "date": "2026-08-15",
+            "title": "History API",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    detail = client.get("/lessons/python%2Fhistory-api")
+    assert detail.status_code == 200, detail.text
+    initial = detail.json()["canonical_revision"]
+
+    edited = client.put(
+        "/lessons/python%2Fhistory-api",
+        json={
+            "text": "After",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["python"],
+            "date": "2026-08-15",
+            "title": "History API",
+            "expected_revision": initial,
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    current = client.get("/lessons/python%2Fhistory-api").json()[
+        "canonical_revision"
+    ]
+
+    history = client.get(
+        "/lesson-history",
+        params={"lesson_id": "python/history-api"},
+    )
+    assert history.status_code == 200, history.text
+    assert [item["revision"] for item in history.json()["revisions"]] == [0, 1]
+    assert [item["action"] for item in history.json()["revisions"]] == [
+        "baseline",
+        "edit",
+    ]
+
+    diff = client.get(
+        "/lesson-history/diff",
+        params={
+            "lesson_id": "python/history-api",
+            "from_revision": 0,
+            "to_revision": 1,
+        },
+    )
+    assert diff.status_code == 200, diff.text
+    assert "-Before" in diff.json()["unified_diff"]
+    assert "+After" in diff.json()["unified_diff"]
+
+    rollback = client.post(
+        "/lesson-history/rollback",
+        json={
+            "lesson_id": "python/history-api",
+            "target_revision": 0,
+            "expected_revision": current,
+            "reason": "API rollback test",
+        },
+    )
+    assert rollback.status_code == 200, rollback.text
+    assert rollback.json()["revision"] == 2
+
+    after = client.get("/lessons/python%2Fhistory-api")
+    assert after.status_code == 200
+    assert after.json()["text"] == "Before"
+    assert (
+        after.json()["canonical_revision"]
+        == rollback.json()["canonical_revision"]
+    )
+
+    history = client.get(
+        "/lesson-history",
+        params={"lesson_id": "python/history-api"},
+    ).json()
+    assert [item["action"] for item in history["revisions"]] == [
+        "baseline",
+        "edit",
+        "rollback",
+    ]
+    assert history["revisions"][2]["rollback_from_revision"] == 0
+
+
+def test_revision_aware_update_rejects_stale_external_edit(
+    vault_env: tuple[Path, Path],
+) -> None:
+    vault, _ = vault_env
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/stale-api",
+            "text": "Before",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": [],
+            "date": "2026-08-15",
+        },
+    )
+    assert created.status_code == 201
+
+    detail = client.get("/lessons/python%2Fstale-api").json()
+    stale = detail["canonical_revision"]
+
+    target = find_markdown_by_id(vault, "python/stale-api")
+    assert target is not None
+    target.write_text(
+        target.read_text(encoding="utf-8").replace("Before", "External"),
+        encoding="utf-8",
+    )
+
+    response = client.put(
+        "/lessons/python%2Fstale-api",
+        json={
+            "text": "Managed",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": [],
+            "date": "2026-08-15",
+            "expected_revision": stale,
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "lesson_revision_stale"
+    assert "External" in target.read_text(encoding="utf-8")
+
+
+def test_revision_update_reports_canonical_success_when_refresh_fails(
+    vault_env: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/partial-api",
+            "text": "Before",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": [],
+            "date": "2026-08-15",
+        },
+    )
+    assert created.status_code == 201
+
+    current = client.get("/lessons/python%2Fpartial-api").json()[
+        "canonical_revision"
+    ]
+
+    def fail_refresh(_context: object = None) -> None:
+        raise OSError("projection unavailable")
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", fail_refresh)
+
+    response = client.put(
+        "/lessons/python%2Fpartial-api",
+        json={
+            "text": "After",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": [],
+            "date": "2026-08-15",
+            "expected_revision": current,
+        },
+    )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == "lesson_update_refresh_failed"
+    assert detail["recovery"]["canonical_saved"] is True
+    assert detail["recovery"]["revision"] == 1
+    assert detail["recovery"]["refresh_outcome"]["refreshed"] is False

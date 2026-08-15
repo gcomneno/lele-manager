@@ -227,6 +227,7 @@ def test_get_lesson_by_id_200_and_404(tmp_path, monkeypatch) -> None:
     assert payload["date"].startswith("2025-01-01")
 
     assert payload["title"] == "Uno"
+    assert payload["canonical_revision"] is None
 
     missing = client.get("/lessons/does-not-exist")
     assert missing.status_code == 404
@@ -600,6 +601,7 @@ def test_get_lesson_exposes_forward_and_derived_reverse_supersession(
     current_payload = current.json()
     assert current_payload["superseded_by"] is None
     assert current_payload["supersedes"] == ["old/a", "old/b"]
+    assert current_payload["canonical_revision"] is None
 
     old = client.get("/lessons/old/a")
     assert old.status_code == 200

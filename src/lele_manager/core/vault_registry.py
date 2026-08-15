@@ -66,6 +66,11 @@ class ActiveVaultContext:
     topic_model_path: Path
     duplicate_decision_scope: str
 
+    @property
+    def revision_history_path(self) -> Path:
+        """Durable revision history in this Vault's existing editorial scope."""
+        return self.candidates_path.parent / "lesson-revisions.json"
+
 
 def registry_path() -> Path:
     return data_dir() / "vault-registry.json"

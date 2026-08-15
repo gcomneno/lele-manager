@@ -86,6 +86,9 @@ def test_registry_lifecycle_keeps_runtime_artifacts_and_candidates_isolated(
     assert context_a.candidates_path != context_b.candidates_path
     assert context_a.projection_path != context_b.projection_path
     assert context_a.topic_model_path != context_b.topic_model_path
+    assert context_a.revision_history_path != context_b.revision_history_path
+    assert context_a.revision_history_path == context_a.candidates_path.parent / "lesson-revisions.json"
+    assert context_b.revision_history_path == context_b.candidates_path.parent / "lesson-revisions.json"
     with pytest.raises(VaultConflictError):
         store.remove(a.id)
     store.remove(renamed.id)
