@@ -558,8 +558,8 @@ Available views:
 |---|---|
 | **Dashboard** | Workspace readiness, bounded knowledge summary, and next useful actions |
 | **Browse** | Advanced search, lifecycle filtering, and Markdown export |
-| **Detail** | Full lesson content, lifecycle, supersession links, and explained similarity |
-| **Editor** | Canonical Markdown authoring with explicit lifecycle and supersession controls |
+| **Detail** | Full lesson content, lifecycle, supersession links, explained similarity, and revision history |
+| **Editor** | Revision-aware canonical Markdown authoring with explicit lifecycle and supersession controls |
 | **TritaLeLe** | Controlled candidate ingestion, review, rejection, and approval |
 | **Duplicates** | Read-only review of exact and near-duplicate pairs |
 | **Timeline** | Knowledge-acquisition timeline and bucket export |
@@ -582,6 +582,25 @@ available.
 The Editor is the explicit lifecycle mutation surface: selecting Active removes
 a previous non-active marker, and clearing Superseded by removes the canonical
 replacement link. Neither operation deletes lesson content.
+
+The Detail revision-history panel shows the maintained per-LeLe timeline and
+supports explicit comparison between historical revisions. Diffs are derived
+from complete canonical Markdown snapshots and can expose both frontmatter and
+body changes. The current revision is identified by its monotonically increasing
+revision number; an older revision may legitimately have the same exact
+canonical fingerprint after a rollback.
+
+Editing an existing LeLe uses the exact canonical Markdown fingerprint loaded
+with the Editor as an optimistic-concurrency precondition. If the Markdown
+changes externally before Save, the update is rejected as stale without
+silently retrying or discarding the user's current draft.
+
+Rollback is always explicit and confirmed. Restoring an older revision writes
+that historical Markdown through the canonical authoring boundary and appends a
+new `rollback` revision; it never rewinds or erases the existing history. If the
+canonical edit or rollback succeeds but rebuilding derived projection/search
+state fails, the GUI reports canonical success separately and warns that derived
+results may remain stale until a later refresh succeeds.
 
 The GUI requires `LELE_VAULT_DIR`; the default is `~/LeLeVault`.
 

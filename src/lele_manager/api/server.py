@@ -27,9 +27,22 @@ from lele_manager.core.duplicate_decisions import (
 )
 from lele_manager.application.lesson_writing import (
     CanonicalLessonWriteAmbiguousError,
+    CanonicalLessonWriteHistoryError,
     CanonicalLessonWriteNotFoundError,
+    CanonicalLessonRollbackTargetError,
+    CanonicalLessonWriteRecoveryError,
+    CanonicalLessonWriteStaleError,
     CanonicalLessonWriteStorageError,
+    diff_lesson_revisions,
+    read_canonical_lesson_revision,
+    read_canonical_lesson_snapshot,
+    rollback_canonical_lesson_source,
     write_canonical_lesson_source,
+    write_revisioned_canonical_lesson_source,
+)
+from lele_manager.core.lesson_revision_history import (
+    LessonRevision,
+    LessonRevisionHistoryStore,
 )
 from lele_manager.core.runtime_transparency import (
     RuntimePathDescription,
@@ -66,7 +79,6 @@ from lele_manager.core.doctor import DoctorOperationalError, check_markdown_file
 from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.vault import (
     build_vault_tree,
-    find_markdown_by_id,
     find_markdown_paths_by_id,
     import_vault_to_jsonl,
     resolve_vault_dir,
@@ -244,6 +256,13 @@ class LessonSearchResult(Lesson):
 
 
 class LessonDetail(Lesson):
+    canonical_revision: Optional[str] = Field(
+        default=None,
+        description=(
+            "SHA-256 exact-byte token of the current canonical Markdown. "
+            "Absent only for the legacy projection-only DATA_PATH seam."
+        ),
+    )
     supersedes: List[str] = Field(
         default_factory=list,
         description=(
@@ -737,6 +756,61 @@ class LessonVaultCreate(LessonVaultWrite):
         default=None,
         description="ID LeLe. Se omesso viene derivato da topic/data/titolo.",
     )
+
+
+class LessonVaultUpdate(LessonVaultWrite):
+    expected_revision: str = Field(
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+        description="Exact canonical revision token returned by lesson Detail.",
+    )
+
+
+class LessonRevisionSummaryResponse(BaseModel):
+    revision: int
+    canonical_fingerprint: str
+    occurred_at: str
+    action: Literal["baseline", "edit", "rollback"]
+    relative_path: str
+    reason: Optional[str] = None
+    rollback_from_revision: Optional[int] = None
+
+
+class LessonRevisionDetailResponse(LessonRevisionSummaryResponse):
+    markdown: str
+
+
+class LessonRevisionHistoryResponse(BaseModel):
+    lesson_id: str
+    current_canonical_revision: str
+    revisions: List[LessonRevisionSummaryResponse]
+
+
+class LessonRevisionDiffResponse(BaseModel):
+    lesson_id: str
+    from_revision: int
+    to_revision: int
+    unified_diff: str
+
+
+class LessonRollbackRequest(BaseModel):
+    lesson_id: str
+    target_revision: int = Field(ge=0)
+    expected_revision: str = Field(
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    reason: Optional[str] = None
+
+
+class LessonRollbackResponse(BaseModel):
+    lesson_id: str
+    revision: int
+    canonical_revision: str
+    canonical_changed: bool
+    refresh_outcome: "RefreshOutcomeResponse"
 
 
 class RefreshOutcomeResponse(BaseModel):
@@ -2042,7 +2116,6 @@ def get_lesson(lesson_id: str) -> LessonDetail:
     riscritta nel Markdown.
     """
     context = get_active_vault_context()
-    lesson = _get_lesson_from_context(lesson_id, context)
     df = load_lessons_df(context)
 
     reverse_ids: set[str] = set()
@@ -2053,8 +2126,57 @@ def get_lesson(lesson_id: str) -> LessonDetail:
             if source_id and target_id == lesson_id:
                 reverse_ids.add(source_id)
 
+    try:
+        canonical_state = read_canonical_lesson_snapshot(
+            vault_dir=context.vault_dir,
+            lesson_id=lesson_id,
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        # DATA_PATH is an intentionally narrow legacy/test seam. Some tests
+        # also use it while exercising a real canonical Vault, so canonical
+        # Markdown always wins when present. Fall back to projection-only
+        # compatibility only when the canonical lesson truly does not exist,
+        # and never manufacture an authority-bearing revision token.
+        if DATA_PATH is not None:
+            lesson = _get_lesson_from_context(lesson_id, context)
+            return LessonDetail(
+                **lesson.model_dump(),
+                canonical_revision=None,
+                supersedes=sorted(reverse_ids),
+            )
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "lesson_not_found", "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+
     return LessonDetail(
-        **lesson.model_dump(),
+        id=canonical_state.lesson_id,
+        text=canonical_state.text,
+        topic=canonical_state.topic,
+        source=canonical_state.source,
+        importance=canonical_state.importance,
+        tags=canonical_state.tags,
+        date=canonical_state.date,
+        title=canonical_state.title,
+        lifecycle=canonical_state.lifecycle,
+        superseded_by=canonical_state.superseded_by,
+        canonical_revision=canonical_state.canonical_revision,
         supersedes=sorted(reverse_ids),
     )
 
@@ -2870,18 +2992,370 @@ def create_vault_lesson(body: LessonVaultCreate) -> Lesson:
     return _get_lesson_from_context(lesson_id, context)
 
 
+def _revision_summary(item: LessonRevision) -> LessonRevisionSummaryResponse:
+    return LessonRevisionSummaryResponse(
+        revision=item.revision,
+        canonical_fingerprint=item.canonical_fingerprint,
+        occurred_at=item.occurred_at,
+        action=item.action,
+        relative_path=item.relative_path,
+        reason=item.reason,
+        rollback_from_revision=item.rollback_from_revision,
+    )
+
+
+def _checked_lesson_history(
+    lesson_id: str,
+    context: ActiveVaultContext,
+) -> tuple[str, tuple[LessonRevision, ...]]:
+    try:
+        current = read_canonical_lesson_revision(
+            vault_dir=context.vault_dir,
+            lesson_id=lesson_id,
+        )
+        revisions = LessonRevisionHistoryStore(
+            context.revision_history_path
+        ).list(lesson_id)
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "lesson_not_found", "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "lesson_identity_ambiguous", "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "lesson_canonical_read_failed", "message": str(exc)},
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_revision_history_failed",
+                "message": "Lesson revision history is unavailable.",
+            },
+        ) from exc
+
+    if revisions and revisions[-1].canonical_fingerprint != current.canonical_revision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_revision_history_diverged",
+                "message": (
+                    "Canonical lesson and maintained revision history diverged."
+                ),
+            },
+        )
+
+    return current.canonical_revision, revisions
+
+
+@app.get("/lesson-history", response_model=LessonRevisionHistoryResponse)
+def lesson_revision_history(
+    lesson_id: str,
+) -> LessonRevisionHistoryResponse:
+    context = get_active_vault_context()
+    current, revisions = _checked_lesson_history(lesson_id, context)
+    return LessonRevisionHistoryResponse(
+        lesson_id=lesson_id,
+        current_canonical_revision=current,
+        revisions=[_revision_summary(item) for item in revisions],
+    )
+
+
+@app.get(
+    "/lesson-history/revision",
+    response_model=LessonRevisionDetailResponse,
+)
+def lesson_revision_detail(
+    lesson_id: str,
+    revision: int = Query(ge=0),
+) -> LessonRevisionDetailResponse:
+    context = get_active_vault_context()
+    _checked_lesson_history(lesson_id, context)
+    try:
+        item = LessonRevisionHistoryStore(
+            context.revision_history_path
+        ).get(lesson_id, revision)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "lesson_revision_not_found",
+                "message": "Lesson revision was not found.",
+            },
+        ) from exc
+    return LessonRevisionDetailResponse(
+        **_revision_summary(item).model_dump(),
+        markdown=item.markdown,
+    )
+
+
+@app.get("/lesson-history/diff", response_model=LessonRevisionDiffResponse)
+def lesson_revision_diff(
+    lesson_id: str,
+    from_revision: int = Query(ge=0),
+    to_revision: int = Query(ge=0),
+) -> LessonRevisionDiffResponse:
+    context = get_active_vault_context()
+    _checked_lesson_history(lesson_id, context)
+    try:
+        diff = diff_lesson_revisions(
+            history_store=LessonRevisionHistoryStore(
+                context.revision_history_path
+            ),
+            lesson_id=lesson_id,
+            from_revision=from_revision,
+            to_revision=to_revision,
+        )
+    except CanonicalLessonRollbackTargetError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "lesson_revision_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+
+    return LessonRevisionDiffResponse(
+        lesson_id=lesson_id,
+        from_revision=from_revision,
+        to_revision=to_revision,
+        unified_diff=diff,
+    )
+
+
+@app.post("/lesson-history/rollback", response_model=LessonRollbackResponse)
+def rollback_lesson_revision(
+    body: LessonRollbackRequest,
+) -> LessonRollbackResponse:
+    context = get_active_vault_context()
+    try:
+        result = rollback_canonical_lesson_source(
+            vault_dir=context.vault_dir,
+            lesson_id=body.lesson_id,
+            target_revision=body.target_revision,
+            expected_revision=body.expected_revision,
+            history_store=LessonRevisionHistoryStore(
+                context.revision_history_path
+            ),
+            invalidate_cache=invalidate_similarity_cache,
+            reason=body.reason,
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "lesson_not_found", "message": str(exc)},
+        ) from exc
+    except CanonicalLessonRollbackTargetError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "lesson_revision_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except (
+        CanonicalLessonWriteStaleError,
+        CanonicalLessonWriteHistoryError,
+    ) as exc:
+        code = (
+            "lesson_revision_stale"
+            if isinstance(exc, CanonicalLessonWriteStaleError)
+            else "lesson_revision_history_diverged"
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"code": code, "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteRecoveryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_revision_recovery_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "lesson_write_failed", "message": str(exc)},
+        ) from exc
+
+    refreshed = True
+    if result.canonical_changed:
+        try:
+            _sync_vault_import(context)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "lesson_rollback_refresh_failed",
+                    "message": (
+                        "Canonical rollback and revision history succeeded, "
+                        "but derived data could not be refreshed."
+                    ),
+                    "recovery": {
+                        "lesson_id": body.lesson_id,
+                        "canonical_saved": True,
+                        "canonical_revision": result.canonical_revision,
+                        "revision": result.revision,
+                        "refresh_outcome": {
+                            "attempted": True,
+                            "refreshed": False,
+                        },
+                    },
+                },
+            ) from exc
+    else:
+        refreshed = False
+
+    if result.revision is None:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "lesson_revision_internal_error",
+                "message": "Rollback did not produce a revision boundary.",
+            },
+        )
+
+    return LessonRollbackResponse(
+        lesson_id=body.lesson_id,
+        revision=result.revision,
+        canonical_revision=result.canonical_revision,
+        canonical_changed=result.canonical_changed,
+        refresh_outcome=RefreshOutcomeResponse(refreshed=refreshed),
+    )
+
+
 @app.put("/lessons/{lesson_id:path}", response_model=Lesson)
-def update_lesson(lesson_id: str, body: LessonVaultWrite) -> Lesson:
-    """Aggiorna una LeLe: write-back su vault `.md` + re-import JSONL."""
+def update_lesson(lesson_id: str, body: LessonVaultUpdate) -> Lesson:
+    """Revision-aware canonical edit followed by derived reconciliation."""
     try:
         context = get_active_vault_context()
         vault_dir = context.vault_dir
-        existing = find_markdown_by_id(vault_dir, lesson_id)
-        rel_path = existing.relative_to(vault_dir).as_posix() if existing else None
-        _write_lesson_to_vault(
-            lesson_id=lesson_id, payload=body, relative_path=rel_path, context=context
-        )
-        _sync_vault_import(context)
+
+        with canonical_mutation_boundary():
+            current_lifecycle, current_superseded_by = _canonical_lifecycle_metadata(
+                vault_dir,
+                lesson_id,
+            )
+            lifecycle = (
+                normalize_lifecycle(body.lifecycle)
+                if "lifecycle" in body.model_fields_set
+                else current_lifecycle
+            )
+            superseded_by = (
+                normalize_superseded_by(
+                    body.superseded_by,
+                    lesson_id=lesson_id,
+                )
+                if "superseded_by" in body.model_fields_set
+                else current_superseded_by
+            )
+            _validate_supersession_target(
+                vault_dir,
+                lesson_id,
+                superseded_by,
+            )
+
+            result = write_revisioned_canonical_lesson_source(
+                vault_dir=vault_dir,
+                lesson_id=lesson_id,
+                expected_revision=body.expected_revision,
+                history_store=LessonRevisionHistoryStore(
+                    context.revision_history_path
+                ),
+                body=body.text,
+                topic=body.topic.strip(),
+                source=body.source.strip() or "note",
+                importance=int(body.importance),
+                tags=[
+                    str(tag).strip()
+                    for tag in (body.tags or [])
+                    if str(tag).strip()
+                ],
+                date=_lesson_date_or_today(body.date),
+                title=body.title.strip() if body.title else None,
+                lifecycle=lifecycle,
+                superseded_by=superseded_by,
+                invalidate_cache=invalidate_similarity_cache,
+            )
+
+        if result.canonical_changed:
+            try:
+                _sync_vault_import(context)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "code": "lesson_update_refresh_failed",
+                        "message": (
+                            "Canonical lesson and revision history were saved, "
+                            "but derived data could not be refreshed."
+                        ),
+                        "recovery": {
+                            "lesson_id": lesson_id,
+                            "canonical_saved": True,
+                            "canonical_revision": result.canonical_revision,
+                            "revision": result.revision,
+                            "refresh_outcome": {
+                                "attempted": True,
+                                "refreshed": False,
+                            },
+                        },
+                    },
+                ) from exc
+
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "lesson_not_found", "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStaleError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_revision_stale",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteHistoryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_revision_history_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteRecoveryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_revision_recovery_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_write_failed",
+                "message": str(exc),
+            },
+        ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

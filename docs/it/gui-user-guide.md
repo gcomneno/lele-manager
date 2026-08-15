@@ -111,8 +111,8 @@ navigazione recuperabile ed evita overflow orizzontale.
 |---|---|
 | Dashboard | Disponibilità dello spazio di lavoro, riepiloghi bounded e prossime azioni utili |
 | Browse | Ricerca, filtri ed esportazione delle lesson |
-| Detail | Lettura di una lesson e similarità spiegata |
-| Editor | Creazione o aggiornamento di lesson Markdown canoniche |
+| Detail | Lettura di una lesson, similarità spiegata e cronologia revisioni |
+| Editor | Creazione o aggiornamento revision-aware di lesson Markdown canoniche |
 | Timeline | Analisi per mese, anno o topic |
 | Stats | Conteggi, topic, tag e valori medi |
 | TritaLeLe | Anteprima, staging, revisione e approvazione esplicita |
@@ -220,6 +220,55 @@ proiezione e lo stato di ricerca derivati: non è necessario usare
 derivato fallisce, l’interfaccia comunica correttamente l’esito parziale: la
 LeLe canonica non esiste più, mentre ricerca e similarità possono restare
 temporaneamente obsolete fino a un refresh successivo.
+
+## Cronologia revisioni, diff e rollback
+
+Per una LeLe canonica esistente, **Dettaglio** include una cronologia revisioni
+mantenuta. La timeline è append-only e scoped allo stable ID della LeLe. Ogni
+voce identifica numero di revisione, azione, timestamp, fingerprint canonico
+esatto, motivazione opzionale e, per un rollback, la revisione sorgente.
+
+La prima modifica revision-aware di una LeLe priva di cronologia mantenuta
+registra il Markdown canonico esistente come revisione `#0` (**Baseline**) e lo
+stato modificato con successo come revisione `#1` (**Modifica**). Le modifiche
+successive aggiungono una revisione ciascuna. Un Salva identico è un no-op e non
+crea cronologia artificiale.
+
+Usa **Confronta revisioni** per scegliere due numeri di revisione storici e
+leggere il relativo diff Markdown unificato. Il confronto è derivato dagli
+snapshot canonici completi memorizzati, quindi rende visibili sia le modifiche
+al frontmatter sia quelle al body. Il diff non è a sua volta uno stato
+autorevole persistito.
+
+Il fingerprint esatto del Markdown canonico caricato dall'Editor è anche il
+token di concorrenza ottimistica. Se il file cambia dopo l'apertura dell'Editor,
+Salva viene rifiutato come obsoleto invece di ricaricare silenziosamente e
+sovrascrivere lo stato canonico più recente. La bozza non salvata resta visibile
+per permettere all'utente di decidere come riconciliarla.
+
+Per ripristinare contenuto storico, scegli **Ripristina questa revisione** e
+conferma il dialog. Una motivazione opzionale può documentare la decisione. Il
+rollback non cancella né riscrive la cronologia precedente: lo snapshot scelto
+viene scritto come nuovo Markdown canonico e viene aggiunta una nuova revisione
+monotona **Rollback**. Poiché il rollback può ripristinare byte identici a una
+vecchia versione, due numeri di revisione distinti possono condividere
+legittimamente lo stesso fingerprint canonico. È l'ultimo numero di revisione,
+non l'uguaglianza del fingerprint, a identificare la voce corrente della
+timeline.
+
+Persistenza canonica e riconciliazione derivata restano esiti separati. Se una
+modifica o un rollback scrivono con successo Markdown canonico e cronologia ma
+fallisce il refresh della proiezione, la GUI comunica il successo canonico come
+avviso invece di fingere che la scrittura sia fallita. Ricerca e similarità
+possono essere temporaneamente obsolete; quando opportuno va ripetuto soltanto
+il refresh derivato. Dopo un salvataggio parziale dell'Editor, l'Editor adotta
+il nuovo token canonico già persistito, evitando di riutilizzare al Salva
+successivo il token precedente ormai obsoleto.
+
+La cronologia revisioni è stato editoriale durevole per Vault. Non sostituisce
+il Markdown canonico come fonte autorevole, la cronologia revisioni dei
+candidati TritaLeLe, la cronologia Git o le generazioni della proiezione
+ricostruibile.
 
 ## Screenshot
 

@@ -233,7 +233,7 @@ test('metadata-options failure still permits a manual save', async ({ page }) =>
 test('edit mode preserves uncatalogued metadata until an explicit update', async ({ page }) => {
   await mockOptions(page)
   const writes = watchWrites(page)
-  const legacy = { id: 'legacy-special', text: '---\ntopic: legacy-special\n---\nLegacy body.', topic: 'legacy-special', source: 'old-import', importance: 4, tags: ['RareTag', 'AnotherTag'], date: '2026-01-02' }
+  const legacy = { id: 'legacy-special', text: '---\ntopic: legacy-special\n---\nLegacy body.', topic: 'legacy-special', source: 'old-import', importance: 4, tags: ['RareTag', 'AnotherTag'], date: '2026-01-02', canonical_revision: `sha256:${'a'.repeat(64)}`, supersedes: [] }
   await page.route('**/lessons/legacy-special', async route => {
     if (route.request().method() === 'GET') await route.fulfill({ json: legacy })
     else await route.fulfill({ json: { ...legacy, ...(route.request().postDataJSON() as object) } })
@@ -264,6 +264,8 @@ test('edit mode hydrates lifecycle and can explicitly clear lifecycle metadata',
     date: '2026-01-02',
     lifecycle: 'deprecated',
     superseded_by: 'legacy/replacement',
+    canonical_revision: `sha256:${'b'.repeat(64)}`,
+    supersedes: [],
   }
 
   await page.route('**/lessons/legacy%2Fdeprecated', async route => {

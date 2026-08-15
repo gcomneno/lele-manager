@@ -19,6 +19,7 @@
   import { renderMarkdown } from '../lib/markdown'
   import SimilarPanel from '../components/SimilarPanel.svelte'
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
+  import RevisionHistoryPanel from '../components/RevisionHistoryPanel.svelte'
 
   interface Props {
     id: string
@@ -36,17 +37,23 @@
   let deleteTarget = $state<Lesson | null>(null)
   let deleteError = $state('')
 
-  async function load() {
-    loading = true
+  async function load(showLoading = true) {
+    if (showLoading) {
+      loading = true
+    }
     error = ''
 
     try {
       lesson = await api.getLesson(id)
     } catch (e) {
-      lesson = null
+      if (showLoading) {
+        lesson = null
+      }
       error = e instanceof Error ? e.message : String(e)
     } finally {
-      loading = false
+      if (showLoading) {
+        loading = false
+      }
     }
   }
 
@@ -227,15 +234,27 @@
       </article>
     </Panel>
 
-    <SimilarPanel
-      id="lesson-similarity"
-      title={$messages.detailSimilarLessons}
-      items={similar}
-      meta={similarMeta}
-      explain={true}
-      loading={similarLoading}
-      error={similarError}
-    />
+    <div class="detail-sidebar">
+      <SimilarPanel
+        id="lesson-similarity"
+        title={$messages.detailSimilarLessons}
+        items={similar}
+        meta={similarMeta}
+        explain={true}
+        loading={similarLoading}
+        error={similarError}
+      />
+
+      {#if lesson.canonical_revision}
+        <RevisionHistoryPanel
+          lesson={lesson}
+          onchanged={async () => {
+            await load(false)
+            await loadSimilar()
+          }}
+        />
+      {/if}
+    </div>
   </div>
 {/if}
 
@@ -251,6 +270,11 @@
     grid-template-columns: 1.4fr 0.8fr;
     gap: 16px;
     align-items: start;
+  }
+
+  .detail-sidebar {
+    display: grid;
+    gap: 16px;
   }
 
   :global(.main-pane .giu-panel__title) {

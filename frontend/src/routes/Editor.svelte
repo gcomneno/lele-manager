@@ -6,9 +6,11 @@
     Panel,
   } from 'giadaware-ui-components/studio'
   import {
+    ApiError,
     api,
     type EditorMetadataOptionsResponse,
     type Lesson,
+    type LessonDetail,
     type LessonLifecycleState,
     type SimilarItem,
     type SimilarMeta,
@@ -39,7 +41,8 @@
   let supersededBy = $state('')
   let body = $state('')
   let lessonId = $state('')
-  let loadedLesson = $state<Lesson | null>(null)
+  let loadedLesson = $state<LessonDetail | null>(null)
+  let canonicalRevision = $state('')
 
   let similar = $state<SimilarItem[]>([])
   let similarMeta = $state<SimilarMeta | null>(null)
@@ -50,7 +53,7 @@
   let loadError = $state('')
   let saving = $state(false)
   let saveMsg = $state('')
-  let saveSucceeded = $state(false)
+  let saveTone = $state<'success' | 'warning' | 'error'>('success')
   let deleteError = $state('')
   let deleteTarget = $state<Lesson | null>(null)
   let metadataOptions = $state<EditorMetadataOptionsResponse>({
@@ -207,11 +210,12 @@
     loadError = ''
 
     try {
-      const lesson: Lesson = await api.getLesson(
+      const lesson: LessonDetail = await api.getLesson(
         lessonIdValue,
       )
       lessonId = lesson.id
       loadedLesson = lesson
+      canonicalRevision = lesson.canonical_revision ?? ''
       topic = lesson.topic ?? ''
       source = lesson.source ?? ''
       importance = lesson.importance ?? 3
@@ -226,6 +230,7 @@
       invalidateSimilarity()
     } catch (e) {
       loadedLesson = null
+      canonicalRevision = ''
       loadError = e instanceof Error
         ? e.message
         : String(e)
@@ -255,19 +260,19 @@
 
   async function save() {
     if (!body.trim()) {
-      saveSucceeded = false
+      saveTone = 'error'
       saveMsg = $messages.editorBodyRequired
       return
     }
 
     if (!topic.trim()) {
-      saveSucceeded = false
+      saveTone = 'error'
       saveMsg = $messages.editorTopicRequired
       return
     }
 
     saving = true
-    saveSucceeded = false
+    saveTone = 'error'
     saveMsg = ''
 
     try {
@@ -277,9 +282,16 @@
       let lesson: Lesson
 
       if (targetId) {
+        if (!canonicalRevision) {
+          throw new Error($messages.editorRevisionMissing)
+        }
+
         lesson = await api.updateLesson(
           targetId,
-          payload,
+          {
+            ...payload,
+            expected_revision: canonicalRevision,
+          },
         )
       } else {
         lesson = await api.createVaultLesson({
@@ -288,7 +300,7 @@
         })
       }
 
-      saveSucceeded = true
+      saveTone = 'success'
       saveMsg = formatMessage(
         $messages.editorSaved,
         { id: lesson.id },
@@ -298,10 +310,26 @@
         id: lesson.id,
       })
     } catch (e) {
-      saveSucceeded = false
-      saveMsg = e instanceof Error
-        ? e.message
-        : String(e)
+      saveTone = 'error'
+
+      if (e instanceof ApiError && e.code === 'lesson_revision_stale') {
+        saveMsg = $messages.editorRevisionStale
+      } else if (
+        e instanceof ApiError
+        && e.code === 'lesson_update_refresh_failed'
+        && e.recovery?.canonical_saved === true
+      ) {
+        const recoveredRevision = e.recovery.canonical_revision
+        if (typeof recoveredRevision === 'string') {
+          canonicalRevision = recoveredRevision
+        }
+        saveTone = 'warning'
+        saveMsg = $messages.editorSavedRefreshFailed
+      } else {
+        saveMsg = e instanceof Error
+          ? e.message
+          : String(e)
+      }
     } finally {
       saving = false
     }
@@ -383,7 +411,7 @@
     {#if saveMsg}
       <FormStatus
         message={saveMsg}
-        tone={saveSucceeded ? 'success' : 'error'}
+        tone={saveTone}
         style="--giu-form-status-padding: var(--space-2) var(--space-3)"
       />
     {/if}

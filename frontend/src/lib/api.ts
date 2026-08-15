@@ -19,6 +19,7 @@ export interface Lesson {
 }
 
 export interface LessonDetail extends Lesson {
+  canonical_revision: string | null
   supersedes: string[]
 }
 
@@ -351,6 +352,47 @@ export interface LessonVaultWrite {
 
 export interface LessonVaultCreate extends LessonVaultWrite {
   id?: string | null
+}
+
+export interface LessonVaultUpdate extends LessonVaultWrite {
+  expected_revision: string
+}
+
+export type LessonRevisionAction = 'baseline' | 'edit' | 'rollback'
+
+export interface LessonRevisionSummary {
+  revision: number
+  canonical_fingerprint: string
+  occurred_at: string
+  action: LessonRevisionAction
+  relative_path: string
+  reason?: string | null
+  rollback_from_revision?: number | null
+}
+
+export interface LessonRevisionDetail extends LessonRevisionSummary {
+  markdown: string
+}
+
+export interface LessonRevisionHistoryResponse {
+  lesson_id: string
+  current_canonical_revision: string
+  revisions: LessonRevisionSummary[]
+}
+
+export interface LessonRevisionDiffResponse {
+  lesson_id: string
+  from_revision: number
+  to_revision: number
+  unified_diff: string
+}
+
+export interface LessonRollbackResponse {
+  lesson_id: string
+  revision: number
+  canonical_revision: string
+  canonical_changed: boolean
+  refresh_outcome: { refreshed: boolean }
 }
 
 export interface LessonDeleteResponse {
@@ -842,11 +884,60 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  updateLesson: (id: string, body: LessonVaultWrite) =>
+  updateLesson: (id: string, body: LessonVaultUpdate) =>
     request<Lesson>(`/lessons/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    }),
+
+  lessonHistory: (lessonId: string) => {
+    const params = new URLSearchParams({ lesson_id: lessonId })
+    return request<LessonRevisionHistoryResponse>(
+      `/lesson-history?${params.toString()}`,
+    )
+  },
+
+  lessonRevision: (lessonId: string, revision: number) => {
+    const params = new URLSearchParams({
+      lesson_id: lessonId,
+      revision: String(revision),
+    })
+    return request<LessonRevisionDetail>(
+      `/lesson-history/revision?${params.toString()}`,
+    )
+  },
+
+  lessonRevisionDiff: (
+    lessonId: string,
+    fromRevision: number,
+    toRevision: number,
+  ) => {
+    const params = new URLSearchParams({
+      lesson_id: lessonId,
+      from_revision: String(fromRevision),
+      to_revision: String(toRevision),
+    })
+    return request<LessonRevisionDiffResponse>(
+      `/lesson-history/diff?${params.toString()}`,
+    )
+  },
+
+  rollbackLessonRevision: (
+    lessonId: string,
+    targetRevision: number,
+    expectedRevision: string,
+    reason?: string,
+  ) =>
+    request<LessonRollbackResponse>('/lesson-history/rollback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lesson_id: lessonId,
+        target_revision: targetRevision,
+        expected_revision: expectedRevision,
+        ...(reason?.trim() ? { reason: reason.trim() } : {}),
+      }),
     }),
 
   deleteLesson: (id: string) =>

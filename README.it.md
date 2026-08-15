@@ -550,8 +550,8 @@ Viste disponibili:
 |---|---|
 | **Dashboard** | Stato dello spazio di lavoro, riepilogo bounded e prossime azioni utili |
 | **Browse** | Ricerca avanzata, filtro lifecycle ed export Markdown |
-| **Detail** | Contenuto completo, lifecycle, link di supersession e similarità spiegata |
-| **Editor** | Authoring Markdown canonico con controlli espliciti di lifecycle e supersession |
+| **Detail** | Contenuto completo, lifecycle, link di supersession, similarità spiegata e cronologia revisioni |
+| **Editor** | Authoring Markdown canonico revision-aware con controlli espliciti di lifecycle e supersession |
 | **TritaLeLe** | Ingestione controllata, review, rifiuto e approvazione dei candidati |
 | **Duplicates** | Revisione read-only di duplicati esatti e near-duplicate |
 | **Timeline** | Timeline di acquisizione e export per bucket |
@@ -575,6 +575,28 @@ L'Editor è la superficie esplicita di mutazione del lifecycle: scegliere
 `active` rimuove un precedente marker non attivo e svuotare “Sostituita da”
 rimuove il collegamento canonico alla LeLe sostitutiva. Nessuna delle due
 operazioni elimina il contenuto della LeLe.
+
+Il pannello della cronologia revisioni nel Dettaglio mostra la timeline
+mantenuta della singola LeLe e permette di confrontare esplicitamente due
+revisioni storiche. I diff sono derivati dagli snapshot Markdown canonici
+completi e possono mostrare sia modifiche al frontmatter sia al body. La
+revisione corrente è identificata dal numero di revisione monotono; dopo un
+rollback una revisione storica può legittimamente avere lo stesso fingerprint
+canonico esatto della revisione corrente.
+
+La modifica di una LeLe esistente usa come precondizione di concorrenza
+ottimistica il fingerprint esatto del Markdown canonico caricato nell'Editor.
+Se il Markdown cambia esternamente prima di Salva, l'aggiornamento viene
+rifiutato come obsoleto senza retry silenzioso e senza scartare la bozza
+corrente dell'utente.
+
+Il rollback è sempre esplicito e confermato. Ripristinare una revisione storica
+scrive quel Markdown attraverso il boundary di authoring canonico e aggiunge
+una nuova revisione `rollback`; non riporta mai indietro il puntatore né
+cancella la cronologia esistente. Se modifica o rollback canonici riescono ma
+fallisce la ricostruzione di proiezione/ricerca derivate, la GUI comunica
+separatamente il successo canonico e avvisa che i risultati derivati possono
+restare temporaneamente obsoleti fino a un refresh successivo.
 
 La GUI richiede `LELE_VAULT_DIR`; il default è `~/LeLeVault`.
 
