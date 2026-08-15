@@ -982,7 +982,7 @@
 
   /* One-shot illustrated wandering monkey cameo */
   .lele-cameo {
-    --lele-cameo-duration: 12s;
+    --lele-cameo-duration: 13.8s;
     --lele-cameo-delay: 8s;
 
     position: fixed;
@@ -1147,70 +1147,70 @@
       opacity: 1;
     }
 
-    9% {
+    21.74% {
       opacity: 1;
       transform: translateX(-105px);
     }
 
-    13% {
+    25.22% {
       transform: translateX(-145px);
     }
 
-    17% {
+    28.70% {
       transform: translateX(-185px);
     }
 
-    21% {
+    32.17% {
       transform: translateX(-225px);
     }
 
-    25% {
+    35.65% {
       transform: translateX(-265px);
     }
 
-    29% {
+    39.13% {
       transform: translateX(-305px);
     }
 
-    32%,
-    58% {
+    41.74%,
+    64.35% {
       opacity: 1;
       transform: translateX(-325px);
     }
 
-    62% {
+    67.83% {
       transform: translateX(-290px);
     }
 
-    66% {
+    71.30% {
       transform: translateX(-250px);
     }
 
-    70% {
+    74.78% {
       transform: translateX(-210px);
     }
 
-    74% {
+    78.26% {
       transform: translateX(-170px);
     }
 
-    78% {
+    81.74% {
       transform: translateX(-130px);
     }
 
-    82% {
+    85.22% {
       transform: translateX(-90px);
     }
 
-    86% {
+    88.70% {
       transform: translateX(-50px);
     }
 
-    90% {
+    92.17% {
       transform: translateX(-15px);
     }
 
-    98% {
+    99.13% {
       opacity: 1;
       transform: translateX(0);
     }
@@ -1223,11 +1223,11 @@
 
   @keyframes lele-cameo-enter-frame {
     0%,
-    9.99% {
+    21.73% {
       opacity: 1;
     }
 
-    10%,
+    21.74%,
     100% {
       opacity: 0;
     }
@@ -1235,121 +1235,121 @@
 
   @keyframes lele-cameo-walk-left-a-frame {
     0%,
-    9.99%,
-    13%,
-    16.99%,
-    21%,
-    24.99%,
-    29%,
+    21.73%,
+    25.22%,
+    28.69%,
+    32.17%,
+    35.64%,
+    39.13%,
     100% {
       opacity: 0;
     }
 
-    10%,
-    12.99%,
-    17%,
-    20.99%,
-    25%,
-    28.99% {
+    21.74%,
+    25.21%,
+    28.70%,
+    32.16%,
+    35.65%,
+    39.12% {
       opacity: 1;
     }
   }
 
   @keyframes lele-cameo-walk-left-b-frame {
     0%,
-    12.99%,
-    17%,
-    20.99%,
-    25%,
-    28.99%,
-    32%,
+    25.21%,
+    28.70%,
+    32.16%,
+    35.65%,
+    39.12%,
+    41.74%,
     100% {
       opacity: 0;
     }
 
-    13%,
-    16.99%,
-    21%,
-    24.99%,
-    29%,
-    31.99% {
+    25.22%,
+    28.69%,
+    32.17%,
+    35.64%,
+    39.13%,
+    41.73% {
       opacity: 1;
     }
   }
 
   @keyframes lele-cameo-scratch-frame {
     0%,
-    31.99%,
-    58%,
+    41.73%,
+    64.35%,
     100% {
       opacity: 0;
     }
 
-    32%,
-    57.99% {
+    41.74%,
+    64.34% {
       opacity: 1;
     }
   }
 
   @keyframes lele-cameo-walk-right-a-frame {
     0%,
-    57.99%,
-    62%,
-    65.99%,
-    70%,
-    73.99%,
-    78%,
-    81.99%,
-    86%,
+    64.34%,
+    67.83%,
+    71.29%,
+    74.78%,
+    78.25%,
+    81.74%,
+    85.21%,
+    88.70%,
     100% {
       opacity: 0;
     }
 
-    58%,
-    61.99%,
-    66%,
-    69.99%,
-    74%,
-    77.99%,
-    82%,
-    85.99% {
+    64.35%,
+    67.82%,
+    71.30%,
+    74.77%,
+    78.26%,
+    81.73%,
+    85.22%,
+    88.69% {
       opacity: 1;
     }
   }
 
   @keyframes lele-cameo-walk-right-b-frame {
     0%,
-    61.99%,
-    66%,
-    69.99%,
-    74%,
-    77.99%,
-    82%,
-    85.99%,
-    90%,
+    67.82%,
+    71.30%,
+    74.77%,
+    78.26%,
+    81.73%,
+    85.22%,
+    88.69%,
+    92.17%,
     100% {
       opacity: 0;
     }
 
-    62%,
-    65.99%,
-    70%,
-    73.99%,
-    78%,
-    81.99%,
-    86%,
-    89.99% {
+    67.83%,
+    71.29%,
+    74.78%,
+    78.25%,
+    81.74%,
+    85.21%,
+    88.70%,
+    92.16% {
       opacity: 1;
     }
   }
 
   @keyframes lele-cameo-exit-frame {
     0%,
-    89.99% {
+    92.16% {
       opacity: 0;
     }
 
-    90%,
+    92.17%,
     100% {
       opacity: 1;
     }
@@ -1357,15 +1357,15 @@
 
   @keyframes lele-cameo-balloon {
     0%,
-    40%,
-    57%,
+    48.91%,
+    63.48%,
     100% {
       opacity: 0;
       transform: translateY(5px) scale(0.86);
     }
 
-    41%,
-    56% {
+    49.78%,
+    62.61% {
       opacity: 1;
       transform: translateY(0) scale(1);
     }
