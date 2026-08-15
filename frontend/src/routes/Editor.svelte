@@ -9,6 +9,7 @@
     api,
     type EditorMetadataOptionsResponse,
     type Lesson,
+    type LessonLifecycleState,
     type SimilarItem,
     type SimilarMeta,
   } from '../lib/api'
@@ -34,6 +35,8 @@
   let tags = $state<string[]>([])
   let tagDraft = $state('')
   let title = $state('')
+  let lifecycle = $state<LessonLifecycleState>('active')
+  let supersededBy = $state('')
   let body = $state('')
   let lessonId = $state('')
   let loadedLesson = $state<Lesson | null>(null)
@@ -215,6 +218,8 @@
       date = lesson.date ?? date
       title = lesson.title ?? ''
       tags = [...(lesson.tags ?? [])]
+      lifecycle = lesson.lifecycle ?? 'active'
+      supersededBy = lesson.superseded_by ?? ''
 
       const parsed = stripFrontmatter(lesson.text ?? '')
       body = parsed.body || lesson.text || ''
@@ -241,6 +246,10 @@
       tags: [...tags],
       date: date || null,
       title: title.trim() || null,
+      // The Editor is an explicit canonical authoring surface: always send
+      // lifecycle fields so active/null can deliberately clear old metadata.
+      lifecycle,
+      superseded_by: supersededBy.trim() || null,
     }
   }
 
@@ -451,11 +460,36 @@
       </label>
 
       <label>
+        <FieldLabel label={$messages.editorLifecycle} />
+        <select
+          bind:value={lifecycle}
+          aria-label={$messages.editorLifecycle}
+        >
+          <option value="active">{$messages.lifecycleActive}</option>
+          <option value="review-needed">{$messages.lifecycleReviewNeeded}</option>
+          <option value="deprecated">{$messages.lifecycleDeprecated}</option>
+          <option value="archived">{$messages.lifecycleArchived}</option>
+        </select>
+      </label>
+
+      <label>
         <FieldLabel label={$messages.fieldDate} />
         <input
           bind:value={date}
           oninput={invalidateSimilarity}
         />
+      </label>
+
+      <label class="wide">
+        <FieldLabel label={$messages.editorSupersededBy} />
+        <input
+          bind:value={supersededBy}
+          placeholder={$messages.editorSupersededByPlaceholder}
+          autocomplete="off"
+        />
+        <span class="field-help">
+          {$messages.editorSupersededByHelp}
+        </span>
       </label>
 
       <label>
@@ -598,6 +632,7 @@
   }
 
   .new-value { font-size: 0.75rem; color: var(--muted); }
+  .field-help { font-size: 0.75rem; color: var(--muted); }
   .delete-action { border: 1px solid #a22; border-radius: var(--radius-sm); background: var(--color-surface); color: #8b1717; font-weight: 700; padding: 6px 10px; }
   .delete-action:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .tag-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

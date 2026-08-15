@@ -166,16 +166,39 @@ scrivere un nuovo topic, tag o fonte e i suggerimenti non modificano mai i
 metadati automaticamente. I tag sono chip visibili da aggiungere o rimuovere e
 l’Importanza è esplicitamente limitata da 1 a 5. La similarità può proporre un
 topic solo dopo una verifica esplicita; applicarlo richiede un’azione distinta.
-Solo il salvataggio scrive nel vault Markdown canonico.
+
+Anche il lifecycle è controllato dall’utente. Ogni LeLe è **Attiva**, **Da
+rivedere**, **Deprecata** oppure **Archiviata**; una LeLe priva di marker
+canonico esplicito è Attiva. L’Editor espone direttamente il selettore dello
+stato e il campo opzionale **Sostituita da** con ID stabile. Scegliere Attiva
+rimuove deliberatamente un precedente marker non attivo, mentre svuotare
+Sostituita da elimina deliberatamente il riferimento canonico alla LeLe
+sostitutiva. Solo il salvataggio scrive queste modifiche nel vault Markdown
+canonico. I segnali derivati non eseguono mai transizioni lifecycle automatiche.
 
 ## Gestire una LeLe esistente
 
 Browse e Dettaglio della lesson espongono le stesse azioni per una LeLe
 esistente: **Modifica**, **Ispeziona** ed **Elimina**. Ispeziona apre la
 superficie mantenuta di similarità spiegata; durante la modifica, Editor
-mantiene l’azione esplicita **Verifica similarità**. Elimina mostra sempre il
-titolo della lesson (oppure *Senza titolo*) e l’ID stabile per la conferma,
-prima di rimuovere permanentemente quel preciso file Markdown canonico.
+mantiene l’azione esplicita **Verifica similarità**.
+
+Browse, ricerca, Lista tutte ed export Markdown usano per default soltanto LeLe
+Attive. Usa il selettore Stato per richiedere esplicitamente Da rivedere,
+Deprecata, Archiviata oppure Tutti gli stati. Le LeLe non attive ricevono una
+presentazione visiva distinta e un badge di stato. Lo stesso scope lifecycle
+viene applicato all’export.
+
+Il Dettaglio resta raggiungibile tramite ID stabile anche per LeLe non attive.
+Quando una LeLe contiene `superseded_by`, il Dettaglio collega alla sostitutiva
+mantenuta. La sostitutiva espone anche collegamenti derivati **Sostituisce**
+verso le LeLe che puntano a essa, rendendo navigabile la relazione in entrambe
+le direzioni quando disponibile. La supersession non elimina, accorpa,
+riscrive né cambia automaticamente il lifecycle di nessuna delle LeLe canoniche.
+
+Elimina mostra sempre il titolo della lesson (oppure *Senza titolo*) e l’ID
+stabile per la conferma, prima di rimuovere permanentemente quel preciso file
+Markdown canonico.
 
 Browse supporta anche la selezione multipla esplicita dello snapshot dei
 risultati caricati. **Seleziona tutte le LeLe visibili** seleziona solo i

@@ -48,6 +48,13 @@ from lele_manager.application.lesson_deletion import (
     delete_canonical_lesson,
 )
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
+from lele_manager.core.lifecycle import (
+    LifecycleState,
+    normalize_lifecycle,
+    normalize_superseded_by,
+    validate_supersession_chain,
+)
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
     LessonOrder,
@@ -211,6 +218,14 @@ class LessonBase(BaseModel):
         default=None,
         description="Timestamp tecnico (ISO 8601 UTC). Se omesso viene generato dal server.",
     )
+    lifecycle: LifecycleState = Field(
+        default="active",
+        description="Stato lifecycle canonico della LeLe.",
+    )
+    superseded_by: Optional[str] = Field(
+        default=None,
+        description="Stable ID della LeLe che sostituisce questa LeLe.",
+    )
 
 
 class LessonCreate(LessonBase):
@@ -226,6 +241,16 @@ class Lesson(LessonBase):
 
 class LessonSearchResult(Lesson):
     pass
+
+
+class LessonDetail(Lesson):
+    supersedes: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Stable IDs delle LeLe che indicano questa LeLe come loro sostituzione. "
+            "Relazione inversa derivata dalla projection, non canonica."
+        ),
+    )
 
 
 class ExternalLessonResponse(BaseModel):
@@ -270,6 +295,12 @@ class LessonSearchRequest(BaseModel):
     importance_lte: Optional[int] = Field(
         default=None,
         description="Filtro: importance <= questo valore.",
+    )
+    lifecycle_in: Optional[List[LifecycleState]] = Field(
+        default=None,
+        description=(
+            "Stati lifecycle ammessi. Se omesso, la ricerca include solo active."
+        ),
     )
     limit: int = Field(
         default=50,
@@ -685,6 +716,20 @@ class LessonVaultWrite(BaseModel):
     tags: Optional[List[str]] = Field(default=None)
     date: Optional[str] = Field(default=None)
     title: Optional[str] = Field(default=None)
+    lifecycle: LifecycleState | None = Field(
+        default=None,
+        description=(
+            "Lifecycle canonico. Se omesso in update viene preservato; "
+            "active esplicito rimuove il marker non-active."
+        ),
+    )
+    superseded_by: str | None = Field(
+        default=None,
+        description=(
+            "Stable ID della sostituzione. Se omesso in update viene preservato; "
+            "null esplicito rimuove il riferimento."
+        ),
+    )
 
 
 class LessonVaultCreate(LessonVaultWrite):
@@ -822,6 +867,8 @@ def load_lessons_df(context: ActiveVaultContext | None = None) -> pd.DataFrame:
         "date",
         "title",
         "created_at",
+        "lifecycle",
+        "superseded_by",
     ]:
         if col not in df.columns:
             df[col] = None
@@ -841,6 +888,23 @@ def _safe_dt_series(s: pd.Series) -> pd.Series:
     Parse free-form date strings to datetime; invalid/missing becomes NaT.
     """
     return pd.to_datetime(s, errors="coerce", utc=True)
+
+
+def _filter_lifecycle_scope(
+    df: pd.DataFrame,
+    lifecycle_in: list[LifecycleState] | None,
+) -> pd.DataFrame:
+    """Apply the maintained lifecycle scope; omission means active-only."""
+    requested = set(lifecycle_in) if lifecycle_in is not None else {"active"}
+    if not requested:
+        return df.iloc[0:0]
+
+    raw = df.get("lifecycle")
+    if raw is None:
+        effective = pd.Series("active", index=df.index, dtype="object")
+    else:
+        effective = raw.fillna("").astype(str).str.strip().replace("", "active")
+    return df[effective.isin(requested)]
 
 
 def append_lesson_to_jsonl(lesson: Lesson) -> None:
@@ -1080,6 +1144,8 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
+    lifecycle_val = normalize_lifecycle(_to_optional_str(row.get("lifecycle")))
+    superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
     # importance: prova a convertirla, altrimenti None
     raw_importance = row.get("importance")
@@ -1110,6 +1176,8 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
         tags=tags_val,
         date=date_val,
         title=title_val,
+        lifecycle=lifecycle_val,
+        superseded_by=superseded_by_val,
     )
 
 
@@ -1597,6 +1665,34 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
 
     result = body.result
     try:
+        current_lifecycle, current_superseded_by = _canonical_lifecycle_metadata(
+            vault_dir,
+            body.survivor_id,
+        )
+        lifecycle = (
+            normalize_lifecycle(result.lifecycle)
+            if "lifecycle" in result.model_fields_set
+            else current_lifecycle
+        )
+        superseded_by = (
+            normalize_superseded_by(
+                result.superseded_by,
+                lesson_id=body.survivor_id,
+            )
+            if "superseded_by" in result.model_fields_set
+            else current_superseded_by
+        )
+        if superseded_by == body.superseded_id:
+            raise ValueError(
+                "the surviving lesson cannot supersede the canonical lesson "
+                "that this merge will delete"
+            )
+        _validate_supersession_target(
+            vault_dir,
+            body.survivor_id,
+            superseded_by,
+        )
+
         write_canonical_lesson_source(
             vault_dir=vault_dir, lesson_id=body.survivor_id, body=result.text,
             topic=result.topic.strip(), source=result.source.strip() or "note",
@@ -1604,8 +1700,16 @@ def merge_duplicates(body: DuplicateMergeRequest) -> DuplicateMergeResponse:
             tags=[str(tag).strip() for tag in (result.tags or []) if str(tag).strip()],
             date=_lesson_date_or_today(result.date),
             title=result.title.strip() if result.title else None,
+            lifecycle=lifecycle,
+            superseded_by=superseded_by,
             invalidate_cache=invalidate_similarity_cache,
         )
+    except ValueError as exc:
+        raise _duplicate_error(
+            400,
+            "duplicate_merge_invalid_lifecycle",
+            str(exc),
+        ) from exc
     except CanonicalLessonWriteNotFoundError as exc:
         raise _duplicate_error(404, "duplicate_pair_not_found", "The surviving canonical lesson was not found.") from exc
     except CanonicalLessonWriteAmbiguousError as exc:
@@ -1663,6 +1767,12 @@ def list_lessons(
         default=None,
         description="Filtra per source esatto.",
     ),
+    lifecycle: Optional[List[LifecycleState]] = Query(
+        default=None,
+        description=(
+            "Stati lifecycle da includere. Se omesso, include solo active."
+        ),
+    ),
     limit: int = Query(
         default=50,
         ge=1,
@@ -1677,6 +1787,10 @@ def list_lessons(
     """
     df = load_lessons_df()
 
+    if df.empty:
+        return []
+
+    df = _filter_lifecycle_scope(df, lifecycle)
     if df.empty:
         return []
 
@@ -1717,6 +1831,9 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
         return []
 
     df = df.copy()
+    df = _filter_lifecycle_scope(df, body.lifecycle_in)
+    if df.empty:
+        return []
 
     # Filtro testo (q)
     if body.q:
@@ -1792,6 +1909,10 @@ def _export_filters_summary(body: ExportSearchRequest) -> str:
         parts.append(f"importance_gte={body.importance_gte}")
     if body.importance_lte is not None:
         parts.append(f"importance_lte={body.importance_lte}")
+    if body.lifecycle_in is None:
+        parts.append("lifecycle_in=['active']")
+    else:
+        parts.append(f"lifecycle_in={body.lifecycle_in}")
     if body.ids_in:
         parts.append(f"ids_in={len(body.ids_in)} ids")
     parts.append(f"limit={body.limit}")
@@ -1813,6 +1934,7 @@ def export_search(
         source_in=body.source_in,
         importance_gte=body.importance_gte,
         importance_lte=body.importance_lte,
+        lifecycle_in=body.lifecycle_in,
         limit=body.limit,
     )
     results = search_lessons(search_body)
@@ -1910,13 +2032,31 @@ def similar_lessons(
     )
 
 
-@app.get("/lessons/{lesson_id:path}", response_model=Lesson)
-def get_lesson(lesson_id: str) -> Lesson:
+@app.get("/lessons/{lesson_id:path}", response_model=LessonDetail)
+def get_lesson(lesson_id: str) -> LessonDetail:
     """
     Recupera una singola LeLe per ID.
-    Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
+
+    Il riferimento forward ``superseded_by`` è canonico. La relazione inversa
+    ``supersedes`` è derivata dalla projection corrente e non viene mai
+    riscritta nel Markdown.
     """
-    return _get_lesson_from_context(lesson_id, get_active_vault_context())
+    context = get_active_vault_context()
+    lesson = _get_lesson_from_context(lesson_id, context)
+    df = load_lessons_df(context)
+
+    reverse_ids: set[str] = set()
+    if not df.empty:
+        for row in df.to_dict(orient="records"):
+            source_id = _to_optional_str(row.get("id"))
+            target_id = _to_optional_str(row.get("superseded_by"))
+            if source_id and target_id == lesson_id:
+                reverse_ids.add(source_id)
+
+    return LessonDetail(
+        **lesson.model_dump(),
+        supersedes=sorted(reverse_ids),
+    )
 
 
 def _get_lesson_from_context(
@@ -1939,6 +2079,8 @@ def _get_lesson_from_context(
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
+    lifecycle_val = normalize_lifecycle(_to_optional_str(row.get("lifecycle")))
+    superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
     raw_importance = row.get("importance")
     if raw_importance is None or (
@@ -1963,6 +2105,8 @@ def _get_lesson_from_context(
         tags=tags_val,
         date=date_val,
         title=title_val,
+        lifecycle=lifecycle_val,
+        superseded_by=superseded_by_val,
     )
 
 
@@ -2121,6 +2265,60 @@ def _lesson_date_or_today(date_val: Optional[str]) -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def _canonical_lifecycle_metadata(
+    vault_dir: Path,
+    lesson_id: str,
+) -> tuple[LifecycleState, str | None]:
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    if not matches:
+        return "active", None
+    if len(matches) != 1:
+        raise ValueError(f"canonical lesson id {lesson_id!r} is ambiguous")
+    frontmatter, _ = parse_markdown_with_frontmatter(
+        matches[0].read_text(encoding="utf-8")
+    )
+    return (
+        normalize_lifecycle(frontmatter.get("lifecycle")),
+        normalize_superseded_by(
+            frontmatter.get("superseded_by"),
+            lesson_id=lesson_id,
+        ),
+    )
+
+
+def _validate_supersession_target(
+    vault_dir: Path,
+    lesson_id: str,
+    superseded_by: str | None,
+) -> None:
+    if superseded_by is None:
+        return
+
+    def resolve(current_id: str) -> str | None:
+        matches = find_markdown_paths_by_id(vault_dir, current_id)
+        if not matches:
+            raise ValueError(
+                f"superseded_by target {current_id!r} does not exist in the active Vault"
+            )
+        if len(matches) != 1:
+            raise ValueError(
+                f"superseded_by target {current_id!r} is ambiguous in the active Vault"
+            )
+        frontmatter, _ = parse_markdown_with_frontmatter(
+            matches[0].read_text(encoding="utf-8")
+        )
+        return normalize_superseded_by(
+            frontmatter.get("superseded_by"),
+            lesson_id=current_id,
+        )
+
+    validate_supersession_chain(
+        lesson_id=lesson_id,
+        superseded_by=superseded_by,
+        resolve_superseded_by=resolve,
+    )
+
+
 def _write_lesson_to_vault(
     *,
     lesson_id: str,
@@ -2131,18 +2329,47 @@ def _write_lesson_to_vault(
     vault_dir = (context or get_active_vault_context()).vault_dir
     tags = payload.tags or []
     date_str = _lesson_date_or_today(payload.date)
-    return write_lesson_markdown(
-        vault_dir,
-        lesson_id=lesson_id,
-        body=payload.text,
-        topic=payload.topic.strip(),
-        source=payload.source.strip() or "note",
-        importance=int(payload.importance),
-        tags=[str(t).strip() for t in tags if str(t).strip()],
-        date=date_str,
-        title=payload.title.strip() if payload.title else None,
-        relative_path=relative_path,
-    )
+
+    with canonical_mutation_boundary():
+        current_lifecycle, current_superseded_by = _canonical_lifecycle_metadata(
+            vault_dir,
+            lesson_id,
+        )
+
+        lifecycle = (
+            normalize_lifecycle(payload.lifecycle)
+            if "lifecycle" in payload.model_fields_set
+            else current_lifecycle
+        )
+        superseded_by = (
+            normalize_superseded_by(
+                payload.superseded_by,
+                lesson_id=lesson_id,
+            )
+            if "superseded_by" in payload.model_fields_set
+            else current_superseded_by
+        )
+
+        _validate_supersession_target(
+            vault_dir,
+            lesson_id,
+            superseded_by,
+        )
+
+        return write_lesson_markdown(
+            vault_dir,
+            lesson_id=lesson_id,
+            body=payload.text,
+            topic=payload.topic.strip(),
+            source=payload.source.strip() or "note",
+            importance=int(payload.importance),
+            tags=[str(t).strip() for t in tags if str(t).strip()],
+            date=date_str,
+            title=payload.title.strip() if payload.title else None,
+            relative_path=relative_path,
+            lifecycle=lifecycle,
+            superseded_by=superseded_by,
+        )
 
 
 def _lesson_delete_response(result: LessonDeletionResult) -> LessonDeleteResponse:

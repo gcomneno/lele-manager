@@ -93,6 +93,33 @@ test.describe('Browse filter form', () => {
     })
   })
 
+  test('defaults to active lifecycle and submits explicit lifecycle scope', async ({
+    page,
+  }) => {
+    const requests = await openBrowse(page)
+
+    expect(requests[0].lifecycle_in).toEqual(['active'])
+    await expect(page.getByLabel('Lifecycle')).toHaveValue('active')
+
+    await page.getByLabel('Lifecycle').selectOption('deprecated')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1].lifecycle_in).toEqual(['deprecated'])
+
+    await page.getByLabel('Lifecycle').selectOption('all')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    await expect.poll(() => requests.length).toBe(3)
+    expect(requests[2].lifecycle_in).toEqual([
+      'active',
+      'review-needed',
+      'deprecated',
+      'archived',
+    ])
+  })
+
+
   test('keeps secondary Browse actions out of form submission', async ({
     page,
   }) => {

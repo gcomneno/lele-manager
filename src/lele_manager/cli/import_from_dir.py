@@ -23,6 +23,13 @@ from lele_manager.core.import_plan import (
     ValidationProblem,
 )
 from lele_manager.core.json_compat import json_native
+from lele_manager.core.lifecycle import (
+    LifecycleState,
+    LifecycleValidationError,
+    normalize_lifecycle,
+    normalize_superseded_by,
+    validate_supersession_chain,
+)
 from lele_manager.core.projection_store import ProjectionStoreError
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
@@ -38,6 +45,8 @@ class LeLeRecord:
     tags: List[str]
     date: Optional[str]
     title: Optional[str]
+    lifecycle: LifecycleState
+    superseded_by: Optional[str]
     path: str
     frontmatter: Dict[str, object]
     frontmatter_hash: str
@@ -308,6 +317,38 @@ def analyze_import_from_dir(
         if "title" in frontmatter and isinstance(frontmatter["title"], str):
             title = frontmatter["title"].strip() or None
 
+        # maintained lifecycle
+        try:
+            lifecycle = normalize_lifecycle(frontmatter.get("lifecycle"))
+        except LifecycleValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_lifecycle",
+                    message=str(exc),
+                    path=rel_path,
+                    field="lifecycle",
+                    blocking=True,
+                )
+            )
+            continue
+
+        try:
+            superseded_by = normalize_superseded_by(
+                frontmatter.get("superseded_by"),
+                lesson_id=lele_id,
+            )
+        except LifecycleValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_superseded_by",
+                    message=str(exc),
+                    path=rel_path,
+                    field="superseded_by",
+                    blocking=True,
+                )
+            )
+            continue
+
         frontmatter_hash = compute_frontmatter_hash(frontmatter)
         text = body.strip()
 
@@ -320,6 +361,8 @@ def analyze_import_from_dir(
             tags=tags,
             date=date,
             title=title,
+            lifecycle=lifecycle,
+            superseded_by=superseded_by,
             path=rel_path,
             frontmatter=frontmatter,
             frontmatter_hash=frontmatter_hash,
@@ -385,6 +428,42 @@ def analyze_import_from_dir(
         if lele_id not in first_path_by_id:
             first_path_by_id[lele_id] = md_path
         pending_source_by_id[lele_id] = pending_source
+
+    if not plan.blocking:
+        ambiguous_ids = {duplicate.lesson_id for duplicate in plan.duplicates}
+
+        def resolve_superseded_by(current_id: str) -> str | None:
+            if current_id in ambiguous_ids:
+                raise LifecycleValidationError(
+                    f"superseded_by target {current_id!r} is ambiguous in the Vault"
+                )
+            current = records_by_id.get(current_id)
+            if current is None:
+                raise LifecycleValidationError(
+                    f"superseded_by target {current_id!r} does not exist in the Vault"
+                )
+            return current.superseded_by
+
+        for lesson_id in sorted(records_by_id):
+            record = records_by_id[lesson_id]
+            if record.superseded_by is None:
+                continue
+            try:
+                validate_supersession_chain(
+                    lesson_id=lesson_id,
+                    superseded_by=record.superseded_by,
+                    resolve_superseded_by=resolve_superseded_by,
+                )
+            except LifecycleValidationError as exc:
+                plan.validation_problems.append(
+                    ValidationProblem(
+                        code="invalid_supersession_graph",
+                        message=str(exc),
+                        path=record.path,
+                        field="superseded_by",
+                        blocking=True,
+                    )
+                )
 
     if not plan.blocking:
         for lesson_id in sorted(pending_source_by_id):
@@ -467,6 +546,17 @@ def import_from_dir(
     for problem in plan.validation_problems:
         if problem.code == "invalid_utf8":
             print(f"[warn] Impossibile leggere {problem.path} come UTF-8, salto.")
+
+    blocking_problems = [
+        problem for problem in plan.validation_problems if problem.blocking
+    ]
+    if blocking_problems:
+        first = blocking_problems[0]
+        location = f" ({first.path})" if first.path else ""
+        raise SystemExit(
+            f"[errore] Import bloccato da {first.code}{location}: {first.message}"
+        )
+
     if plan.pending_source_writes:
         print(
             f"[info] Aggiorno {len(plan.pending_source_writes)} file per "

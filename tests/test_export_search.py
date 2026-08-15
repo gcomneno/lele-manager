@@ -114,3 +114,62 @@ def test_export_search_ids_in_filter(tmp_path, monkeypatch) -> None:
 def test_search_results_to_markdown_empty() -> None:
     md = search_results_to_markdown([], include_frontmatter=True, filters_summary="q='x'")
     assert "Nessuna LeLe" in md
+
+def test_export_respects_lifecycle_scope_and_preserves_supersession_metadata(
+    tmp_path, monkeypatch
+) -> None:
+    data_path = tmp_path / "lessons.jsonl"
+    records = [
+        {
+            "id": "current",
+            "text": "Current knowledge",
+            "topic": "python",
+            "lifecycle": "active",
+        },
+        {
+            "id": "old",
+            "text": "Historical knowledge",
+            "topic": "python",
+            "lifecycle": "deprecated",
+            "superseded_by": "current",
+        },
+    ]
+    _write_jsonl(data_path, records)
+    monkeypatch.setattr(server, "DATA_PATH", data_path, raising=False)
+    client = TestClient(server.app)
+
+    default_response = client.post(
+        "/export/search",
+        params={"format": "json"},
+        json={"limit": 20},
+    )
+    assert default_response.status_code == 200
+    default_payload = default_response.json()
+    assert default_payload["n_lessons"] == 1
+    assert "Current knowledge" in default_payload["markdown"]
+    assert "Historical knowledge" not in default_payload["markdown"]
+
+    historical_response = client.post(
+        "/export/search",
+        params={"format": "json"},
+        json={"lifecycle_in": ["deprecated"], "limit": 20},
+    )
+    assert historical_response.status_code == 200
+    historical_payload = historical_response.json()
+    assert historical_payload["n_lessons"] == 1
+    markdown = historical_payload["markdown"]
+    assert "Historical knowledge" in markdown
+    assert "lifecycle: deprecated" in markdown
+    assert "superseded_by: current" in markdown
+
+
+def test_active_export_omits_redundant_lifecycle_marker() -> None:
+    markdown = lesson_to_markdown_block(
+        {
+            "id": "active",
+            "text": "Current knowledge",
+            "lifecycle": "active",
+        },
+        include_frontmatter=True,
+    )
+    assert "lifecycle:" not in markdown
