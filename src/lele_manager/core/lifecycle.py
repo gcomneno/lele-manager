@@ -1,7 +1,7 @@
 """Canonical lifecycle vocabulary and validation helpers for LeLe entries."""
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Literal
 
 
 LifecycleState = Literal["active", "review-needed", "deprecated", "archived"]
@@ -28,7 +28,7 @@ def normalize_lifecycle(value: object) -> LifecycleState:
         return "active"
     if normalized not in LIFECYCLE_STATES:
         raise LifecycleValidationError("lifecycle must be one of: active, review-needed, deprecated, archived")
-    return cast(LifecycleState, normalized)
+    return normalized
 
 
 def normalize_superseded_by(value: object, *, lesson_id: str) -> str | None:

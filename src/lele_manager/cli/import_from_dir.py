@@ -23,6 +23,12 @@ from lele_manager.core.import_plan import (
     ValidationProblem,
 )
 from lele_manager.core.json_compat import json_native
+from lele_manager.core.lifecycle import (
+    LifecycleState,
+    LifecycleValidationError,
+    normalize_lifecycle,
+    normalize_superseded_by,
+)
 from lele_manager.core.projection_store import ProjectionStoreError
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
@@ -38,6 +44,8 @@ class LeLeRecord:
     tags: List[str]
     date: Optional[str]
     title: Optional[str]
+    lifecycle: LifecycleState
+    superseded_by: Optional[str]
     path: str
     frontmatter: Dict[str, object]
     frontmatter_hash: str
@@ -308,6 +316,38 @@ def analyze_import_from_dir(
         if "title" in frontmatter and isinstance(frontmatter["title"], str):
             title = frontmatter["title"].strip() or None
 
+        # maintained lifecycle
+        try:
+            lifecycle = normalize_lifecycle(frontmatter.get("lifecycle"))
+        except LifecycleValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_lifecycle",
+                    message=str(exc),
+                    path=rel_path,
+                    field="lifecycle",
+                    blocking=True,
+                )
+            )
+            continue
+
+        try:
+            superseded_by = normalize_superseded_by(
+                frontmatter.get("superseded_by"),
+                lesson_id=lele_id,
+            )
+        except LifecycleValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_superseded_by",
+                    message=str(exc),
+                    path=rel_path,
+                    field="superseded_by",
+                    blocking=True,
+                )
+            )
+            continue
+
         frontmatter_hash = compute_frontmatter_hash(frontmatter)
         text = body.strip()
 
@@ -320,6 +360,8 @@ def analyze_import_from_dir(
             tags=tags,
             date=date,
             title=title,
+            lifecycle=lifecycle,
+            superseded_by=superseded_by,
             path=rel_path,
             frontmatter=frontmatter,
             frontmatter_hash=frontmatter_hash,

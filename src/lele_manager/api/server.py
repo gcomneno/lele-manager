@@ -48,6 +48,7 @@ from lele_manager.application.lesson_deletion import (
     delete_canonical_lesson,
 )
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
+from lele_manager.core.lifecycle import LifecycleState, normalize_lifecycle
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
     LessonOrder,
@@ -210,6 +211,14 @@ class LessonBase(BaseModel):
     created_at: Optional[str] = Field(
         default=None,
         description="Timestamp tecnico (ISO 8601 UTC). Se omesso viene generato dal server.",
+    )
+    lifecycle: LifecycleState = Field(
+        default="active",
+        description="Stato lifecycle canonico della LeLe.",
+    )
+    superseded_by: Optional[str] = Field(
+        default=None,
+        description="Stable ID della LeLe che sostituisce questa LeLe.",
     )
 
 
@@ -822,6 +831,8 @@ def load_lessons_df(context: ActiveVaultContext | None = None) -> pd.DataFrame:
         "date",
         "title",
         "created_at",
+        "lifecycle",
+        "superseded_by",
     ]:
         if col not in df.columns:
             df[col] = None
@@ -1080,6 +1091,8 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
+    lifecycle_val = normalize_lifecycle(row.get("lifecycle"))
+    superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
     # importance: prova a convertirla, altrimenti None
     raw_importance = row.get("importance")
@@ -1110,6 +1123,8 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
         tags=tags_val,
         date=date_val,
         title=title_val,
+        lifecycle=lifecycle_val,
+        superseded_by=superseded_by_val,
     )
 
 
@@ -1939,6 +1954,8 @@ def _get_lesson_from_context(
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
+    lifecycle_val = normalize_lifecycle(row.get("lifecycle"))
+    superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
     raw_importance = row.get("importance")
     if raw_importance is None or (
@@ -1963,6 +1980,8 @@ def _get_lesson_from_context(
         tags=tags_val,
         date=date_val,
         title=title_val,
+        lifecycle=lifecycle_val,
+        superseded_by=superseded_by_val,
     )
 
 
