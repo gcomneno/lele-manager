@@ -2424,7 +2424,8 @@ async def restore_vault_snapshot(
         artifact = validate_snapshot(await _snapshot_request_body(request))
         # Validation can take time; resolve the registered target again before
         # deriving the plan that will authorize an actual mutation.
-        context = _snapshot_context_for_registered_vault(vault_id)
+        store = VaultRegistryStore()
+        context = store.safe_context_for_registered(vault_id)
 
         def reconcile(final_context: ActiveVaultContext) -> None:
             # A model trained for old Markdown can never survive a restore.
@@ -2437,7 +2438,8 @@ async def restore_vault_snapshot(
             DuplicateDecisionStore(get_duplicate_decisions_path()),
             plan_digest=plan_digest,
             reconcile_derived=reconcile,
-            resolve_current_target=lambda: _snapshot_context_for_registered_vault(vault_id),
+            resolve_current_target=lambda: store.safe_context_for_registered(vault_id),
+            mutation_boundary=store.mutation_boundary,
         )
     except (SnapshotValidationError, SnapshotTargetError, SnapshotPlanStaleError, SnapshotRestoreError, DuplicateDecisionStoreError) as exc:
         raise _snapshot_error(exc) from exc
@@ -2559,15 +2561,20 @@ def activate_vault(vault_id: str) -> VaultStatusResponse:
     """Reconcile the target read-only before changing active identity."""
     try:
         store = VaultRegistryStore()
-        target = next((item for item in store.list() if item.id == vault_id), None)
-        if target is None:
-            raise VaultNotFoundError("Vault was not found")
-        if not target.path.is_dir():
-            raise VaultPathError("Vault path is unavailable")
-        target_context = store.context_for(target)
-        # Selection never repairs or writes canonical Markdown.
-        import_vault_to_jsonl(target.path, target_context.projection_path, write_missing_frontmatter=False)
-        store.activate(vault_id)
+        with store.mutation_boundary():
+            target = next((item for item in store.list() if item.id == vault_id), None)
+            if target is None:
+                raise VaultNotFoundError("Vault was not found")
+            if not target.path.is_dir():
+                raise VaultPathError("Vault path is unavailable")
+            target_context = store.context_for(target)
+            # Selection never repairs or writes canonical Markdown.
+            import_vault_to_jsonl(
+                target.path,
+                target_context.projection_path,
+                write_missing_frontmatter=False,
+            )
+            store.activate(vault_id)
         invalidate_similarity_cache()
         return VaultStatusResponse(vault_dir=str(target.path), exists=True, vault_id=target.id, display_name=target.name)
     except VaultRegistryError as exc:

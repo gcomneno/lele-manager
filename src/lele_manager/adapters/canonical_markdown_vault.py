@@ -16,6 +16,7 @@ from lele_manager.application.candidate_approval import (
     VaultWriteOutcome,
 )
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.core.vault import render_lesson_markdown
 
 
@@ -59,6 +60,10 @@ class FilesystemCanonicalMarkdownVault:
         self._vault_dir = vault_dir
 
     def publish(self, lesson: CanonicalLessonSpec) -> VaultWriteOutcome:
+        with canonical_mutation_boundary():
+            return self._publish(lesson)
+
+    def _publish(self, lesson: CanonicalLessonSpec) -> VaultWriteOutcome:
         temporary: Path | None = None
         try:
             root = self._vault_dir.resolve()
