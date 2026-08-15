@@ -11,10 +11,47 @@ test.describe('LeLe mascot motion', () => {
     await expect(cameo).toHaveAttribute('aria-hidden', 'true')
     await expect(cameo).toHaveCSS('pointer-events', 'none')
     await expect(cameo).toHaveCSS('animation-name', /lele-cameo-path$/)
-    await expect(cameo).toHaveCSS('animation-duration', '12s')
+    await expect(cameo).toHaveCSS('animation-duration', '13.8s')
     await expect(cameo).toHaveCSS('animation-delay', '8s')
     await expect(cameo).toHaveCSS('animation-iteration-count', '1')
     await expect(character.locator('img')).toHaveCount(7)
+
+    const enter = character.locator('.lele-cameo-enter')
+    const scratch = character.locator('.lele-cameo-scratch')
+    await expect(enter).toHaveCSS('animation-duration', '13.8s')
+    await expect(enter).toHaveCSS('animation-name', /lele-cameo-enter-frame$/)
+    await expect(scratch).toHaveCSS('animation-duration', '13.8s')
+    await expect(scratch).toHaveCSS('animation-name', /lele-cameo-scratch-frame$/)
+
+    const holds = await character.evaluate((stage) => {
+      const visibleHoldMs = (selector: string) => {
+        const element = stage.querySelector<HTMLElement>(selector)
+        if (!element) throw new Error(`Missing cameo frame: ${selector}`)
+
+        const animation = element.getAnimations()[0]
+        if (!animation || !(animation.effect instanceof KeyframeEffect)) {
+          throw new Error(`Missing keyframe animation: ${selector}`)
+        }
+
+        const duration = Number(animation.effect.getTiming().duration)
+        const visibleOffsets = animation.effect
+          .getKeyframes()
+          .filter((frame) => Number(frame.opacity) === 1 && frame.offset !== null)
+          .map((frame) => Number(frame.offset))
+
+        return duration * (Math.max(...visibleOffsets) - Math.min(...visibleOffsets))
+      }
+
+      return {
+        enter: visibleHoldMs('.lele-cameo-enter'),
+        scratch: visibleHoldMs('.lele-cameo-scratch'),
+      }
+    })
+
+    expect(holds.enter).toBeGreaterThanOrEqual(2950)
+    expect(holds.enter).toBeLessThanOrEqual(3050)
+    expect(holds.scratch).toBeGreaterThanOrEqual(3050)
+    expect(holds.scratch).toBeLessThanOrEqual(3200)
     await expect(character.locator('img').nth(0)).toHaveAttribute(
       'src',
       '/app/brand/lele-cameo/01-enter.png',
