@@ -11,11 +11,13 @@ import os
 import stat
 import tempfile
 import uuid
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable, Literal
 
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
 from lele_manager.core.duplicate_decisions import DuplicateDecisionStore
 from lele_manager.core.json_compat import canonical_json
@@ -595,6 +597,7 @@ def execute_vault_danger(
     invalidate_cache: Callable[[ActiveVaultContext], None],
     remove_registry: Callable[[ActiveVaultContext], None],
     create_backup: Callable[[ActiveVaultContext], str],
+    mutation_boundary: Callable[[], AbstractContextManager[None]],
     destination: ActiveVaultContext | None = None,
     resolve_destination: Callable[[], ActiveVaultContext] | None = None,
 ) -> VaultDangerResult:
@@ -644,6 +647,73 @@ def execute_vault_danger(
             if isinstance(exc, VaultDangerBackupError):
                 raise
             raise VaultDangerBackupError("requested backup failed; destructive operation was not started") from exc
+
+    commit_boundary = (
+        mutation_boundary()
+        if operation in ("delete", "merge_delete_source")
+        else nullcontext()
+    )
+    with commit_boundary:
+        canonical_boundary = (
+            canonical_mutation_boundary()
+            if operation in ("delete", "merge_delete_source")
+            else nullcontext()
+        )
+        with canonical_boundary:
+            return _execute_vault_danger_commit(
+                operation=operation,
+                target=target,
+                active_vault_id=active_vault_id,
+                decisions=decisions,
+                current=current,
+                backup_path=backup_path,
+                destination=destination,
+                resolve_target=resolve_target,
+                resolve_active_vault_id=resolve_active_vault_id,
+                resolve_destination=resolve_destination,
+                reconcile_derived=reconcile_derived,
+                invalidate_cache=invalidate_cache,
+                remove_registry=remove_registry,
+            )
+
+
+def _execute_vault_danger_commit(
+    *,
+    operation: DangerOperation,
+    target: ActiveVaultContext,
+    active_vault_id: str,
+    decisions: DuplicateDecisionStore,
+    current: VaultDangerPreview,
+    backup_path: str | None,
+    destination: ActiveVaultContext | None,
+    resolve_target: Callable[[], ActiveVaultContext],
+    resolve_active_vault_id: Callable[[], str],
+    resolve_destination: Callable[[], ActiveVaultContext] | None,
+    reconcile_derived: Callable[[ActiveVaultContext], None],
+    invalidate_cache: Callable[[ActiveVaultContext], None],
+    remove_registry: Callable[[ActiveVaultContext], None],
+) -> VaultDangerResult:
+    final_target = target
+    final_active_id = active_vault_id
+    final_destination = destination
+
+    if operation in ("delete", "merge_delete_source"):
+        locked_target = resolve_target()
+        locked_active_id = resolve_active_vault_id()
+        locked_destination = (
+            resolve_destination() if resolve_destination is not None else None
+        )
+        if (
+            locked_target != target
+            or locked_active_id != active_vault_id
+            or locked_destination != destination
+        ):
+            raise VaultDangerPlanStaleError(
+                "registered Vault context changed before destructive commit"
+            )
+        final_target = locked_target
+        final_active_id = locked_active_id
+        final_destination = locked_destination
 
     try:
         post_backup_preview = preview_vault_danger(

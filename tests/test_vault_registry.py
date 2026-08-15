@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+from threading import Event, RLock, Thread, current_thread
 
 import pytest
 from fastapi.testclient import TestClient
+
+import lele_manager.core.vault_registry as vault_registry_module
 
 from lele_manager.api import server
 from lele_manager.api.server import app
@@ -14,6 +17,24 @@ from lele_manager.core.vault_registry import (
     VaultRegistryStore,
 )
 from lele_manager.core.duplicate_decisions import DuplicateDecisionStore
+
+
+class _ObservedRLock:
+    """RLock test double that reports one named contender's acquire attempt."""
+
+    def __init__(self, contender_name: str) -> None:
+        self._lock = RLock()
+        self._contender_name = contender_name
+        self.contender_attempted = Event()
+
+    def __enter__(self) -> "_ObservedRLock":
+        if current_thread().name == self._contender_name:
+            self.contender_attempted.set()
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._lock.release()
 
 
 def test_bootstrap_uses_legacy_vault_once(monkeypatch: pytest.MonkeyPatch, tmp_path):
@@ -208,3 +229,94 @@ def test_api_activation_scopes_projection_and_preserves_markdown(
     assert markdown_b.read_bytes() == before
     assert "B body" in client.get("/lessons/shared/id").json()["text"]
     assert "A body" not in client.get("/lessons/shared/id").json()["text"]
+
+
+def test_registry_mutation_boundary_serializes_activation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    vault_a = tmp_path / "a"
+    vault_b = tmp_path / "b"
+    vault_a.mkdir()
+    vault_b.mkdir()
+
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault_a))
+
+    store = VaultRegistryStore()
+    active = store.bootstrap()
+    target = store.register("B", vault_b)
+
+    activation_finished = Event()
+    errors: list[BaseException] = []
+
+    observed_lock = _ObservedRLock("registry-activation-contender")
+    monkeypatch.setattr(vault_registry_module, "_LOCK", observed_lock)
+
+    def activate() -> None:
+        try:
+            store.activate(target.id)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            activation_finished.set()
+
+    with store.mutation_boundary():
+        thread = Thread(
+            target=activate,
+            daemon=True,
+            name="registry-activation-contender",
+        )
+        thread.start()
+
+        assert observed_lock.contender_attempted.wait(timeout=2)
+        assert activation_finished.is_set() is False
+        assert store.active().id == active.id
+
+    assert activation_finished.wait(timeout=2)
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert errors == []
+    assert store.active().id == target.id
+
+
+def test_registry_mutation_boundary_releases_after_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    vault_a = tmp_path / "a"
+    vault_b = tmp_path / "b"
+    vault_a.mkdir()
+    vault_b.mkdir()
+
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault_a))
+
+    store = VaultRegistryStore()
+    store.bootstrap()
+    target = store.register("B", vault_b)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with store.mutation_boundary():
+            raise RuntimeError("boom")
+
+    # If the failed context leaked the RLock, this activation could not finish.
+    activation_finished = Event()
+    errors: list[BaseException] = []
+
+    def activate() -> None:
+        try:
+            store.activate(target.id)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            activation_finished.set()
+
+    thread = Thread(target=activate, daemon=True)
+    thread.start()
+
+    assert activation_finished.wait(timeout=2)
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert errors == []
+    assert store.active().id == target.id

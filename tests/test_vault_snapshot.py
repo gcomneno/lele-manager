@@ -5,6 +5,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 from fastapi.testclient import TestClient
@@ -515,3 +516,170 @@ def test_restore_rejects_complete_context_flip_and_reconciles_with_final_context
             reconcile_derived=lambda _context: None,
             resolve_current_target=lambda: calls.pop(0),
         )
+
+
+def test_canonical_mutation_boundary_serializes_mutators() -> None:
+    from lele_manager.core import vault_snapshot as snapshot_module
+
+    owner_entered = Event()
+    release_owner = Event()
+    contender_started = Event()
+    contender_entered = Event()
+
+    errors: list[BaseException] = []
+
+    def owner() -> None:
+        try:
+            with snapshot_module.canonical_mutation_boundary():
+                owner_entered.set()
+                if not release_owner.wait(timeout=2):
+                    raise AssertionError("test did not release canonical mutation owner")
+        except BaseException as exc:
+            errors.append(exc)
+
+    def contender() -> None:
+        contender_started.set()
+        try:
+            with snapshot_module.canonical_mutation_boundary():
+                contender_entered.set()
+        except BaseException as exc:
+            errors.append(exc)
+
+    owner_thread = Thread(target=owner, daemon=True)
+    owner_thread.start()
+    assert owner_entered.wait(timeout=2)
+
+    contender_thread = Thread(target=contender, daemon=True)
+    contender_thread.start()
+    assert contender_started.wait(timeout=2)
+
+    # The owner definitely holds the boundary before the contender starts.
+    assert contender_entered.is_set() is False
+
+    release_owner.set()
+
+    owner_thread.join(timeout=2)
+    contender_thread.join(timeout=2)
+
+    assert not owner_thread.is_alive()
+    assert not contender_thread.is_alive()
+    assert errors == []
+    assert contender_entered.is_set() is True
+
+
+def test_delete_canonical_file_excludes_writer_between_verify_and_unlink(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from lele_manager.core import vault_snapshot as snapshot_module
+
+    vault = tmp_path / "vault"
+    target = vault / "topic" / "lesson.md"
+    target.parent.mkdir(parents=True)
+    original = b"canonical-before"
+    target.write_bytes(original)
+
+    verified = Event()
+    release_delete = Event()
+    writer_started = Event()
+    writer_finished = Event()
+
+    delete_errors: list[BaseException] = []
+    writer_errors: list[BaseException] = []
+
+    original_verify = snapshot_module.verify_canonical_file
+
+    def blocked_verify(root: Path, relative_path: str, expected: bytes) -> Path:
+        verified_target = original_verify(root, relative_path, expected)
+        verified.set()
+        if not release_delete.wait(timeout=2):
+            raise AssertionError("test did not release canonical delete")
+        return verified_target
+
+    def run_delete() -> None:
+        try:
+            snapshot_module.delete_canonical_file(
+                vault,
+                "topic/lesson.md",
+                original,
+            )
+        except BaseException as exc:
+            delete_errors.append(exc)
+
+    def run_writer() -> None:
+        writer_started.set()
+        try:
+            write_lesson_markdown(
+                vault,
+                lesson_id="topic/lesson",
+                body="replacement body",
+                topic="topic",
+                source="test",
+                importance=3,
+                tags=[],
+                date="2026-08-15",
+                relative_path="topic/lesson.md",
+            )
+        except BaseException as exc:
+            writer_errors.append(exc)
+        finally:
+            writer_finished.set()
+
+    monkeypatch.setattr(
+        snapshot_module,
+        "verify_canonical_file",
+        blocked_verify,
+    )
+
+    delete_thread = Thread(target=run_delete, daemon=True)
+    delete_thread.start()
+    assert verified.wait(timeout=2)
+
+    writer_thread = Thread(target=run_writer, daemon=True)
+    writer_thread.start()
+    assert writer_started.wait(timeout=2)
+
+    # DELETE owns the canonical boundary while paused after exact verification.
+    # The maintained writer therefore cannot replace the pathname yet.
+    assert writer_finished.is_set() is False
+    assert target.read_bytes() == original
+
+    release_delete.set()
+
+    delete_thread.join(timeout=2)
+    writer_thread.join(timeout=2)
+
+    assert not delete_thread.is_alive()
+    assert not writer_thread.is_alive()
+    assert delete_errors == []
+    assert writer_errors == []
+
+    # The old verified artifact was deleted first. Only after the boundary was
+    # released could the writer publish the replacement.
+    assert target.exists()
+    assert b"replacement body" in target.read_bytes()
+
+
+def test_canonical_mutation_boundary_releases_after_failure() -> None:
+    from lele_manager.core import vault_snapshot as snapshot_module
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with snapshot_module.canonical_mutation_boundary():
+            raise RuntimeError("boom")
+
+    entered = Event()
+    errors: list[BaseException] = []
+
+    def contender() -> None:
+        try:
+            with snapshot_module.canonical_mutation_boundary():
+                entered.set()
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = Thread(target=contender, daemon=True)
+    thread.start()
+
+    assert entered.wait(timeout=2)
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert errors == []

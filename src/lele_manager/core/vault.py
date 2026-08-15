@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.composition import projection_store
 from lele_manager.cli.import_from_dir import (
     compute_frontmatter_hash,
@@ -202,38 +203,39 @@ def write_lesson_markdown(
     provenance: Optional[Dict[str, object]] = None,
 ) -> Path:
     """Write or overwrite a lesson markdown file in the vault."""
-    vault_dir.mkdir(parents=True, exist_ok=True)
+    with canonical_mutation_boundary():
+        vault_dir.mkdir(parents=True, exist_ok=True)
 
-    rel = relative_path or default_relative_path(
-        lesson_id=lesson_id,
-        topic=topic,
-        date=date,
-        title=title,
-    )
-    if not rel.lower().endswith(".md"):
-        rel = f"{rel}.md"
+        rel = relative_path or default_relative_path(
+            lesson_id=lesson_id,
+            topic=topic,
+            date=date,
+            title=title,
+        )
+        if not rel.lower().endswith(".md"):
+            rel = f"{rel}.md"
 
-    md_path = (vault_dir / rel).resolve()
-    vault_root = vault_dir.resolve()
-    try:
-        md_path.relative_to(vault_root)
-    except ValueError as exc:
-        raise ValueError(f"Refusing to write outside vault: {md_path}") from exc
+        md_path = (vault_dir / rel).resolve()
+        vault_root = vault_dir.resolve()
+        try:
+            md_path.relative_to(vault_root)
+        except ValueError as exc:
+            raise ValueError(f"Refusing to write outside vault: {md_path}") from exc
 
-    rendered = render_lesson_markdown(
-        lesson_id=lesson_id,
-        body=body,
-        topic=topic,
-        source=source,
-        importance=importance,
-        tags=tags,
-        date=date,
-        title=title,
-        provenance=provenance,
-    )
-    md_path.parent.mkdir(parents=True, exist_ok=True)
-    md_path.write_text(rendered, encoding="utf-8")
-    return md_path
+        rendered = render_lesson_markdown(
+            lesson_id=lesson_id,
+            body=body,
+            topic=topic,
+            source=source,
+            importance=importance,
+            tags=tags,
+            date=date,
+            title=title,
+            provenance=provenance,
+        )
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(rendered, encoding="utf-8")
+        return md_path
 
 
 def import_vault_to_jsonl(

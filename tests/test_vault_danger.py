@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
+from threading import Event, RLock, Thread, current_thread
+from typing import Iterator
 
 import pytest
 
 import lele_manager.core.vault_danger as danger_module
+import lele_manager.core.vault_registry as vault_registry_module
 from lele_manager.core.duplicate_decisions import DuplicateDecisionStore
 from lele_manager.core.vault_danger import (
     VaultDangerBackupError,
@@ -15,7 +19,29 @@ from lele_manager.core.vault_danger import (
     execute_vault_danger,
     preview_vault_danger,
 )
-from lele_manager.core.vault_registry import ActiveVaultContext
+from lele_manager.core.vault_registry import (
+    ActiveVaultContext,
+    VaultNotFoundError,
+    VaultRegistryStore,
+)
+
+
+class _ObservedRLock:
+    """RLock test double that reports one named contender's acquire attempt."""
+
+    def __init__(self, contender_name: str) -> None:
+        self._lock = RLock()
+        self._contender_name = contender_name
+        self.contender_attempted = Event()
+
+    def __enter__(self) -> "_ObservedRLock":
+        if current_thread().name == self._contender_name:
+            self.contender_attempted.set()
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._lock.release()
 
 
 A_ID = "11111111-1111-4111-8111-111111111111"
@@ -63,6 +89,11 @@ def _decisions(tmp_path: Path) -> DuplicateDecisionStore:
     return DuplicateDecisionStore(tmp_path / "data" / "duplicate-decisions.json")
 
 
+@contextmanager
+def _noop_mutation_boundary() -> Iterator[None]:
+    yield
+
+
 def _execute(
     *,
     preview,
@@ -75,7 +106,11 @@ def _execute(
     reconcile=lambda _context: None,
     invalidate=lambda _context: None,
     remove_registry=lambda _context: None,
+    mutation_boundary=None,
 ):
+    if mutation_boundary is None:
+        mutation_boundary = _noop_mutation_boundary
+
     return execute_vault_danger(
         operation=preview.operation,
         target=target,
@@ -92,6 +127,7 @@ def _execute(
         invalidate_cache=invalidate,
         remove_registry=remove_registry,
         create_backup=create_backup,
+        mutation_boundary=mutation_boundary,
     )
 
 
@@ -138,6 +174,7 @@ def test_wrong_confirmation_never_starts_destruction(tmp_path: Path) -> None:
             invalidate_cache=lambda _context: None,
             remove_registry=lambda _context: None,
             create_backup=lambda _context: pytest.fail("backup must not run"),
+            mutation_boundary=_noop_mutation_boundary,
         )
 
     assert path.exists()
@@ -412,3 +449,202 @@ def test_late_foreign_file_after_canonical_delete_is_truthful_partial(
     assert "non-Markdown file" in (result.vault_directory_error or "")
     assert result.registry_removed is None
     assert foreign.read_text() == "preserve me"
+
+
+def test_delete_holds_mutation_boundary_through_authority_and_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = _context(tmp_path, B_ID, "B")
+    _write(target, "topic/one")
+    decisions = _decisions(tmp_path)
+    preview = preview_vault_danger(
+        operation="delete",
+        target=target,
+        active_vault_id=A_ID,
+        decisions=decisions,
+    )
+
+    boundary_held = False
+    authority_checked_inside = False
+    canonical_deleted_inside = False
+    registry_removed_inside = False
+
+    @contextmanager
+    def mutation_boundary() -> Iterator[None]:
+        nonlocal boundary_held
+        assert boundary_held is False
+        boundary_held = True
+        try:
+            yield
+        finally:
+            boundary_held = False
+
+    original_delete = danger_module._delete_canonical_set
+
+    def delete_inside_boundary(
+        root: Path, canonical: dict[str, bytes]
+    ) -> tuple[int, str | None]:
+        nonlocal canonical_deleted_inside
+        canonical_deleted_inside = boundary_held
+        return original_delete(root, canonical)
+
+    def resolve_active() -> str:
+        nonlocal authority_checked_inside
+        if boundary_held:
+            authority_checked_inside = True
+        return A_ID
+
+    def remove_registry(_context: ActiveVaultContext) -> None:
+        nonlocal registry_removed_inside
+        registry_removed_inside = boundary_held
+
+    monkeypatch.setattr(
+        danger_module,
+        "_delete_canonical_set",
+        delete_inside_boundary,
+    )
+
+    result = execute_vault_danger(
+        operation=preview.operation,
+        target=target,
+        active_vault_id=A_ID,
+        decisions=decisions,
+        plan_digest=preview.plan_digest,
+        confirmation=preview.confirmation_text,
+        backup_before=False,
+        resolve_target=lambda: target,
+        resolve_active_vault_id=resolve_active,
+        reconcile_derived=lambda _context: None,
+        invalidate_cache=lambda _context: None,
+        remove_registry=remove_registry,
+        create_backup=lambda _context: "/backup.snapshot.zip",
+        mutation_boundary=mutation_boundary,
+    )
+
+    assert result.vault_directory_deleted is True
+    assert authority_checked_inside is True
+    assert canonical_deleted_inside is True
+    assert registry_removed_inside is True
+    assert boundary_held is False
+
+
+def test_concurrent_activation_cannot_enter_vault_during_physical_delete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    vault_a = tmp_path / "vault-a"
+    vault_b = tmp_path / "vault-b"
+    vault_a.mkdir()
+    vault_b.mkdir()
+
+    monkeypatch.setenv("LELE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("LELE_VAULT_DIR", str(vault_a))
+
+    store = VaultRegistryStore()
+    active_a = store.bootstrap()
+    registered_b = store.register("B", vault_b)
+    target = store.safe_context_for_registered(registered_b.id)
+    _write(target, "topic/one")
+    decisions = _decisions(tmp_path)
+
+    preview = preview_vault_danger(
+        operation="delete",
+        target=target,
+        active_vault_id=active_a.id,
+        decisions=decisions,
+    )
+
+    commit_entered = Event()
+    allow_delete = Event()
+    activation_finished = Event()
+
+    observed_lock = _ObservedRLock("danger-activation-contender")
+    monkeypatch.setattr(vault_registry_module, "_LOCK", observed_lock)
+
+    delete_result: list[object] = []
+    delete_errors: list[BaseException] = []
+    activation_errors: list[BaseException] = []
+
+    original_delete = danger_module._delete_canonical_set
+
+    def blocked_delete(
+        root: Path, canonical: dict[str, bytes]
+    ) -> tuple[int, str | None]:
+        commit_entered.set()
+        if not allow_delete.wait(timeout=2):
+            raise AssertionError("test did not release destructive commit")
+        return original_delete(root, canonical)
+
+    def run_delete() -> None:
+        try:
+            delete_result.append(
+                execute_vault_danger(
+                    operation=preview.operation,
+                    target=target,
+                    active_vault_id=active_a.id,
+                    decisions=decisions,
+                    plan_digest=preview.plan_digest,
+                    confirmation=preview.confirmation_text,
+                    backup_before=False,
+                    resolve_target=lambda: store.safe_context_for_registered(
+                        registered_b.id
+                    ),
+                    resolve_active_vault_id=lambda: store.active().id,
+                    reconcile_derived=lambda _context: None,
+                    invalidate_cache=lambda _context: None,
+                    remove_registry=lambda context: store.remove(context.vault_id),
+                    create_backup=lambda _context: "/backup.snapshot.zip",
+                    mutation_boundary=store.mutation_boundary,
+                )
+            )
+        except BaseException as exc:
+            delete_errors.append(exc)
+
+    def run_activation() -> None:
+        try:
+            store.activate(registered_b.id)
+        except BaseException as exc:
+            activation_errors.append(exc)
+        finally:
+            activation_finished.set()
+
+    monkeypatch.setattr(
+        danger_module,
+        "_delete_canonical_set",
+        blocked_delete,
+    )
+
+    delete_thread = Thread(target=run_delete, daemon=True)
+    delete_thread.start()
+    assert commit_entered.wait(timeout=2)
+
+    activation_thread = Thread(
+        target=run_activation,
+        daemon=True,
+        name="danger-activation-contender",
+    )
+    activation_thread.start()
+
+    # The lock itself reports the contender's acquire attempt. The delete
+    # thread still owns that same RLock, so activation cannot complete.
+    assert observed_lock.contender_attempted.wait(timeout=2)
+    assert activation_finished.is_set() is False
+
+    allow_delete.set()
+
+    delete_thread.join(timeout=2)
+    activation_thread.join(timeout=2)
+
+    assert not delete_thread.is_alive()
+    assert not activation_thread.is_alive()
+    assert delete_errors == []
+    assert len(delete_result) == 1
+
+    result = delete_result[0]
+    assert result.vault_directory_deleted is True
+    assert result.registry_removed is True
+    assert not vault_b.exists()
+
+    assert len(activation_errors) == 1
+    assert isinstance(activation_errors[0], VaultNotFoundError)
+    assert store.active().id == active_a.id

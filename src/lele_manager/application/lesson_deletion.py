@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 from lele_manager.application.candidate_approval import RefreshOutcome
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.core.vault import find_markdown_paths_by_id
 
 
@@ -61,24 +62,29 @@ def delete_canonical_lesson_source(
     This intentionally performs no projection refresh so a batch can reconcile
     the real final vault state exactly once.
     """
-    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
-    if not matches:
-        raise LessonDeletionNotFoundError("canonical lesson was not found")
-    if len(matches) != 1:
-        raise LessonDeletionStorageError("canonical lesson identity is ambiguous")
-    markdown_path = matches[0]
+    with canonical_mutation_boundary():
+        matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+        if not matches:
+            raise LessonDeletionNotFoundError("canonical lesson was not found")
+        if len(matches) != 1:
+            raise LessonDeletionStorageError("canonical lesson identity is ambiguous")
+        markdown_path = matches[0]
 
-    vault_root = vault_dir.resolve()
-    resolved_path = markdown_path.resolve()
-    try:
-        relative_path = resolved_path.relative_to(vault_root).as_posix()
-    except ValueError as exc:
-        raise LessonDeletionStorageError("refusing to delete outside the vault") from exc
+        vault_root = vault_dir.resolve()
+        resolved_path = markdown_path.resolve()
+        try:
+            relative_path = resolved_path.relative_to(vault_root).as_posix()
+        except ValueError as exc:
+            raise LessonDeletionStorageError(
+                "refusing to delete outside the vault"
+            ) from exc
 
-    try:
-        resolved_path.unlink()
-    except OSError as exc:
-        raise LessonDeletionStorageError("canonical lesson could not be deleted") from exc
+        try:
+            resolved_path.unlink()
+        except OSError as exc:
+            raise LessonDeletionStorageError(
+                "canonical lesson could not be deleted"
+            ) from exc
 
     # Do this immediately: a stale in-memory similarity index must never keep
     # a deleted canonical source alive until a later request.

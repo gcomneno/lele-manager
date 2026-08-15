@@ -16,11 +16,13 @@ import tempfile
 import unicodedata
 import uuid
 import zipfile
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Mapping
 
+from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.adapters.json_candidate_repository import JsonCandidateRepository
 from lele_manager.core.duplicate_decisions import DuplicateDecisionStore
 from lele_manager.core.json_compat import canonical_json
@@ -637,6 +639,11 @@ def validate_new_canonical_destination(root: Path, relative_path: str) -> Path:
 
 def write_new_canonical_file(root: Path, relative_path: str, data: bytes) -> Path:
     """Atomically create, never replace, one safe canonical Markdown file."""
+    with canonical_mutation_boundary():
+        return _write_new_canonical_file(root, relative_path, data)
+
+
+def _write_new_canonical_file(root: Path, relative_path: str, data: bytes) -> Path:
     target = validate_new_canonical_destination(root, relative_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target = validate_new_canonical_destination(root, relative_path)
@@ -674,12 +681,15 @@ def verify_canonical_file(root: Path, relative_path: str, expected: bytes) -> Pa
 
 
 def delete_canonical_file(root: Path, relative_path: str, expected: bytes) -> None:
-    """Delete one exact, previously verified canonical source lesson."""
-    target = verify_canonical_file(root, relative_path, expected)
-    try:
-        target.unlink()
-    except OSError as exc:
-        raise SnapshotTargetError("source Vault canonical lesson could not be deleted") from exc
+    """Delete one exact canonical source while excluding maintained writers."""
+    with canonical_mutation_boundary():
+        target = verify_canonical_file(root, relative_path, expected)
+        try:
+            target.unlink()
+        except OSError as exc:
+            raise SnapshotTargetError(
+                "source Vault canonical lesson could not be deleted"
+            ) from exc
 
 
 def _atomic_write(path: Path, data: bytes, *, managed_root: Path | None = None, relative_path: str | None = None) -> None:
@@ -731,6 +741,15 @@ def _assert_restore_scoped_boundaries(context: ActiveVaultContext) -> None:
 
 
 def _restore_apply(validated: ValidatedSnapshot, context: ActiveVaultContext, decisions: DuplicateDecisionStore) -> None:
+    with canonical_mutation_boundary():
+        _restore_apply_locked(validated, context, decisions)
+
+
+def _restore_apply_locked(
+    validated: ValidatedSnapshot,
+    context: ActiveVaultContext,
+    decisions: DuplicateDecisionStore,
+) -> None:
     current = read_canonical_markdown_files(context.vault_dir)
     with zipfile.ZipFile(io.BytesIO(validated.raw)) as archive:
         incoming = {item.path: archive.read(f"{CANONICAL_PREFIX}{item.path}") for item in validated.canonical}
@@ -785,20 +804,30 @@ def execute_restore(
     plan_digest: str,
     reconcile_derived: Callable[..., None],
     resolve_current_target: Callable[[], ActiveVaultContext] | None = None,
+    mutation_boundary: Callable[[], AbstractContextManager[None]] | None = None,
 ) -> RestoreResult:
     """Apply exact managed state then independently reconcile derived state."""
-    if resolve_current_target is not None:
-        context = resolve_current_target()
-    current_preview = preview_restore(validated, context, decisions)
-    if plan_digest != current_preview.plan_digest:
-        raise SnapshotPlanStaleError("snapshot or target state changed after preview")
-    if resolve_current_target is not None:
-        checked = resolve_current_target()
-        if checked != context:
-            raise SnapshotPlanStaleError("selected Vault changed after preview")
-        context = checked
-    _assert_restore_scoped_boundaries(context)
-    _restore_apply(validated, context, decisions)
+    registry_boundary = (
+        mutation_boundary() if mutation_boundary is not None else nullcontext()
+    )
+    with registry_boundary:
+        with canonical_mutation_boundary():
+            if resolve_current_target is not None:
+                context = resolve_current_target()
+            current_preview = preview_restore(validated, context, decisions)
+            if plan_digest != current_preview.plan_digest:
+                raise SnapshotPlanStaleError(
+                    "snapshot or target state changed after preview"
+                )
+            if resolve_current_target is not None:
+                checked = resolve_current_target()
+                if checked != context:
+                    raise SnapshotPlanStaleError(
+                        "selected Vault changed after preview"
+                    )
+                context = checked
+            _assert_restore_scoped_boundaries(context)
+            _restore_apply_locked(validated, context, decisions)
     try:
         # New composition receives the exact context which passed both the
         # stale-plan check and final resolver check.  The no-argument fallback
