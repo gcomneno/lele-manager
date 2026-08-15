@@ -248,6 +248,8 @@ importance: 4
 tags: [cpp, io, strings]
 date: 2025-11-20
 title: "LL-5 — std::cin vs std::getline"
+lifecycle: deprecated
+superseded_by: cpp/2026-08-15.input-handling
 ---
 ```
 
@@ -259,7 +261,16 @@ The importer accepts a tolerant input schema:
 - `importance` is normally an integer from 1 to 5;
 - `tags` may be a list or a comma-separated string;
 - `date` is ISO-like and may be derived from the filename;
-- `title` is optional for importer input.
+- `title` is optional for importer input;
+- `lifecycle` is optional and accepts `active`, `review-needed`, `deprecated`,
+  or `archived`; absence means `active`;
+- `superseded_by` is optional and identifies one maintained replacement by
+  stable lesson ID.
+
+Lifecycle changes are explicit canonical edits. Derived signals such as
+similarity, freshness, or contradiction detection may suggest review, but never
+change lifecycle automatically. Supersession also never deletes canonical
+content or changes lifecycle implicitly.
 
 LeLe Manager also calculates `frontmatter_hash` for diagnostics and
 versioning. The identity remains `id`.
@@ -546,9 +557,9 @@ Available views:
 | View | Purpose |
 |---|---|
 | **Dashboard** | Workspace readiness, bounded knowledge summary, and next useful actions |
-| **Browse** | Advanced search, filters, and Markdown export |
-| **Detail** | Full lesson content and explained similarity |
-| **Editor** | Markdown authoring with live suggestions |
+| **Browse** | Advanced search, lifecycle filtering, and Markdown export |
+| **Detail** | Full lesson content, lifecycle, supersession links, and explained similarity |
+| **Editor** | Canonical Markdown authoring with explicit lifecycle and supersession controls |
 | **TritaLeLe** | Controlled candidate ingestion, review, rejection, and approval |
 | **Duplicates** | Read-only review of exact and near-duplicate pairs |
 | **Timeline** | Knowledge-acquisition timeline and bucket export |
@@ -560,6 +571,17 @@ Available views:
 
 Saving from the Editor writes the Markdown file into the vault and refreshes
 the JSONL projection through `PUT` or `POST /vault/lessons`.
+
+Browse, search, and export use active lessons by default. The lifecycle selector
+can explicitly scope results to `review-needed`, `deprecated`, `archived`, or
+all states. Non-active lessons are visually distinguished. Detail remains
+addressable by stable ID regardless of lifecycle and exposes both the canonical
+forward `superseded_by` relation and derived reverse supersession links where
+available.
+
+The Editor is the explicit lifecycle mutation surface: selecting Active removes
+a previous non-active marker, and clearing Superseded by removes the canonical
+replacement link. Neither operation deletes lesson content.
 
 The GUI requires `LELE_VAULT_DIR`; the default is `~/LeLeVault`.
 

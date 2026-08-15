@@ -233,6 +233,8 @@ importance: 4
 tags: [cpp, io, strings]
 date: 2025-11-20
 title: "LL-5 — std::cin vs std::getline"
+lifecycle: deprecated
+superseded_by: cpp/2026-08-15.input-handling
 ---
 ```
 
@@ -244,7 +246,17 @@ L'importer accetta uno schema di ingresso tollerante:
 - `importance` è normalmente un intero da 1 a 5;
 - `tags` può essere una lista o una stringa separata da virgole;
 - `date` usa una forma ISO-like e può essere derivata dal nome file;
-- `title` è opzionale per l'ingresso dell'importer.
+- `title` è opzionale per l'ingresso dell'importer;
+- `lifecycle` è opzionale e accetta `active`, `review-needed`, `deprecated` o
+  `archived`; se assente equivale ad `active`;
+- `superseded_by` è opzionale e identifica una singola LeLe sostitutiva tramite
+  il suo ID stabile.
+
+Le modifiche di lifecycle sono scritture canoniche esplicite. Segnali derivati
+come similarità, freschezza o rilevamento di contraddizioni possono suggerire
+una revisione, ma non cambiano mai automaticamente lo stato. Anche la
+supersession non elimina contenuto canonico e non cambia implicitamente il
+lifecycle.
 
 LeLe Manager calcola anche `frontmatter_hash` per diagnostica e versionamento.
 L'identità resta `id`.
@@ -537,9 +549,9 @@ Viste disponibili:
 | Vista | Scopo |
 |---|---|
 | **Dashboard** | Stato dello spazio di lavoro, riepilogo bounded e prossime azioni utili |
-| **Browse** | Ricerca avanzata, filtri ed export Markdown |
-| **Detail** | Contenuto completo e similarità spiegata |
-| **Editor** | Authoring Markdown con suggerimenti live |
+| **Browse** | Ricerca avanzata, filtro lifecycle ed export Markdown |
+| **Detail** | Contenuto completo, lifecycle, link di supersession e similarità spiegata |
+| **Editor** | Authoring Markdown canonico con controlli espliciti di lifecycle e supersession |
 | **TritaLeLe** | Ingestione controllata, review, rifiuto e approvazione dei candidati |
 | **Duplicates** | Revisione read-only di duplicati esatti e near-duplicate |
 | **Timeline** | Timeline di acquisizione e export per bucket |
@@ -551,6 +563,18 @@ Viste disponibili:
 
 Il salvataggio dall'Editor scrive il file Markdown nel vault e aggiorna la
 proiezione JSONL tramite `PUT` o `POST /vault/lessons`.
+
+Browse, ricerca ed export usano per default soltanto le LeLe `active`. Il
+selettore dello stato permette di scegliere esplicitamente `review-needed`,
+`deprecated`, `archived` oppure tutti gli stati. Le LeLe non attive sono
+visivamente distinguibili. Il Dettaglio resta raggiungibile tramite ID stabile
+indipendentemente dal lifecycle e mostra sia la relazione canonica forward
+`superseded_by` sia, quando disponibili, i collegamenti inversi derivati.
+
+L'Editor è la superficie esplicita di mutazione del lifecycle: scegliere
+`active` rimuove un precedente marker non attivo e svuotare “Sostituita da”
+rimuove il collegamento canonico alla LeLe sostitutiva. Nessuna delle due
+operazioni elimina il contenuto della LeLe.
 
 La GUI richiede `LELE_VAULT_DIR`; il default è `~/LeLeVault`.
 

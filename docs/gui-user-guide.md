@@ -160,15 +160,37 @@ from the current lesson projection. They are conveniences: you may write a new
 topic, tag, or source, and suggestions never change metadata automatically.
 Tags are added and removed as visible chips, while Importance is explicitly
 bounded from 1 to 5. Similarity can offer a topic only after an explicit check;
-applying it is a separate explicit action. Saving remains the only action that
-writes the canonical Markdown vault.
+applying it is a separate explicit action.
+
+Lifecycle is also author-controlled. Every lesson is one of **Active**,
+**Review needed**, **Deprecated**, or **Archived**; lessons without an explicit
+canonical marker are Active. Editor exposes the lifecycle selector directly and
+an optional **Superseded by** stable-ID field. Selecting Active deliberately
+clears an older non-active marker, while clearing Superseded by deliberately
+removes the canonical replacement reference. Saving remains the only action
+that writes these changes to the canonical Markdown vault. Derived signals
+never perform lifecycle transitions automatically.
 
 ## Managing an existing LeLe
 
 Browse and lesson Detail expose the same actions for an existing LeLe:
 **Modify**, **Inspect**, and **Delete**. Inspect opens the maintained explained
 similarity surface; Editor keeps its explicit **Check similarity** action while
-editing. Delete always shows the lesson title (or *Untitled*) and stable ID for
+editing.
+
+Browse, search, List all, and Markdown export are Active-only by default. Use
+the Lifecycle selector to explicitly request Review needed, Deprecated,
+Archived, or All states. Non-active lessons receive a distinct visual treatment
+and lifecycle badge. The same lifecycle scope is applied to export.
+
+Detail remains available by stable ID even for non-active lessons. When a lesson
+has `superseded_by`, Detail links to the maintained replacement. The replacement
+also exposes derived **Supersedes** links back to lessons that point to it, so
+the relationship can be navigated in both directions where available.
+Supersession itself never deletes, merges, rewrites, or changes the lifecycle of
+either canonical lesson.
+
+Delete always shows the lesson title (or *Untitled*) and stable ID for
 confirmation before permanently removing that exact canonical Markdown file.
 
 Browse also supports explicit multi-selection for the current loaded result
