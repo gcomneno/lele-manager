@@ -563,3 +563,47 @@ def test_diagnostics_preview_is_exact_bounded_payload_and_side_effect_free(
     assert not data.exists()
     assert not cache.exists()
     assert not vault.exists()
+
+def test_get_lesson_exposes_forward_and_derived_reverse_supersession(
+    tmp_path, monkeypatch
+) -> None:
+    data_path = tmp_path / "data" / "lessons.jsonl"
+    monkeypatch.setattr(server, "DATA_PATH", data_path, raising=False)
+
+    _write_jsonl(
+        data_path,
+        [
+            {
+                "id": "old/a",
+                "text": "Old A",
+                "lifecycle": "deprecated",
+                "superseded_by": "current",
+            },
+            {
+                "id": "old/b",
+                "text": "Old B",
+                "lifecycle": "archived",
+                "superseded_by": "current",
+            },
+            {
+                "id": "current",
+                "text": "Current knowledge",
+                "lifecycle": "active",
+            },
+        ],
+    )
+
+    client = TestClient(server.app)
+
+    current = client.get("/lessons/current")
+    assert current.status_code == 200
+    current_payload = current.json()
+    assert current_payload["superseded_by"] is None
+    assert current_payload["supersedes"] == ["old/a", "old/b"]
+
+    old = client.get("/lessons/old/a")
+    assert old.status_code == 200
+    old_payload = old.json()
+    assert old_payload["lifecycle"] == "deprecated"
+    assert old_payload["superseded_by"] == "current"
+    assert old_payload["supersedes"] == []

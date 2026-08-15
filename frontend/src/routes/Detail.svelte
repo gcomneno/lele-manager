@@ -7,6 +7,8 @@
   import {
     api,
     type Lesson,
+    type LessonDetail,
+    type LessonLifecycleState,
     type SimilarItem,
     type SimilarMeta,
   } from '../lib/api'
@@ -24,7 +26,7 @@
 
   let { id }: Props = $props()
 
-  let lesson = $state<Lesson | null>(null)
+  let lesson = $state<LessonDetail | null>(null)
   let similar = $state<SimilarItem[]>([])
   let similarMeta = $state<SimilarMeta | null>(null)
   let loading = $state(true)
@@ -45,6 +47,19 @@
       error = e instanceof Error ? e.message : String(e)
     } finally {
       loading = false
+    }
+  }
+
+  function lifecycleLabel(state: LessonLifecycleState): string {
+    switch (state) {
+      case 'review-needed':
+        return $messages.lifecycleReviewNeeded
+      case 'deprecated':
+        return $messages.lifecycleDeprecated
+      case 'archived':
+        return $messages.lifecycleArchived
+      case 'active':
+        return $messages.lifecycleActive
     }
   }
 
@@ -150,6 +165,51 @@
         <span>{$messages.fieldDate}: {lesson.date ?? '—'}</span>
       </div>
 
+      {#if (lesson.lifecycle ?? 'active') !== 'active'}
+        <div
+          class={`detail-lifecycle lifecycle-${lesson.lifecycle}`}
+          data-testid="detail-lifecycle"
+        >
+          {$messages.detailLifecycle}:
+          {lifecycleLabel(lesson.lifecycle ?? 'active')}
+        </div>
+      {/if}
+
+      {#if lesson.superseded_by || lesson.supersedes?.length}
+        <section
+          class="supersession"
+          aria-label={$messages.detailSupersession}
+        >
+          <strong>{$messages.detailSupersession}</strong>
+
+          {#if lesson.superseded_by}
+            <button
+              type="button"
+              class="relationship-link"
+              onclick={() => navigate({
+                view: 'detail',
+                id: lesson!.superseded_by!,
+              })}
+            >
+              {$messages.detailSupersededBy}: {lesson.superseded_by}
+            </button>
+          {/if}
+
+          {#each lesson.supersedes ?? [] as supersededId (supersededId)}
+            <button
+              type="button"
+              class="relationship-link"
+              onclick={() => navigate({
+                view: 'detail',
+                id: supersededId,
+              })}
+            >
+              {$messages.detailSupersedes}: {supersededId}
+            </button>
+          {/each}
+        </section>
+      {/if}
+
       {#if lesson.tags?.length}
         <div class="tags">
           {#each lesson.tags as tag}
@@ -209,6 +269,60 @@
 
   .tags {
     margin-top: 8px;
+  }
+
+  .detail-lifecycle {
+    width: fit-content;
+    margin-top: var(--space-3);
+    padding: 4px 9px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .lifecycle-review-needed {
+    color: #7a4b00;
+    background: #fff4d6;
+  }
+
+  .lifecycle-deprecated {
+    color: #8b1717;
+    background: #fff0f0;
+  }
+
+  .lifecycle-archived {
+    color: #4d5156;
+    background: #f0f1f2;
+  }
+
+  .supersession {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .relationship-link {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    text-align: left;
+    text-decoration: underline;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+
+  .relationship-link:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
   }
 
   .delete-action {

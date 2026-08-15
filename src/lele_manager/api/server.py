@@ -243,6 +243,16 @@ class LessonSearchResult(Lesson):
     pass
 
 
+class LessonDetail(Lesson):
+    supersedes: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Stable IDs delle LeLe che indicano questa LeLe come loro sostituzione. "
+            "Relazione inversa derivata dalla projection, non canonica."
+        ),
+    )
+
+
 class ExternalLessonResponse(BaseModel):
     id: str
     text: str
@@ -1986,13 +1996,31 @@ def similar_lessons(
     )
 
 
-@app.get("/lessons/{lesson_id:path}", response_model=Lesson)
-def get_lesson(lesson_id: str) -> Lesson:
+@app.get("/lessons/{lesson_id:path}", response_model=LessonDetail)
+def get_lesson(lesson_id: str) -> LessonDetail:
     """
     Recupera una singola LeLe per ID.
-    Normalizza i campi (NaN/NaT/Timestamp) per evitare ValidationError Pydantic.
+
+    Il riferimento forward ``superseded_by`` è canonico. La relazione inversa
+    ``supersedes`` è derivata dalla projection corrente e non viene mai
+    riscritta nel Markdown.
     """
-    return _get_lesson_from_context(lesson_id, get_active_vault_context())
+    context = get_active_vault_context()
+    lesson = _get_lesson_from_context(lesson_id, context)
+    df = load_lessons_df(context)
+
+    reverse_ids: set[str] = set()
+    if not df.empty:
+        for row in df.to_dict(orient="records"):
+            source_id = _to_optional_str(row.get("id"))
+            target_id = _to_optional_str(row.get("superseded_by"))
+            if source_id and target_id == lesson_id:
+                reverse_ids.add(source_id)
+
+    return LessonDetail(
+        **lesson.model_dump(),
+        supersedes=sorted(reverse_ids),
+    )
 
 
 def _get_lesson_from_context(

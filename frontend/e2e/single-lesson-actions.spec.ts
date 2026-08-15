@@ -9,6 +9,9 @@ type Lesson = {
   importance: number
   tags: string[]
   date: string
+  lifecycle?: 'active' | 'review-needed' | 'deprecated' | 'archived'
+  superseded_by?: string | null
+  supersedes?: string[]
 }
 
 const first: Lesson = {
@@ -16,12 +19,18 @@ const first: Lesson = {
   title: 'Retry semantics A',
   text: 'The first lesson remains visible after another exact lesson is deleted.',
   topic: 'distributed-systems', source: 'note', importance: 3, tags: ['retry'], date: '2026-08-10',
+  lifecycle: 'deprecated',
+  superseded_by: 'distributed-systems/2026-08-10.retry-b',
+  supersedes: [],
 }
 const second: Lesson = {
   id: 'distributed-systems/2026-08-10.retry-b',
   title: 'Retry semantics B',
   text: 'The second lesson is the exact target for every action.',
   topic: 'distributed-systems', source: 'note', importance: 4, tags: ['retry'], date: '2026-08-10',
+  lifecycle: 'active',
+  superseded_by: null,
+  supersedes: ['distributed-systems/2026-08-10.retry-a'],
 }
 
 type DeleteMode = 'success' | 'partial-refresh' | 'canonical-failure'
@@ -125,6 +134,44 @@ test('Detail exposes actions, focuses its existing inspection surface, and retur
   await expect(page).toHaveURL(/#\/browse$/)
   await expect(page.getByText('LeLe deleted.')).toBeVisible()
 })
+
+test('Detail navigates supersession in both directions and marks non-active knowledge', async ({ page }) => {
+  await mockLessons(page)
+
+  await page.goto(`/app/#/lesson/${encodeURIComponent(second.id)}`)
+  await expect(
+    page.getByRole('button', {
+      name: `Supersedes: ${first.id}`,
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await page.getByRole('button', {
+    name: `Supersedes: ${first.id}`,
+    exact: true,
+  }).click()
+
+  await expect(page).toHaveURL(
+    new RegExp(`#\\/lesson\\/${encodeURIComponent(first.id)}$`),
+  )
+  await expect(page.getByTestId('detail-lifecycle')).toContainText('Deprecated')
+  await expect(
+    page.getByRole('button', {
+      name: `Superseded by: ${second.id}`,
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await page.getByRole('button', {
+    name: `Superseded by: ${second.id}`,
+    exact: true,
+  }).click()
+
+  await expect(page).toHaveURL(
+    new RegExp(`#\\/lesson\\/${encodeURIComponent(second.id)}$`),
+  )
+})
+
 
 test('Detail remains usable when canonical deletion fails', async ({ page }) => {
   const calls = await mockLessons(page, 'canonical-failure')

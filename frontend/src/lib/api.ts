@@ -18,6 +18,10 @@ export interface Lesson {
   superseded_by?: string | null
 }
 
+export interface LessonDetail extends Lesson {
+  supersedes: string[]
+}
+
 export interface LessonSearchRequest {
   q?: string | null
   topic_in?: string[] | null
@@ -713,7 +717,7 @@ export const api = {
   },
 
   getLesson: (id: string) =>
-    request<Lesson>(`/lessons/${encodeURIComponent(id)}`),
+    request<LessonDetail>(`/lessons/${encodeURIComponent(id)}`),
 
   similarById: (id: string, topK = 5, minScore = 0, explain = false) =>
     request<SimilarResponse>(
