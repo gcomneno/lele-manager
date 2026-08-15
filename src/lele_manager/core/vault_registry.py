@@ -9,8 +9,10 @@ import json
 import os
 import tempfile
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from collections.abc import Iterator
 from pathlib import Path
 from threading import RLock
 from typing import Any, List, cast
@@ -91,6 +93,17 @@ def _record(value: Any) -> RegisteredVault:
 class VaultRegistryStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or registry_path()
+
+    @contextmanager
+    def mutation_boundary(self) -> Iterator[None]:
+        """Serialize authority-bearing Vault registry mutations.
+
+        Whole-Vault destructive operations may hold this boundary across their
+        final authority check and filesystem commit so activation cannot race
+        into a Vault being physically deleted.
+        """
+        with _LOCK:
+            yield
 
     def exists(self) -> bool:
         return self.path.exists()

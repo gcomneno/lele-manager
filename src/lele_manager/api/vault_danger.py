@@ -295,6 +295,7 @@ def execute_danger(body: VaultDangerExecuteRequest, request: Request) -> VaultDa
             invalidate_cache=lambda context: _invalidate_cache(request, context),
             remove_registry=_remove_registry,
             create_backup=lambda context: _backup(context, decisions),
+            mutation_boundary=_store().mutation_boundary,
         )
         return _result_response(result)
     except (VaultDangerError, SnapshotTargetError, DuplicateDecisionStoreError) as exc:
