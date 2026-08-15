@@ -251,6 +251,10 @@ export const en = {
   editorImportanceNormal: 'Normal',
   editorImportanceHigh: 'High',
   editorImportanceInvalid: 'Importance must be a whole number from 1 to 5.',
+  editorLifecycle: 'Lifecycle',
+  editorSupersededBy: 'Superseded by',
+  editorSupersededByPlaceholder: 'Stable ID of the maintained replacement',
+  editorSupersededByHelp: 'Optional. The target must be an existing LeLe and must not create a supersession cycle.',
   editorMetadataSuggestionsUnavailable: 'Metadata suggestions are unavailable. You can still enter values manually.',
 
   statsTitle: 'Statistics',

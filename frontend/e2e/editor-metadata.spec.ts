@@ -62,6 +62,35 @@ test('catalogues are discoverable, advisory, and only explicit Save creates a le
   expect(writes[0]).toMatchObject({ topic: 'Python', source: 'Book', importance: 3, tags: ['pytest', 'new-tag'] })
 })
 
+test('new lessons author active lifecycle explicitly and no supersession', async ({ page }) => {
+  await mockOptions(page)
+  const writes = watchWrites(page)
+  await page.route('**/vault/lessons', async route => {
+    await route.fulfill({
+      status: 201,
+      json: {
+        id: 'lifecycle/new',
+        ...(route.request().postDataJSON() as object),
+      },
+    })
+  })
+
+  await page.goto('/app/#/editor')
+
+  await expect(page.getByLabel('Lifecycle')).toHaveValue('active')
+  await expect(page.getByLabel('Superseded by')).toHaveValue('')
+
+  await page.getByLabel('Topic').fill('lifecycle')
+  await fillRequiredBody(page)
+  await page.getByRole('button', { name: 'Save to vault' }).click()
+
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({
+    lifecycle: 'active',
+    superseded_by: null,
+  })
+})
+
 test('new Topic and Source values are deliberately preserved', async ({ page }) => {
   await mockOptions(page)
   const writes = watchWrites(page)
@@ -219,6 +248,72 @@ test('edit mode preserves uncatalogued metadata until an explicit update', async
   await page.getByRole('button', { name: 'Save to vault' }).click()
   await expect.poll(() => writes.length).toBe(1)
   expect(writes[0]).toMatchObject({ topic: 'legacy-special', source: 'old-import', importance: 4, tags: ['RareTag', 'AnotherTag'] })
+})
+
+test('edit mode hydrates lifecycle and can explicitly clear lifecycle metadata', async ({ page }) => {
+  await mockOptions(page)
+  const writes = watchWrites(page)
+
+  let current = {
+    id: 'legacy/deprecated',
+    text: 'Deprecated body.',
+    topic: 'legacy',
+    source: 'note',
+    importance: 3,
+    tags: [],
+    date: '2026-01-02',
+    lifecycle: 'deprecated',
+    superseded_by: 'legacy/replacement',
+  }
+
+  await page.route('**/lessons/legacy%2Fdeprecated', async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: current })
+      return
+    }
+
+    const update = route.request().postDataJSON() as typeof current
+    current = { ...current, ...update }
+    await route.fulfill({ json: current })
+  })
+
+  await page.goto('/app/#/editor/legacy%2Fdeprecated')
+
+  await expect(page.getByLabel('Lifecycle')).toHaveValue('deprecated')
+  await expect(page.getByLabel('Superseded by')).toHaveValue('legacy/replacement')
+  expect(writes).toHaveLength(0)
+
+  await page.getByRole('button', { name: 'Save to vault' }).click()
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({
+    lifecycle: 'deprecated',
+    superseded_by: 'legacy/replacement',
+  })
+
+  await expect(
+    page.getByRole('region', {
+      name: 'legacy/deprecated',
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: 'Modify' }).click()
+
+  await expect(page).toHaveURL(
+    /#\/editor\/legacy%2Fdeprecated$/,
+  )
+  await expect(page.getByLabel('Lifecycle')).toHaveValue('deprecated')
+  await expect(page.getByLabel('Superseded by')).toHaveValue('legacy/replacement')
+
+  await page.getByLabel('Lifecycle').selectOption('active')
+  await page.getByLabel('Superseded by').fill('')
+  await page.getByRole('button', { name: 'Save to vault' }).click()
+
+  await expect.poll(() => writes.length).toBe(2)
+  expect(writes[1]).toMatchObject({
+    lifecycle: 'active',
+    superseded_by: null,
+  })
 })
 
 test('Italian metadata labels localize without changing author-controlled values', async ({ page }) => {

@@ -253,6 +253,10 @@ export const it = {
   editorImportanceNormal: 'Normale',
   editorImportanceHigh: 'Alta',
   editorImportanceInvalid: "L'importanza deve essere un intero da 1 a 5.",
+  editorLifecycle: 'Stato',
+  editorSupersededBy: 'Sostituita da',
+  editorSupersededByPlaceholder: 'ID stabile della LeLe sostitutiva',
+  editorSupersededByHelp: 'Opzionale. La destinazione deve essere una LeLe esistente e non deve creare cicli di sostituzione.',
   editorMetadataSuggestionsUnavailable: 'I suggerimenti dei metadati non sono disponibili. Puoi comunque inserire valori manualmente.',
 
   statsTitle: 'Statistiche',
