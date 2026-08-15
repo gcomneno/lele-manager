@@ -155,3 +155,122 @@ def test_search_lessons_with_topic_source_and_importance(tmp_path, monkeypatch) 
     # - id=4 (python, note, importance=3)
     ids = {lele["id"] for lele in results}
     assert ids == {"1", "4"}
+
+def test_search_defaults_to_active_and_supports_explicit_lifecycle_scope(
+    tmp_path, monkeypatch
+) -> None:
+    data_path = tmp_path / "data" / "lessons.jsonl"
+    records = [
+        {
+            "id": "legacy-active",
+            "text": "Legacy active lesson",
+            "topic": "python",
+            "importance": 3,
+        },
+        {
+            "id": "explicit-active",
+            "text": "Explicit active lesson",
+            "topic": "python",
+            "importance": 3,
+            "lifecycle": "active",
+        },
+        {
+            "id": "review",
+            "text": "Review lesson",
+            "topic": "python",
+            "importance": 3,
+            "lifecycle": "review-needed",
+        },
+        {
+            "id": "deprecated",
+            "text": "Deprecated lesson",
+            "topic": "python",
+            "importance": 3,
+            "lifecycle": "deprecated",
+        },
+        {
+            "id": "archived",
+            "text": "Archived lesson",
+            "topic": "python",
+            "importance": 3,
+            "lifecycle": "archived",
+        },
+    ]
+    _write_jsonl(data_path, records)
+    monkeypatch.setattr(server, "DATA_PATH", data_path, raising=False)
+
+    client = TestClient(server.app)
+
+    default_response = client.post("/lessons/search", json={"limit": 20})
+    assert default_response.status_code == 200
+    assert {item["id"] for item in default_response.json()} == {
+        "legacy-active",
+        "explicit-active",
+    }
+
+    historical_response = client.post(
+        "/lessons/search",
+        json={
+            "lifecycle_in": ["deprecated", "archived"],
+            "limit": 20,
+        },
+    )
+    assert historical_response.status_code == 200
+    assert {item["id"] for item in historical_response.json()} == {
+        "deprecated",
+        "archived",
+    }
+
+    all_response = client.post(
+        "/lessons/search",
+        json={
+            "lifecycle_in": [
+                "active",
+                "review-needed",
+                "deprecated",
+                "archived",
+            ],
+            "limit": 20,
+        },
+    )
+    assert all_response.status_code == 200
+    assert {item["id"] for item in all_response.json()} == {
+        "legacy-active",
+        "explicit-active",
+        "review",
+        "deprecated",
+        "archived",
+    }
+
+
+def test_list_defaults_to_active_and_accepts_explicit_lifecycle_scope(
+    tmp_path, monkeypatch
+) -> None:
+    data_path = tmp_path / "data" / "lessons.jsonl"
+    _write_jsonl(
+        data_path,
+        [
+            {"id": "active", "text": "Current"},
+            {
+                "id": "deprecated",
+                "text": "Historical",
+                "lifecycle": "deprecated",
+            },
+        ],
+    )
+    monkeypatch.setattr(server, "DATA_PATH", data_path, raising=False)
+    client = TestClient(server.app)
+
+    default_response = client.get("/lessons")
+    assert default_response.status_code == 200
+    assert [item["id"] for item in default_response.json()] == ["active"]
+
+    scoped_response = client.get(
+        "/lessons",
+        params=[("lifecycle", "active"), ("lifecycle", "deprecated")],
+    )
+    assert scoped_response.status_code == 200
+    assert {item["id"] for item in scoped_response.json()} == {
+        "active",
+        "deprecated",
+    }

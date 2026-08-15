@@ -286,6 +286,12 @@ class LessonSearchRequest(BaseModel):
         default=None,
         description="Filtro: importance <= questo valore.",
     )
+    lifecycle_in: Optional[List[LifecycleState]] = Field(
+        default=None,
+        description=(
+            "Stati lifecycle ammessi. Se omesso, la ricerca include solo active."
+        ),
+    )
     limit: int = Field(
         default=50,
         ge=1,
@@ -874,6 +880,23 @@ def _safe_dt_series(s: pd.Series) -> pd.Series:
     return pd.to_datetime(s, errors="coerce", utc=True)
 
 
+def _filter_lifecycle_scope(
+    df: pd.DataFrame,
+    lifecycle_in: list[LifecycleState] | None,
+) -> pd.DataFrame:
+    """Apply the maintained lifecycle scope; omission means active-only."""
+    requested = set(lifecycle_in) if lifecycle_in is not None else {"active"}
+    if not requested:
+        return df.iloc[0:0]
+
+    raw = df.get("lifecycle")
+    if raw is None:
+        effective = pd.Series("active", index=df.index, dtype="object")
+    else:
+        effective = raw.fillna("").astype(str).str.strip().replace("", "active")
+    return df[effective.isin(requested)]
+
+
 def append_lesson_to_jsonl(lesson: Lesson) -> None:
     """
     Appende una singola LeLe al file JSONL.
@@ -1111,7 +1134,7 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
-    lifecycle_val = normalize_lifecycle(row.get("lifecycle"))
+    lifecycle_val = normalize_lifecycle(_to_optional_str(row.get("lifecycle")))
     superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
     # importance: prova a convertirla, altrimenti None
@@ -1698,6 +1721,12 @@ def list_lessons(
         default=None,
         description="Filtra per source esatto.",
     ),
+    lifecycle: Optional[List[LifecycleState]] = Query(
+        default=None,
+        description=(
+            "Stati lifecycle da includere. Se omesso, include solo active."
+        ),
+    ),
     limit: int = Query(
         default=50,
         ge=1,
@@ -1712,6 +1741,10 @@ def list_lessons(
     """
     df = load_lessons_df()
 
+    if df.empty:
+        return []
+
+    df = _filter_lifecycle_scope(df, lifecycle)
     if df.empty:
         return []
 
@@ -1752,6 +1785,9 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
         return []
 
     df = df.copy()
+    df = _filter_lifecycle_scope(df, body.lifecycle_in)
+    if df.empty:
+        return []
 
     # Filtro testo (q)
     if body.q:
@@ -1827,6 +1863,10 @@ def _export_filters_summary(body: ExportSearchRequest) -> str:
         parts.append(f"importance_gte={body.importance_gte}")
     if body.importance_lte is not None:
         parts.append(f"importance_lte={body.importance_lte}")
+    if body.lifecycle_in is None:
+        parts.append("lifecycle_in=['active']")
+    else:
+        parts.append(f"lifecycle_in={body.lifecycle_in}")
     if body.ids_in:
         parts.append(f"ids_in={len(body.ids_in)} ids")
     parts.append(f"limit={body.limit}")
@@ -1848,6 +1888,7 @@ def export_search(
         source_in=body.source_in,
         importance_gte=body.importance_gte,
         importance_lte=body.importance_lte,
+        lifecycle_in=body.lifecycle_in,
         limit=body.limit,
     )
     results = search_lessons(search_body)
@@ -1974,7 +2015,7 @@ def _get_lesson_from_context(
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
-    lifecycle_val = normalize_lifecycle(row.get("lifecycle"))
+    lifecycle_val = normalize_lifecycle(_to_optional_str(row.get("lifecycle")))
     superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
     raw_importance = row.get("importance")

@@ -41,6 +41,14 @@ def lesson_to_markdown_block(lesson: Mapping[str, Any], *, include_frontmatter: 
         if lesson.get("title"):
             frontmatter["title"] = lesson["title"]
 
+        lifecycle = str(lesson.get("lifecycle") or "active").strip() or "active"
+        if lifecycle != "active":
+            frontmatter["lifecycle"] = lifecycle
+
+        superseded_by = lesson.get("superseded_by")
+        if superseded_by:
+            frontmatter["superseded_by"] = str(superseded_by)
+
         return render_markdown_with_frontmatter(frontmatter, _lesson_body(text))
 
     title = lesson.get("title") or lesson_id
