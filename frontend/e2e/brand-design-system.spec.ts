@@ -78,7 +78,7 @@ test('shows the GiadaWare product signature without crowding the product brand',
   await page.goto('/app/#/browse')
 
   await expect(page.getByTestId('brand-tagline')).toHaveText(
-    'Your local space for your “Lessons Learned”',
+    'Your Managed Second Brain',
   )
 
   const signature = page.getByTestId('giadaware-signature')

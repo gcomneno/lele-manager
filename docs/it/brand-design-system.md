@@ -80,9 +80,10 @@ GiadaWare: la scimmietta SVG del repository accanto a “GiadaWare™” e
 “Software open source”. La sidebar è agganciata al viewport, così la firma
 rimane visibile nelle pagine corte e in quelle lunghe.
 
-La tagline runtime è esattamente “Lo spazio locale per le tue 'Lessons
-Learned'”. Spaziatura e interlinea esplicite evitano sovrapposizioni nella
-colonna stretta del marchio.
+Il lockup runtime associa `LeLe Manager` alla tagline di brand
+`Your Managed Second Brain`. Il nome del prodotto resta visivamente dominante,
+mentre spaziatura e interlinea esplicite evitano sovrapposizioni nella colonna
+stretta del marchio.
 
 L’azione primaria conserva il nome accessibile “Nuova LeLe”. Visivamente
 mostra “+ Nuova”, seguito dalla scimmietta GiadaWare e da un piccolo fumetto
