@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, type ExportSearchRequest, type Lesson } from '../lib/api'
+  import {
+    api,
+    type ExportSearchRequest,
+    type Lesson,
+    type LessonLifecycleState,
+  } from '../lib/api'
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
   import { deleteLessonWithOutcome } from '../lib/lessonDeletion'
@@ -22,7 +27,19 @@
   let source = $state('')
   let importanceGte = $state('')
   let importanceLte = $state('')
+  let lifecycle = $state<'all' | LessonLifecycleState>('active')
   let limit = $state(20)
+
+  const allLifecycleStates: LessonLifecycleState[] = [
+    'active',
+    'review-needed',
+    'deprecated',
+    'archived',
+  ]
+
+  function lifecycleScope(): LessonLifecycleState[] {
+    return lifecycle === 'all' ? allLifecycleStates : [lifecycle]
+  }
 
   let lessons = $state<Lesson[]>([])
   let selectedIds = $state<Set<string>>(new Set())
@@ -73,6 +90,7 @@
       source_in: source.trim() ? [source.trim()] : null,
       importance_gte: importanceGte ? Number(importanceGte) : null,
       importance_lte: importanceLte ? Number(importanceLte) : null,
+      lifecycle_in: lifecycleScope(),
       limit: Number(limit) || 20,
       include_frontmatter: true,
     }
@@ -130,7 +148,9 @@
     error = ''
     status = $messages.commonLoading
     try {
-      replaceResults(await api.listLessons(Number(limit) || 50))
+      replaceResults(
+        await api.listLessons(Number(limit) || 50, lifecycleScope()),
+      )
       status = formatMessage(
         $messages.browseLessons,
         { count: lessons.length },
@@ -150,6 +170,7 @@
     source = ''
     importanceGte = ''
     importanceLte = ''
+    lifecycle = 'active'
   }
 
   function submitSearch(event: SubmitEvent) {
@@ -266,6 +287,16 @@
         <label>
           <FieldLabel label={$messages.browseImportanceMax} />
           <input type="number" min="1" max="5" bind:value={importanceLte} />
+        </label>
+        <label>
+          <FieldLabel label={$messages.browseLifecycle} />
+          <select bind:value={lifecycle}>
+            <option value="active">{$messages.lifecycleActive}</option>
+            <option value="review-needed">{$messages.lifecycleReviewNeeded}</option>
+            <option value="deprecated">{$messages.lifecycleDeprecated}</option>
+            <option value="archived">{$messages.lifecycleArchived}</option>
+            <option value="all">{$messages.lifecycleAllStates}</option>
+          </select>
         </label>
         <label>
           <FieldLabel label={$messages.browseLimit} />
@@ -395,6 +426,12 @@
           </label>
           <LessonCard
             {lesson}
+            lifecycleLabels={{
+              active: $messages.lifecycleActive,
+              'review-needed': $messages.lifecycleReviewNeeded,
+              deprecated: $messages.lifecycleDeprecated,
+              archived: $messages.lifecycleArchived,
+            }}
             onclick={() => navigate({ view: 'detail', id: lesson.id })}
           />
           <div class="lesson-actions" aria-label={`${lesson.id} actions`}>
@@ -461,7 +498,8 @@
     color: var(--muted);
   }
 
-  input {
+  input,
+  select {
     padding: 8px 10px;
     border: 1px solid var(--border);
     border-radius: 8px;

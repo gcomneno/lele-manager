@@ -1,3 +1,9 @@
+export type LessonLifecycleState =
+  | 'active'
+  | 'review-needed'
+  | 'deprecated'
+  | 'archived'
+
 export interface Lesson {
   id: string
   text: string
@@ -8,6 +14,8 @@ export interface Lesson {
   date?: string | null
   title?: string | null
   created_at?: string | null
+  lifecycle?: LessonLifecycleState
+  superseded_by?: string | null
 }
 
 export interface LessonSearchRequest {
@@ -16,6 +24,7 @@ export interface LessonSearchRequest {
   source_in?: string[] | null
   importance_gte?: number | null
   importance_lte?: number | null
+  lifecycle_in?: LessonLifecycleState[] | null
   limit?: number
 }
 
@@ -332,6 +341,8 @@ export interface LessonVaultWrite {
   tags?: string[] | null
   date?: string | null
   title?: string | null
+  lifecycle?: LessonLifecycleState | null
+  superseded_by?: string | null
 }
 
 export interface LessonVaultCreate extends LessonVaultWrite {
@@ -667,8 +678,14 @@ export const api = {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   }),
 
-  listLessons: (limit = 50) =>
-    request<Lesson[]>(`/lessons?limit=${encodeURIComponent(limit)}`),
+  listLessons: (
+    limit = 50,
+    lifecycleIn?: LessonLifecycleState[] | null,
+  ) => {
+    const params = new URLSearchParams({ limit: String(limit) })
+    lifecycleIn?.forEach((state) => params.append('lifecycle', state))
+    return request<Lesson[]>(`/lessons?${params.toString()}`)
+  },
 
   searchLessons: (body: LessonSearchRequest) =>
     request<Lesson[]>('/lessons/search', {
