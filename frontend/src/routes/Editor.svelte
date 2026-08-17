@@ -12,6 +12,8 @@
     type Lesson,
     type LessonDetail,
     type LessonLifecycleState,
+    type LessonRelationships,
+    type LessonRelationshipType,
     type SimilarItem,
     type SimilarMeta,
   } from '../lib/api'
@@ -39,6 +41,24 @@
   let title = $state('')
   let lifecycle = $state<LessonLifecycleState>('active')
   let supersededBy = $state('')
+
+  const relationshipTypes: LessonRelationshipType[] = [
+    'derives-from',
+    'corrects',
+    'extends',
+    'contradicts',
+    'see-also',
+  ]
+
+  let relationships = $state<LessonRelationships>({})
+  let relationshipDrafts = $state<Record<LessonRelationshipType, string>>({
+    'derives-from': '',
+    corrects: '',
+    extends: '',
+    contradicts: '',
+    'see-also': '',
+  })
+
   let body = $state('')
   let lessonId = $state('')
   let loadedLesson = $state<LessonDetail | null>(null)
@@ -63,6 +83,69 @@
 
   let topK = $state(5)
   let minScore = $state(0.1)
+
+  function relationshipLabel(type: LessonRelationshipType): string {
+    switch (type) {
+      case 'derives-from':
+        return $messages.relationshipDerivesFrom
+      case 'corrects':
+        return $messages.relationshipCorrects
+      case 'extends':
+        return $messages.relationshipExtends
+      case 'contradicts':
+        return $messages.relationshipContradicts
+      case 'see-also':
+        return $messages.relationshipSeeAlso
+    }
+  }
+
+  function addRelationship(type: LessonRelationshipType) {
+    const target = relationshipDrafts[type].trim()
+    if (!target) return
+
+    const current = relationships[type] ?? []
+    if (!current.includes(target)) {
+      relationships = {
+        ...relationships,
+        [type]: [...current, target],
+      }
+    }
+
+    relationshipDrafts = {
+      ...relationshipDrafts,
+      [type]: '',
+    }
+  }
+
+  function removeRelationship(
+    type: LessonRelationshipType,
+    target: string,
+  ) {
+    const remaining = (relationships[type] ?? [])
+      .filter((item) => item !== target)
+    const next: LessonRelationships = { ...relationships }
+
+    if (remaining.length) {
+      next[type] = remaining
+    } else {
+      delete next[type]
+    }
+
+    relationships = next
+  }
+
+  function relationshipPayload(): LessonRelationships {
+    const result: LessonRelationships = {}
+
+    for (const type of relationshipTypes) {
+      const targets = relationships[type] ?? []
+      if (targets.length) {
+        result[type] = [...targets]
+      }
+    }
+
+    return result
+  }
 
   function composeText(): string {
     const frontmatter = [
@@ -224,6 +307,16 @@
       tags = [...(lesson.tags ?? [])]
       lifecycle = lesson.lifecycle ?? 'active'
       supersededBy = lesson.superseded_by ?? ''
+      relationships = relationshipTypes.reduce<LessonRelationships>(
+        (result, relationshipType) => {
+          const targets = lesson.relationships?.[relationshipType] ?? []
+          if (targets.length) {
+            result[relationshipType] = [...targets]
+          }
+          return result
+        },
+        {},
+      )
 
       const parsed = stripFrontmatter(lesson.text ?? '')
       body = parsed.body || lesson.text || ''
@@ -255,6 +348,9 @@
       // lifecycle fields so active/null can deliberately clear old metadata.
       lifecycle,
       superseded_by: supersededBy.trim() || null,
+      // Relationships are explicit canonical authoring state. Sending the
+      // complete mapping makes removing the last target an intentional clear.
+      relationships: relationshipPayload(),
     }
   }
 
@@ -520,6 +616,67 @@
         </span>
       </label>
 
+      <section
+        class="relationship-editor wide"
+        aria-label={$messages.editorRelationships}
+      >
+        <div>
+          <strong>{$messages.editorRelationships}</strong>
+          <div class="field-help">
+            {$messages.editorRelationshipsHelp}
+          </div>
+        </div>
+
+        {#each relationshipTypes as relationshipType}
+          <div class="relationship-editor-row">
+            <FieldLabel label={relationshipLabel(relationshipType)} />
+
+            <div class="relationship-input">
+              {#each relationships[relationshipType] ?? [] as targetId (targetId)}
+                <span class="tag-chip">
+                  {targetId}
+                  <button
+                    type="button"
+                    aria-label={`${$messages.editorRemoveRelationship}: ${relationshipLabel(relationshipType)} ${targetId}`}
+                    onclick={() => removeRelationship(
+                      relationshipType,
+                      targetId,
+                    )}
+                  >×</button>
+                </span>
+              {/each}
+
+              <input
+                value={relationshipDrafts[relationshipType]}
+                aria-label={`${relationshipLabel(relationshipType)} — ${$messages.editorRelationshipTarget}`}
+                placeholder={$messages.editorRelationshipTargetPlaceholder}
+                autocomplete="off"
+                oninput={(event) => {
+                  relationshipDrafts = {
+                    ...relationshipDrafts,
+                    [relationshipType]: event.currentTarget.value,
+                  }
+                }}
+                onkeydown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    addRelationship(relationshipType)
+                  }
+                }}
+              />
+
+              <button
+                type="button"
+                class="add-tag"
+                onclick={() => addRelationship(relationshipType)}
+              >
+                {$messages.editorAddRelationship}
+              </button>
+            </div>
+          </div>
+        {/each}
+      </section>
+
       <label>
         <FieldLabel label={$messages.fieldTags} />
         <div class="tag-input">
@@ -665,6 +822,31 @@
   .delete-action:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .tag-input { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .tag-input input { flex: 1 1 120px; width: auto; }
+
+  .relationship-editor {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .relationship-editor-row {
+    display: grid;
+    gap: 4px;
+  }
+
+  .relationship-input {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .relationship-input input {
+    flex: 1 1 240px;
+    width: auto;
+  }
   .tag-chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; background: #f0ebe3; padding: 3px 7px; color: var(--text); }
   .tag-chip button, .add-tag, .topic-suggestion button { border: 0; border-radius: 6px; background: var(--accent); color: white; cursor: pointer; padding: 3px 7px; }
   .tag-chip button { padding: 0 4px; }

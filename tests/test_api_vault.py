@@ -816,3 +816,207 @@ def test_revision_update_reports_canonical_success_when_refresh_fails(
     assert detail["recovery"]["canonical_saved"] is True
     assert detail["recovery"]["revision"] == 1
     assert detail["recovery"]["refresh_outcome"]["refreshed"] is False
+
+def test_api_relationship_detail_exposes_outgoing_incoming_and_supersedes(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    target = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/relationship-target",
+            "text": "Target.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+            "title": "Target",
+        },
+    )
+    assert target.status_code == 201, target.text
+
+    source = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/relationship-source",
+            "text": "Source.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+            "title": "Source",
+            "lifecycle": "deprecated",
+            "superseded_by": "python/relationship-target",
+            "relationships": {
+                "extends": ["python/relationship-target"],
+                "see-also": ["python/relationship-target"],
+            },
+        },
+    )
+    assert source.status_code == 201, source.text
+
+    source_detail = client.get(
+        "/lessons/python%2Frelationship-source"
+    )
+    assert source_detail.status_code == 200, source_detail.text
+    assert source_detail.json()["relationships"] == {
+        "extends": ["python/relationship-target"],
+        "see-also": ["python/relationship-target"],
+    }
+    assert source_detail.json()["incoming_relationships"] == {}
+    assert (
+        source_detail.json()["superseded_by"]
+        == "python/relationship-target"
+    )
+
+    target_detail = client.get(
+        "/lessons/python%2Frelationship-target"
+    )
+    assert target_detail.status_code == 200, target_detail.text
+    assert target_detail.json()["relationships"] == {}
+    assert target_detail.json()["incoming_relationships"] == {
+        "extends": ["python/relationship-source"],
+        "see-also": ["python/relationship-source"],
+    }
+    assert target_detail.json()["supersedes"] == [
+        "python/relationship-source"
+    ]
+
+
+def test_api_relationship_update_omission_preserves_and_empty_mapping_clears(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    assert client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/relationship-target",
+            "text": "Target.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+        },
+    ).status_code == 201
+
+    assert client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/relationship-source",
+            "text": "Before.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+            "relationships": {
+                "corrects": ["python/relationship-target"],
+            },
+        },
+    ).status_code == 201
+
+    before = client.get(
+        "/lessons/python%2Frelationship-source"
+    ).json()
+
+    preserved = client.put(
+        "/lessons/python%2Frelationship-source",
+        json={
+            "text": "After preserve.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+            "expected_revision": before["canonical_revision"],
+        },
+    )
+    assert preserved.status_code == 200, preserved.text
+
+    after_preserve = client.get(
+        "/lessons/python%2Frelationship-source"
+    ).json()
+    assert after_preserve["relationships"] == {
+        "corrects": ["python/relationship-target"],
+    }
+
+    cleared = client.put(
+        "/lessons/python%2Frelationship-source",
+        json={
+            "text": "After preserve.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+            "relationships": {},
+            "expected_revision": after_preserve["canonical_revision"],
+        },
+    )
+    assert cleared.status_code == 200, cleared.text
+
+    after_clear = client.get(
+        "/lessons/python%2Frelationship-source"
+    ).json()
+    assert after_clear["relationships"] == {}
+
+    target_detail = client.get(
+        "/lessons/python%2Frelationship-target"
+    ).json()
+    assert target_detail["incoming_relationships"] == {}
+
+
+def test_api_rejects_missing_relationship_target_before_canonical_update(
+    vault_env: tuple[Path, Path],
+) -> None:
+    vault, _ = vault_env
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/relationship-source",
+            "text": "Original.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    detail = client.get(
+        "/lessons/python%2Frelationship-source"
+    ).json()
+    canonical = find_markdown_by_id(
+        vault,
+        "python/relationship-source",
+    )
+    assert canonical is not None
+    before = canonical.read_bytes()
+
+    response = client.put(
+        "/lessons/python%2Frelationship-source",
+        json={
+            "text": "Must not be saved.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["relationships"],
+            "date": "2026-08-17",
+            "relationships": {
+                "see-also": ["python/missing"],
+            },
+            "expected_revision": detail["canonical_revision"],
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert "does not exist" in response.text
+    assert canonical.read_bytes() == before

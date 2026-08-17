@@ -318,6 +318,106 @@ test('edit mode hydrates lifecycle and can explicitly clear lifecycle metadata',
   })
 })
 
+test('edit mode explicitly adds and removes typed relationships and sends the complete mapping', async ({ page }) => {
+  await mockOptions(page)
+  const writes = watchWrites(page)
+
+  const id = 'relationships/source'
+  const encoded = encodeURIComponent(id)
+  let current = {
+    id,
+    text: 'Relationship body.',
+    topic: 'relationships',
+    source: 'note',
+    importance: 3,
+    tags: [],
+    date: '2026-08-17',
+    lifecycle: 'active' as const,
+    superseded_by: null,
+    relationships: {
+      extends: ['knowledge/base'],
+      'see-also': ['knowledge/related'],
+    },
+    incoming_relationships: {},
+    supersedes: [],
+    canonical_revision: `sha256:${'c'.repeat(64)}`,
+  }
+
+  await page.route(`**/lessons/${encoded}`, async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: current })
+      return
+    }
+
+    const update = route.request().postDataJSON() as Record<string, unknown>
+    current = {
+      ...current,
+      ...update,
+      canonical_revision: `sha256:${'d'.repeat(64)}`,
+    }
+    await route.fulfill({ json: current })
+  })
+
+  await page.route(
+    `**/lessons/${encoded}/similar*`,
+    route => route.fulfill({
+      json: {
+        query: 'query',
+        results: [],
+        meta: { top_k: 8, min_score: 0.05 },
+      },
+    }),
+  )
+
+  await page.goto(`/app/#/editor/${encoded}`)
+
+  await expect(
+    page.getByRole('button', {
+      name: 'Remove relationship: Extends knowledge/base',
+    }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', {
+      name: 'Remove relationship: See also knowledge/related',
+    }),
+  ).toBeVisible()
+  expect(writes).toHaveLength(0)
+
+  await page.getByRole('button', {
+    name: 'Remove relationship: Extends knowledge/base',
+  }).click()
+
+  const corrects = page.getByLabel('Corrects — Target stable ID')
+  await corrects.fill('knowledge/correction')
+  await corrects.press('Enter')
+
+  await expect(
+    page.getByRole('button', {
+      name: 'Remove relationship: Corrects knowledge/correction',
+    }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', {
+      name: 'Remove relationship: Extends knowledge/base',
+    }),
+  ).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Save to vault' }).click()
+
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({
+    relationships: {
+      corrects: ['knowledge/correction'],
+      'see-also': ['knowledge/related'],
+    },
+  })
+
+  expect(
+    (writes[0] as { relationships: Record<string, string[]> })
+      .relationships.extends,
+  ).toBeUndefined()
+})
+
 test('Italian metadata labels localize without changing author-controlled values', async ({ page }) => {
   await mockOptions(page)
   const writes = watchWrites(page)

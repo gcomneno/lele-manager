@@ -31,6 +31,11 @@ from lele_manager.core.lifecycle import (
     validate_supersession_chain,
 )
 from lele_manager.core.projection_store import ProjectionStoreError
+from lele_manager.core.relationships import (
+    CanonicalRelationshipType,
+    RelationshipValidationError,
+    normalize_relationships,
+)
 
 DuplicatePolicy = Literal["overwrite", "skip", "error"]
 
@@ -47,6 +52,7 @@ class LeLeRecord:
     title: Optional[str]
     lifecycle: LifecycleState
     superseded_by: Optional[str]
+    relationships: Dict[CanonicalRelationshipType, List[str]]
     path: str
     frontmatter: Dict[str, object]
     frontmatter_hash: str
@@ -349,6 +355,28 @@ def analyze_import_from_dir(
             )
             continue
 
+        try:
+            normalized_relationships = normalize_relationships(
+                frontmatter.get("relationships"),
+                lesson_id=lele_id,
+            )
+        except RelationshipValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_relationships",
+                    message=str(exc),
+                    path=rel_path,
+                    field="relationships",
+                    blocking=True,
+                )
+            )
+            continue
+
+        relationships = {
+            relation_type: list(targets)
+            for relation_type, targets in normalized_relationships.items()
+        }
+
         frontmatter_hash = compute_frontmatter_hash(frontmatter)
         text = body.strip()
 
@@ -363,6 +391,7 @@ def analyze_import_from_dir(
             title=title,
             lifecycle=lifecycle,
             superseded_by=superseded_by,
+            relationships=relationships,
             path=rel_path,
             frontmatter=frontmatter,
             frontmatter_hash=frontmatter_hash,

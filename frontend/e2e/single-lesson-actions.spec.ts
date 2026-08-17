@@ -1,5 +1,14 @@
 import { expect, test, type Page } from '@playwright/test'
 
+type RelationshipType =
+  | 'derives-from'
+  | 'corrects'
+  | 'extends'
+  | 'contradicts'
+  | 'see-also'
+
+type Relationships = Partial<Record<RelationshipType, string[]>>
+
 type Lesson = {
   id: string
   title: string
@@ -12,6 +21,9 @@ type Lesson = {
   lifecycle?: 'active' | 'review-needed' | 'deprecated' | 'archived'
   superseded_by?: string | null
   supersedes?: string[]
+  relationships?: Relationships
+  incoming_relationships?: Relationships
+  canonical_revision?: string | null
 }
 
 const first: Lesson = {
@@ -22,6 +34,12 @@ const first: Lesson = {
   lifecycle: 'deprecated',
   superseded_by: 'distributed-systems/2026-08-10.retry-b',
   supersedes: [],
+  relationships: {
+    extends: ['distributed-systems/2026-08-10.retry-b'],
+  },
+  incoming_relationships: {
+    'see-also': ['distributed-systems/2026-08-10.retry-b'],
+  },
 }
 const second: Lesson = {
   id: 'distributed-systems/2026-08-10.retry-b',
@@ -31,6 +49,12 @@ const second: Lesson = {
   lifecycle: 'active',
   superseded_by: null,
   supersedes: ['distributed-systems/2026-08-10.retry-a'],
+  relationships: {
+    'see-also': ['distributed-systems/2026-08-10.retry-a'],
+  },
+  incoming_relationships: {
+    extends: ['distributed-systems/2026-08-10.retry-a'],
+  },
 }
 
 type DeleteMode = 'success' | 'partial-refresh' | 'canonical-failure'
@@ -94,7 +118,9 @@ test('Browse actions target the exact card and confirm before deleting', async (
 
   await target.getByRole('button', { name: 'Modify' }).click()
   await expect(page).toHaveURL(new RegExp(encodeURIComponent(second.id)))
-  await expect(page.getByRole('textbox', { name: 'ID' })).toHaveValue(second.id)
+  await expect(
+    page.getByRole('textbox', { name: 'ID', exact: true }),
+  ).toHaveValue(second.id)
 
   await page.goto('/app/#/browse')
   await target.getByRole('button', { name: 'Inspect' }).click()
@@ -169,6 +195,65 @@ test('Detail navigates supersession in both directions and marks non-active know
 
   await expect(page).toHaveURL(
     new RegExp(`#\\/lesson\\/${encodeURIComponent(second.id)}$`),
+  )
+})
+
+
+test('Detail keeps outgoing and incoming typed relationships distinct and navigable', async ({ page }) => {
+  await mockLessons(page)
+
+  await page.goto(`/app/#/lesson/${encodeURIComponent(second.id)}`)
+
+  const relationships = page.getByTestId('detail-relationships')
+  await expect(relationships).toBeVisible()
+  await expect(relationships).toContainText('Outgoing')
+  await expect(relationships).toContainText('Incoming')
+
+  await expect(
+    relationships.getByRole('button', {
+      name: `See also: ${first.id}`,
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    relationships.getByRole('button', {
+      name: `Extends ← ${first.id}`,
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  // Supersession remains a separate semantic surface.
+  await expect(
+    page.getByRole('button', {
+      name: `Supersedes: ${first.id}`,
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await relationships.getByRole('button', {
+    name: `See also: ${first.id}`,
+    exact: true,
+  }).click()
+
+  await expect(page).toHaveURL(
+    new RegExp(`#\/lesson\/${encodeURIComponent(first.id)}$`),
+  )
+
+  const reverseRelationships = page.getByTestId('detail-relationships')
+  await expect(
+    reverseRelationships.getByRole('button', {
+      name: `See also ← ${second.id}`,
+      exact: true,
+    }),
+  ).toBeVisible()
+
+  await reverseRelationships.getByRole('button', {
+    name: `See also ← ${second.id}`,
+    exact: true,
+  }).click()
+
+  await expect(page).toHaveURL(
+    new RegExp(`#\/lesson\/${encodeURIComponent(second.id)}$`),
   )
 })
 

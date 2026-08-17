@@ -45,7 +45,7 @@ test.describe('GUI smoke', () => {
 
     // L'ID della nuova LeLe è governato dal sistema.
     await expect(
-      editorPanel.getByLabel('ID'),
+      editorPanel.getByLabel('ID', { exact: true }),
     ).toHaveCount(0)
 
     const checkButton = editorPanel.getByRole('button', {

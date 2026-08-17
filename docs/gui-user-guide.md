@@ -171,6 +171,14 @@ removes the canonical replacement reference. Saving remains the only action
 that writes these changes to the canonical Markdown vault. Derived signals
 never perform lifecycle transitions automatically.
 
+Editor also exposes five explicit typed relationship groups: **Derives from**,
+**Corrects**, **Extends**, **Contradicts**, and **See also**. Each target is an
+existing stable LeLe ID. Add and remove actions only change the current editor
+draft; Save writes the complete desired relationship mapping through the same
+revision-aware canonical authoring boundary. No reciprocal link is created
+automatically. **Supersedes** is not a generic editable relationship:
+**Superseded by** remains the single canonical supersession authority.
+
 ## Managing an existing LeLe
 
 Browse and lesson Detail expose the same actions for an existing LeLe:
@@ -189,6 +197,13 @@ also exposes derived **Supersedes** links back to lessons that point to it, so
 the relationship can be navigated in both directions where available.
 Supersession itself never deletes, merges, rewrites, or changes the lifecycle of
 either canonical lesson.
+
+Detail presents generic typed relationships separately from supersession.
+**Outgoing** links are canonical metadata on the selected LeLe; **Incoming**
+links are derived from the current projection so reverse navigation does not
+duplicate canonical metadata. Both are directly navigable by stable ID.
+Existing broken relationship targets remain canonical until explicitly repaired
+or removed; Vault Doctor can diagnose them when validating the complete Vault.
 
 Delete always shows the lesson title (or *Untitled*) and stable ID for
 confirmation before permanently removing that exact canonical Markdown file.

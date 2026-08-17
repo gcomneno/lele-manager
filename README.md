@@ -250,6 +250,11 @@ date: 2025-11-20
 title: "LL-5 — std::cin vs std::getline"
 lifecycle: deprecated
 superseded_by: cpp/2026-08-15.input-handling
+relationships:
+  derives-from:
+    - cpp/input-streams
+  see-also:
+    - cpp/input-validation
 ---
 ```
 
@@ -265,7 +270,11 @@ The importer accepts a tolerant input schema:
 - `lifecycle` is optional and accepts `active`, `review-needed`, `deprecated`,
   or `archived`; absence means `active`;
 - `superseded_by` is optional and identifies one maintained replacement by
-  stable lesson ID.
+  stable lesson ID;
+- `relationships` is an optional typed mapping for explicit directional
+  `derives-from`, `corrects`, `extends`, `contradicts`, and `see-also` links.
+  Targets are stable lesson IDs. Semantic `supersedes` remains derived from
+  canonical `superseded_by` and is not stored in the generic mapping.
 
 Lifecycle changes are explicit canonical edits. Derived signals such as
 similarity, freshness, or contradiction detection may suggest review, but never
@@ -558,8 +567,8 @@ Available views:
 |---|---|
 | **Dashboard** | Workspace readiness, bounded knowledge summary, and next useful actions |
 | **Browse** | Advanced search, lifecycle filtering, and Markdown export |
-| **Detail** | Full lesson content, lifecycle, supersession links, explained similarity, and revision history |
-| **Editor** | Revision-aware canonical Markdown authoring with explicit lifecycle and supersession controls |
+| **Detail** | Full lesson content, lifecycle, typed outgoing/incoming relationships, supersession links, explained similarity, and revision history |
+| **Editor** | Revision-aware canonical Markdown authoring with explicit lifecycle, supersession, and typed relationship controls |
 | **TritaLeLe** | Controlled candidate ingestion, review, rejection, and approval |
 | **Duplicates** | Read-only review of exact and near-duplicate pairs |
 | **Timeline** | Knowledge-acquisition timeline and bucket export |
@@ -579,9 +588,20 @@ addressable by stable ID regardless of lifecycle and exposes both the canonical
 forward `superseded_by` relation and derived reverse supersession links where
 available.
 
+Detail also exposes explicit typed relationships separately from supersession.
+Outgoing `derives-from`, `corrects`, `extends`, `contradicts`, and `see-also`
+links come from canonical Markdown; incoming links are derived for navigation.
+No reciprocal relationship is inferred or written automatically.
+
 The Editor is the explicit lifecycle mutation surface: selecting Active removes
 a previous non-active marker, and clearing Superseded by removes the canonical
 replacement link. Neither operation deletes lesson content.
+
+The Editor also explicitly authors the five generic relationship types.
+Targets must identify existing canonical LeLe. Adding or removing a link only
+takes effect on Save, and saving the empty relationship mapping deliberately
+clears all generic relationships. Generic `supersedes` cannot be authored:
+`superseded_by` remains its single canonical authority.
 
 The Detail revision-history panel shows the maintained per-LeLe timeline and
 supports explicit comparison between historical revisions. Diffs are derived

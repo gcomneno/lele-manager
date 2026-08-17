@@ -29,6 +29,11 @@ from lele_manager.core.lifecycle import (
     normalize_lifecycle,
     normalize_superseded_by,
 )
+from lele_manager.core.relationships import (
+    CanonicalRelationships,
+    RelationshipValidationError,
+    normalize_relationships,
+)
 from lele_manager.core.vault import (
     find_markdown_paths_by_id,
     render_lesson_markdown,
@@ -88,6 +93,7 @@ class CanonicalLessonSnapshot:
     title: str | None
     lifecycle: LifecycleState
     superseded_by: str | None
+    relationships: CanonicalRelationships
 
 
 @dataclass(frozen=True)
@@ -167,7 +173,11 @@ def read_canonical_lesson_snapshot(
             frontmatter.get("superseded_by"),
             lesson_id=lesson_id,
         )
-    except LifecycleValidationError as exc:
+        relationships = normalize_relationships(
+            frontmatter.get("relationships"),
+            lesson_id=lesson_id,
+        )
+    except (LifecycleValidationError, RelationshipValidationError) as exc:
         raise CanonicalLessonWriteStorageError(
             "canonical lesson metadata is invalid"
         ) from exc
@@ -185,6 +195,7 @@ def read_canonical_lesson_snapshot(
         title=_optional_frontmatter_string(frontmatter.get("title")),
         lifecycle=lifecycle,
         superseded_by=superseded_by,
+        relationships=relationships,
     )
 
 
@@ -212,15 +223,25 @@ def write_canonical_lesson_source(
     importance: int, tags: list[str], date: str, title: str | None,
     lifecycle: LifecycleState, superseded_by: str | None,
     invalidate_cache: Callable[[], None],
+    relationships: CanonicalRelationships | None = None,
 ) -> Path:
     """Rewrite exactly one existing canonical Markdown source without refresh."""
     path, relative_path = _resolve_exact_canonical(vault_dir, lesson_id)
+    relationship_state = (
+        read_canonical_lesson_snapshot(
+            vault_dir=vault_dir,
+            lesson_id=lesson_id,
+        ).relationships
+        if relationships is None
+        else relationships
+    )
     try:
         result = write_lesson_markdown(
             vault_dir, lesson_id=lesson_id, body=body, topic=topic, source=source,
             importance=importance, tags=tags, date=date, title=title,
             relative_path=relative_path, lifecycle=lifecycle,
             superseded_by=superseded_by,
+            relationships=relationship_state,
         )
     except (OSError, ValueError) as exc:
         raise CanonicalLessonWriteStorageError(
@@ -246,6 +267,7 @@ def write_revisioned_canonical_lesson_source(
     lifecycle: LifecycleState,
     superseded_by: str | None,
     invalidate_cache: Callable[[], None],
+    relationships: CanonicalRelationships | None = None,
     occurred_at: str | None = None,
     reason: str | None = None,
 ) -> CanonicalLessonRevisionWriteResult:
@@ -266,6 +288,25 @@ def write_revisioned_canonical_lesson_source(
             raise CanonicalLessonWriteStorageError(
                 "canonical lesson could not be read"
             ) from exc
+
+        try:
+            current_frontmatter, _ = parse_markdown_with_frontmatter(
+                current_markdown
+            )
+            current_relationships = normalize_relationships(
+                current_frontmatter.get("relationships"),
+                lesson_id=lesson_id,
+            )
+        except RelationshipValidationError as exc:
+            raise CanonicalLessonWriteStorageError(
+                "canonical lesson relationship metadata is invalid"
+            ) from exc
+
+        relationship_state = (
+            current_relationships
+            if relationships is None
+            else relationships
+        )
 
         current_revision = canonical_fingerprint(current_bytes)
         if current_revision != expected_revision:
@@ -296,6 +337,7 @@ def write_revisioned_canonical_lesson_source(
             title=title,
             lifecycle=lifecycle,
             superseded_by=superseded_by,
+            relationships=relationship_state,
         )
         resulting_bytes = rendered.encode("utf-8")
         resulting_revision = canonical_fingerprint(resulting_bytes)
@@ -344,6 +386,7 @@ def write_revisioned_canonical_lesson_source(
                 relative_path=relative_path,
                 lifecycle=lifecycle,
                 superseded_by=superseded_by,
+                relationships=relationship_state,
             )
         except (OSError, ValueError) as exc:
             raise CanonicalLessonWriteStorageError(
