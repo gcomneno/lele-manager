@@ -417,3 +417,222 @@ def test_doctor_does_not_write_or_change_mtime_and_mode(tmp_path: Path) -> None:
     }
     assert report.valid
     assert after == before
+
+def _lesson_with_relationships(
+    lesson_id: str,
+    relationship_yaml: str,
+    *,
+    topic: str = "python",
+) -> str:
+    content = lesson_text(lesson_id, topic=topic)
+    marker = "title: Una lesson\n---"
+    if content.count(marker) != 1:
+        raise AssertionError("lesson_text frontmatter marker changed")
+    return content.replace(
+        marker,
+        "title: Una lesson\n"
+        "relationships:\n"
+        f"{relationship_yaml}"
+        "---",
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    ("relationship_yaml", "message_fragment"),
+    [
+        ("  extends: python/target\n", "must be a list"),
+        (
+            "  related-to:\n"
+            "    - python/target\n",
+            "unknown relationship type",
+        ),
+        (
+            "  see-also:\n"
+            "    - python/source\n",
+            "lesson itself",
+        ),
+    ],
+)
+def test_doctor_reports_structurally_invalid_relationships(
+    tmp_path: Path,
+    relationship_yaml: str,
+    message_fragment: str,
+) -> None:
+    vault = tmp_path / "vault"
+    path = vault / "python" / "source.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        _lesson_with_relationships(
+            "python/source",
+            relationship_yaml,
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([path], vault_dir=vault)
+
+    problems = [
+        problem
+        for problem in report.problems
+        if problem.code == "invalid_relationships"
+    ]
+    assert len(problems) == 1
+    assert problems[0].field == "relationships"
+    assert message_fragment in problems[0].message
+
+
+def test_doctor_reports_missing_relationship_target_with_whole_vault_context(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    source = vault / "python" / "source.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        _lesson_with_relationships(
+            "python/source",
+            "  see-also:\n"
+            "    - python/missing\n",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([source], vault_dir=vault)
+
+    broken = [
+        problem
+        for problem in report.problems
+        if problem.code == "broken_relationship"
+    ]
+    assert len(broken) == 1
+    assert broken[0].field == "relationships"
+    assert "relationships.see-also" in broken[0].message
+    assert "python/missing" in broken[0].message
+    assert "does not exist" in broken[0].message
+
+
+def test_doctor_resolves_relationship_target_from_unselected_vault_file(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    write_valid(vault, "python/target.md")
+
+    source = vault / "python" / "source.md"
+    source.write_text(
+        _lesson_with_relationships(
+            "python/source",
+            "  derives-from:\n"
+            "    - python/target\n",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([source], vault_dir=vault)
+
+    assert report.valid
+    assert not any(
+        problem.code == "broken_relationship"
+        for problem in report.problems
+    )
+
+
+def test_doctor_reports_ambiguous_relationship_target(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+
+    first = vault / "python" / "first.md"
+    first.parent.mkdir(parents=True)
+    first.write_text(
+        lesson_text("shared/target", topic="python"),
+        encoding="utf-8",
+    )
+
+    second = vault / "other" / "second.md"
+    second.parent.mkdir(parents=True)
+    second.write_text(
+        lesson_text("shared/target", topic="other"),
+        encoding="utf-8",
+    )
+
+    source = vault / "python" / "source.md"
+    source.write_text(
+        _lesson_with_relationships(
+            "python/source",
+            "  corrects:\n"
+            "    - shared/target\n",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([source], vault_dir=vault)
+
+    broken = [
+        problem
+        for problem in report.problems
+        if problem.code == "broken_relationship"
+    ]
+    assert len(broken) == 1
+    assert "shared/target" in broken[0].message
+    assert "is ambiguous" in broken[0].message
+    assert "python/first.md" in broken[0].message
+    assert "other/second.md" in broken[0].message
+
+
+def test_standalone_doctor_does_not_invent_broken_relationship(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "standalone.md"
+    path.write_text(
+        _lesson_with_relationships(
+            "stable-id",
+            "  see-also:\n"
+            "    - another-vault-id\n",
+            topic="not-derived-from-path",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([path])
+
+    assert report.valid
+    assert not any(
+        problem.code == "broken_relationship"
+        for problem in report.problems
+    )
+
+
+def test_doctor_relationship_diagnostics_do_not_modify_sources(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    source = vault / "python" / "source.md"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        _lesson_with_relationships(
+            "python/source",
+            "  contradicts:\n"
+            "    - python/missing\n",
+        ),
+        encoding="utf-8",
+    )
+
+    before = (
+        source.read_bytes(),
+        source.stat().st_mtime_ns,
+        source.stat().st_mode,
+    )
+
+    report = check_markdown_files([source], vault_dir=vault)
+
+    after = (
+        source.read_bytes(),
+        source.stat().st_mtime_ns,
+        source.stat().st_mode,
+    )
+
+    assert any(
+        problem.code == "broken_relationship"
+        for problem in report.problems
+    )
+    assert after == before

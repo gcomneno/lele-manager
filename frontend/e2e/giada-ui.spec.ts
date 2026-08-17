@@ -190,7 +190,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   await expect(editorPanel).toBeVisible()
   await expect(
     editorPanel.locator('.giu-field-label'),
-  ).toHaveCount(12)
+  ).toHaveCount(17)
 
   const similarityButton = editorPanel.getByRole('button', {
     name: 'Check similarity',

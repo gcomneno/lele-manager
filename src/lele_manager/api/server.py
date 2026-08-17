@@ -5,7 +5,7 @@ import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Annotated, Any, Callable, List, Literal, Mapping, Optional, cast
+from typing import Annotated, Any, Callable, Dict, List, Literal, Mapping, Optional, cast
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
@@ -67,6 +67,14 @@ from lele_manager.core.lifecycle import (
     normalize_lifecycle,
     normalize_superseded_by,
     validate_supersession_chain,
+)
+from lele_manager.core.relationships import (
+    CANONICAL_RELATIONSHIP_TYPES,
+    CanonicalRelationshipType,
+    CanonicalRelationships,
+    RelationshipValidationError,
+    normalize_relationships,
+    validate_relationship_targets,
 )
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
@@ -256,6 +264,17 @@ class LessonSearchResult(Lesson):
 
 
 class LessonDetail(Lesson):
+    relationships: Dict[CanonicalRelationshipType, List[str]] = Field(
+        default_factory=dict,
+        description="Relazioni tipizzate outgoing canoniche della LeLe.",
+    )
+    incoming_relationships: Dict[CanonicalRelationshipType, List[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Relazioni tipizzate incoming derivate dalla projection corrente; "
+            "non vengono duplicate nel Markdown target."
+        ),
+    )
     canonical_revision: Optional[str] = Field(
         default=None,
         description=(
@@ -747,6 +766,13 @@ class LessonVaultWrite(BaseModel):
         description=(
             "Stable ID della sostituzione. Se omesso in update viene preservato; "
             "null esplicito rimuove il riferimento."
+        ),
+    )
+    relationships: Dict[CanonicalRelationshipType, List[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Mapping completo delle relazioni tipizzate canoniche. "
+            "Se omesso in update viene preservato; {} esplicito le rimuove tutte."
         ),
     )
 
@@ -2106,6 +2132,40 @@ def similar_lessons(
     )
 
 
+def _relationship_lists(
+    relationships: CanonicalRelationships,
+) -> Dict[CanonicalRelationshipType, List[str]]:
+    return {
+        relation_type: list(relationships[relation_type])
+        for relation_type in CANONICAL_RELATIONSHIP_TYPES
+        if relation_type in relationships
+    }
+
+
+def _projection_relationships(
+    raw_value: object,
+    *,
+    lesson_id: str,
+) -> CanonicalRelationships:
+    if raw_value is None or raw_value is pd.NA:
+        return {}
+    if isinstance(raw_value, float) and pd.isna(raw_value):
+        return {}
+    try:
+        return normalize_relationships(raw_value, lesson_id=lesson_id)
+    except RelationshipValidationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_projection_invalid_relationships",
+                "message": (
+                    f"Projection relationship metadata for {lesson_id!r} "
+                    f"is invalid: {exc}"
+                ),
+            },
+        ) from exc
+
+
 @app.get("/lessons/{lesson_id:path}", response_model=LessonDetail)
 def get_lesson(lesson_id: str) -> LessonDetail:
     """
@@ -2119,12 +2179,40 @@ def get_lesson(lesson_id: str) -> LessonDetail:
     df = load_lessons_df(context)
 
     reverse_ids: set[str] = set()
+    projected_outgoing: CanonicalRelationships = {}
+    incoming_sources: Dict[CanonicalRelationshipType, set[str]] = {}
+
     if not df.empty:
         for row in df.to_dict(orient="records"):
             source_id = _to_optional_str(row.get("id"))
+            if not source_id:
+                continue
+
             target_id = _to_optional_str(row.get("superseded_by"))
-            if source_id and target_id == lesson_id:
+            if target_id == lesson_id:
                 reverse_ids.add(source_id)
+
+            projected_relationships = _projection_relationships(
+                row.get("relationships"),
+                lesson_id=source_id,
+            )
+            if source_id == lesson_id:
+                projected_outgoing = projected_relationships
+
+            for relation_type, targets in projected_relationships.items():
+                if lesson_id in targets:
+                    incoming_sources.setdefault(relation_type, set()).add(
+                        source_id
+                    )
+
+    incoming_relationships: Dict[
+        CanonicalRelationshipType,
+        List[str],
+    ] = {
+        relation_type: sorted(incoming_sources[relation_type])
+        for relation_type in CANONICAL_RELATIONSHIP_TYPES
+        if relation_type in incoming_sources
+    }
 
     try:
         canonical_state = read_canonical_lesson_snapshot(
@@ -2141,6 +2229,8 @@ def get_lesson(lesson_id: str) -> LessonDetail:
             lesson = _get_lesson_from_context(lesson_id, context)
             return LessonDetail(
                 **lesson.model_dump(),
+                relationships=_relationship_lists(projected_outgoing),
+                incoming_relationships=incoming_relationships,
                 canonical_revision=None,
                 supersedes=sorted(reverse_ids),
             )
@@ -2176,6 +2266,8 @@ def get_lesson(lesson_id: str) -> LessonDetail:
         title=canonical_state.title,
         lifecycle=canonical_state.lifecycle,
         superseded_by=canonical_state.superseded_by,
+        relationships=_relationship_lists(canonical_state.relationships),
+        incoming_relationships=incoming_relationships,
         canonical_revision=canonical_state.canonical_revision,
         supersedes=sorted(reverse_ids),
     )
@@ -2408,6 +2500,36 @@ def _canonical_lifecycle_metadata(
     )
 
 
+def _canonical_relationship_metadata(
+    vault_dir: Path,
+    lesson_id: str,
+) -> CanonicalRelationships:
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    if not matches:
+        return {}
+    if len(matches) != 1:
+        raise ValueError(f"canonical lesson id {lesson_id!r} is ambiguous")
+    frontmatter, _ = parse_markdown_with_frontmatter(
+        matches[0].read_text(encoding="utf-8")
+    )
+    return normalize_relationships(
+        frontmatter.get("relationships"),
+        lesson_id=lesson_id,
+    )
+
+
+def _validate_authored_relationship_targets(
+    vault_dir: Path,
+    relationships: CanonicalRelationships,
+) -> None:
+    validate_relationship_targets(
+        relationships,
+        resolve_target_count=lambda target: len(
+            find_markdown_paths_by_id(vault_dir, target)
+        ),
+    )
+
+
 def _validate_supersession_target(
     vault_dir: Path,
     lesson_id: str,
@@ -2457,6 +2579,10 @@ def _write_lesson_to_vault(
             vault_dir,
             lesson_id,
         )
+        current_relationships = _canonical_relationship_metadata(
+            vault_dir,
+            lesson_id,
+        )
 
         lifecycle = (
             normalize_lifecycle(payload.lifecycle)
@@ -2478,6 +2604,18 @@ def _write_lesson_to_vault(
             superseded_by,
         )
 
+        if "relationships" in payload.model_fields_set:
+            relationships = normalize_relationships(
+                payload.relationships,
+                lesson_id=lesson_id,
+            )
+            _validate_authored_relationship_targets(
+                vault_dir,
+                relationships,
+            )
+        else:
+            relationships = current_relationships
+
         return write_lesson_markdown(
             vault_dir,
             lesson_id=lesson_id,
@@ -2491,6 +2629,7 @@ def _write_lesson_to_vault(
             relative_path=relative_path,
             lifecycle=lifecycle,
             superseded_by=superseded_by,
+            relationships=relationships,
         )
 
 
@@ -3263,6 +3402,19 @@ def update_lesson(lesson_id: str, body: LessonVaultUpdate) -> Lesson:
                 superseded_by,
             )
 
+            relationships: CanonicalRelationships | None
+            if "relationships" in body.model_fields_set:
+                relationships = normalize_relationships(
+                    body.relationships,
+                    lesson_id=lesson_id,
+                )
+                _validate_authored_relationship_targets(
+                    vault_dir,
+                    relationships,
+                )
+            else:
+                relationships = None
+
             result = write_revisioned_canonical_lesson_source(
                 vault_dir=vault_dir,
                 lesson_id=lesson_id,
@@ -3283,6 +3435,7 @@ def update_lesson(lesson_id: str, body: LessonVaultUpdate) -> Lesson:
                 title=body.title.strip() if body.title else None,
                 lifecycle=lifecycle,
                 superseded_by=superseded_by,
+                relationships=relationships,
                 invalidate_cache=invalidate_similarity_cache,
             )
 

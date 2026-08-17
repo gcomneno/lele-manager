@@ -4,6 +4,16 @@ export type LessonLifecycleState =
   | 'deprecated'
   | 'archived'
 
+export type LessonRelationshipType =
+  | 'derives-from'
+  | 'corrects'
+  | 'extends'
+  | 'contradicts'
+  | 'see-also'
+
+export type LessonRelationships =
+  Partial<Record<LessonRelationshipType, string[]>>
+
 export interface Lesson {
   id: string
   text: string
@@ -19,6 +29,8 @@ export interface Lesson {
 }
 
 export interface LessonDetail extends Lesson {
+  relationships: LessonRelationships
+  incoming_relationships: LessonRelationships
   canonical_revision: string | null
   supersedes: string[]
 }
@@ -348,6 +360,7 @@ export interface LessonVaultWrite {
   title?: string | null
   lifecycle?: LessonLifecycleState | null
   superseded_by?: string | null
+  relationships?: LessonRelationships
 }
 
 export interface LessonVaultCreate extends LessonVaultWrite {

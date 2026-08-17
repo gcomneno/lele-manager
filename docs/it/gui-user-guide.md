@@ -176,6 +176,15 @@ Sostituita da elimina deliberatamente il riferimento canonico alla LeLe
 sostitutiva. Solo il salvataggio scrive queste modifiche nel vault Markdown
 canonico. I segnali derivati non eseguono mai transizioni lifecycle automatiche.
 
+L’Editor espone inoltre cinque gruppi di relazioni tipizzate esplicite:
+**Deriva da**, **Corregge**, **Estende**, **Contraddice** e **Vedi anche**.
+Ogni destinazione è l’ID stabile di una LeLe esistente. Le azioni di aggiunta e
+rimozione modificano soltanto la bozza corrente dell’Editor; Salva scrive la
+mappa completa desiderata attraverso lo stesso confine canonico revision-aware.
+Non viene creata automaticamente alcuna relazione reciproca. **Sostituisce**
+non è una relazione generica modificabile: **Sostituita da** resta l’unica
+autorità canonica della supersession.
+
 ## Gestire una LeLe esistente
 
 Browse e Dettaglio della lesson espongono le stesse azioni per una LeLe
@@ -195,6 +204,15 @@ mantenuta. La sostitutiva espone anche collegamenti derivati **Sostituisce**
 verso le LeLe che puntano a essa, rendendo navigabile la relazione in entrambe
 le direzioni quando disponibile. La supersession non elimina, accorpa,
 riscrive né cambia automaticamente il lifecycle di nessuna delle LeLe canoniche.
+
+Il Dettaglio presenta le relazioni tipizzate generiche separatamente dalla
+supersession. I collegamenti **In uscita** sono metadati canonici della LeLe
+selezionata; quelli **In ingresso** sono derivati dalla proiezione corrente,
+così la navigazione inversa non duplica metadati canonici. Entrambi sono
+navigabili direttamente tramite ID stabile. Un riferimento generico già
+esistente ma interrotto resta canonico finché non viene riparato o rimosso
+esplicitamente; Vault Doctor può diagnosticarlo durante la validazione
+dell’intero Vault.
 
 Elimina mostra sempre il titolo della lesson (oppure *Senza titolo*) e l’ID
 stabile per la conferma, prima di rimuovere permanentemente quel preciso file

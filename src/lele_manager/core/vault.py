@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.core.lifecycle import normalize_lifecycle, normalize_superseded_by
+from lele_manager.core.relationships import normalize_relationships
 from lele_manager.composition import projection_store
 from lele_manager.cli.import_from_dir import (
     compute_frontmatter_hash,
@@ -148,6 +149,7 @@ def build_frontmatter(
     provenance: Optional[Dict[str, object]] = None,
     lifecycle: object = None,
     superseded_by: object = None,
+    relationships: object = None,
 ) -> Dict[str, object]:
     frontmatter: Dict[str, object] = {
         "id": lesson_id,
@@ -167,10 +169,19 @@ def build_frontmatter(
         superseded_by,
         lesson_id=lesson_id,
     )
+    normalized_relationships = normalize_relationships(
+        relationships,
+        lesson_id=lesson_id,
+    )
     if normalized_lifecycle != "active":
         frontmatter["lifecycle"] = normalized_lifecycle
     if replacement is not None:
         frontmatter["superseded_by"] = replacement
+    if normalized_relationships:
+        frontmatter["relationships"] = {
+            relation_type: list(targets)
+            for relation_type, targets in normalized_relationships.items()
+        }
     return frontmatter
 
 
@@ -187,6 +198,7 @@ def render_lesson_markdown(
     provenance: Optional[Dict[str, object]] = None,
     lifecycle: object = None,
     superseded_by: object = None,
+    relationships: object = None,
 ) -> str:
     """Render canonical lesson bytes using the established vault conventions."""
     frontmatter = build_frontmatter(
@@ -200,6 +212,7 @@ def render_lesson_markdown(
         provenance=provenance,
         lifecycle=lifecycle,
         superseded_by=superseded_by,
+        relationships=relationships,
     )
     _ = compute_frontmatter_hash(frontmatter)
     return render_markdown_with_frontmatter(frontmatter, body.strip())
@@ -220,6 +233,7 @@ def write_lesson_markdown(
     provenance: Optional[Dict[str, object]] = None,
     lifecycle: object = None,
     superseded_by: object = None,
+    relationships: object = None,
 ) -> Path:
     """Write or overwrite a lesson markdown file in the vault."""
     with canonical_mutation_boundary():
@@ -253,6 +267,7 @@ def write_lesson_markdown(
             provenance=provenance,
             lifecycle=lifecycle,
             superseded_by=superseded_by,
+            relationships=relationships,
         )
         md_path.parent.mkdir(parents=True, exist_ok=True)
         md_path.write_text(rendered, encoding="utf-8")

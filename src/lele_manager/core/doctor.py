@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 import yaml
 
+from lele_manager.core.relationships import (
+    RelationshipValidationError,
+    normalize_relationships,
+)
+
 
 REQUIRED_FIELDS = ("id", "topic", "source", "importance", "tags", "date", "title")
 NON_EMPTY_STRING_FIELDS = ("id", "topic", "source", "title")
@@ -245,6 +250,27 @@ def _validate_frontmatter(
             field="date",
         )
 
+    if "relationships" in frontmatter:
+        raw_id = frontmatter.get("id")
+        relationship_source_id = (
+            raw_id.strip()
+            if isinstance(raw_id, str)
+            else ""
+        )
+        try:
+            normalize_relationships(
+                frontmatter.get("relationships"),
+                lesson_id=relationship_source_id,
+            )
+        except RelationshipValidationError as exc:
+            _problem(
+                problems,
+                code="invalid_relationships",
+                message=str(exc),
+                path=display_path,
+                field="relationships",
+            )
+
     if not body.strip():
         _problem(
             problems,
@@ -396,7 +422,10 @@ def check_markdown_files(
         if isinstance(raw_id, str) and raw_id.strip():
             duplicate_paths = ids_to_paths.get(raw_id.strip(), [])
             if len(duplicate_paths) > 1:
-                locations = ", ".join(_display_path(item, resolved_vault) for item in duplicate_paths)
+                locations = ", ".join(
+                    _display_path(item, resolved_vault)
+                    for item in duplicate_paths
+                )
                 _problem(
                     problems,
                     code="duplicate_id",
@@ -404,6 +433,54 @@ def check_markdown_files(
                     path=display_path,
                     field="id",
                 )
+
+            # Broken-reference diagnostics require the complete Vault as
+            # context. An explicit standalone file cannot prove that an
+            # otherwise valid target is absent from its real Vault.
+            if (
+                resolved_vault is not None
+                and "relationships" in parsed.frontmatter
+            ):
+                try:
+                    relationships = normalize_relationships(
+                        parsed.frontmatter.get("relationships"),
+                        lesson_id=raw_id.strip(),
+                    )
+                except RelationshipValidationError:
+                    # Structural diagnostics were already emitted by
+                    # _validate_frontmatter; do not duplicate them here.
+                    pass
+                else:
+                    for relation_type, targets in relationships.items():
+                        for target in targets:
+                            target_paths = ids_to_paths.get(target, [])
+                            if not target_paths:
+                                _problem(
+                                    problems,
+                                    code="broken_relationship",
+                                    message=(
+                                        f"relationships.{relation_type} target "
+                                        f"{target!r} does not exist in the Vault"
+                                    ),
+                                    path=display_path,
+                                    field="relationships",
+                                )
+                            elif len(target_paths) > 1:
+                                locations = ", ".join(
+                                    _display_path(item, resolved_vault)
+                                    for item in target_paths
+                                )
+                                _problem(
+                                    problems,
+                                    code="broken_relationship",
+                                    message=(
+                                        f"relationships.{relation_type} target "
+                                        f"{target!r} is ambiguous in the Vault: "
+                                        f"{locations}"
+                                    ),
+                                    path=display_path,
+                                    field="relationships",
+                                )
 
     problems.sort(key=lambda item: (item.path, item.code, item.field or "", item.message))
     return DoctorReport(

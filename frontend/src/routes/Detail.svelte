@@ -9,6 +9,8 @@
     type Lesson,
     type LessonDetail,
     type LessonLifecycleState,
+    type LessonRelationships,
+    type LessonRelationshipType,
     type SimilarItem,
     type SimilarMeta,
   } from '../lib/api'
@@ -55,6 +57,37 @@
         loading = false
       }
     }
+  }
+
+  const relationshipTypes: LessonRelationshipType[] = [
+    'derives-from',
+    'corrects',
+    'extends',
+    'contradicts',
+    'see-also',
+  ]
+
+  function relationshipLabel(type: LessonRelationshipType): string {
+    switch (type) {
+      case 'derives-from':
+        return $messages.relationshipDerivesFrom
+      case 'corrects':
+        return $messages.relationshipCorrects
+      case 'extends':
+        return $messages.relationshipExtends
+      case 'contradicts':
+        return $messages.relationshipContradicts
+      case 'see-also':
+        return $messages.relationshipSeeAlso
+    }
+  }
+
+  function hasRelationships(
+    value: LessonRelationships | undefined,
+  ): boolean {
+    return relationshipTypes.some(
+      (type) => (value?.[type]?.length ?? 0) > 0,
+    )
   }
 
   function lifecycleLabel(state: LessonLifecycleState): string {
@@ -217,6 +250,60 @@
         </section>
       {/if}
 
+      {#if hasRelationships(lesson.relationships) || hasRelationships(lesson.incoming_relationships)}
+        <section
+          class="relationships"
+          aria-label={$messages.detailRelationships}
+          data-testid="detail-relationships"
+        >
+          <strong>{$messages.detailRelationships}</strong>
+
+          {#if hasRelationships(lesson.relationships)}
+            <div class="relationship-group">
+              <span class="relationship-heading">
+                {$messages.detailOutgoingRelationships}
+              </span>
+              {#each relationshipTypes as relationshipType}
+                {#each lesson.relationships?.[relationshipType] ?? [] as targetId (`${relationshipType}:${targetId}`)}
+                  <button
+                    type="button"
+                    class="relationship-link"
+                    onclick={() => navigate({
+                      view: 'detail',
+                      id: targetId,
+                    })}
+                  >
+                    {relationshipLabel(relationshipType)}: {targetId}
+                  </button>
+                {/each}
+              {/each}
+            </div>
+          {/if}
+
+          {#if hasRelationships(lesson.incoming_relationships)}
+            <div class="relationship-group">
+              <span class="relationship-heading">
+                {$messages.detailIncomingRelationships}
+              </span>
+              {#each relationshipTypes as relationshipType}
+                {#each lesson.incoming_relationships?.[relationshipType] ?? [] as sourceId (`${relationshipType}:${sourceId}`)}
+                  <button
+                    type="button"
+                    class="relationship-link"
+                    onclick={() => navigate({
+                      view: 'detail',
+                      id: sourceId,
+                    })}
+                  >
+                    {relationshipLabel(relationshipType)} ← {sourceId}
+                  </button>
+                {/each}
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {/if}
+
       {#if lesson.tags?.length}
         <div class="tags">
           {#each lesson.tags as tag}
@@ -330,6 +417,28 @@
     padding: var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+  }
+
+  .relationships {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
+  .relationship-group {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+  }
+
+  .relationship-heading {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 700;
   }
 
   .relationship-link {
