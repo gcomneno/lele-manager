@@ -365,6 +365,7 @@ def test_dashboard_summary_is_bounded_and_read_only(
         "projection_exists": False,
         "model_exists": False,
         "stats": None,
+        "freshness": None,
         "candidates": {
             "total": 0,
             "staged": 0,

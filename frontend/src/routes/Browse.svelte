@@ -28,6 +28,7 @@
   let importanceGte = $state('')
   let importanceLte = $state('')
   let lifecycle = $state<'all' | LessonLifecycleState>('active')
+  let freshness = $state<'all' | 'needed' | 'clear'>('all')
   let limit = $state(20)
 
   const allLifecycleStates: LessonLifecycleState[] = [
@@ -39,6 +40,12 @@
 
   function lifecycleScope(): LessonLifecycleState[] {
     return lifecycle === 'all' ? allLifecycleStates : [lifecycle]
+  }
+
+  function freshnessFilter(): boolean | null {
+    if (freshness === 'needed') return true
+    if (freshness === 'clear') return false
+    return null
   }
 
   let lessons = $state<Lesson[]>([])
@@ -91,6 +98,7 @@
       importance_gte: importanceGte ? Number(importanceGte) : null,
       importance_lte: importanceLte ? Number(importanceLte) : null,
       lifecycle_in: lifecycleScope(),
+      freshness_review_needed: freshnessFilter(),
       limit: Number(limit) || 20,
       include_frontmatter: true,
     }
@@ -171,6 +179,7 @@
     importanceGte = ''
     importanceLte = ''
     lifecycle = 'active'
+    freshness = 'all'
   }
 
   function submitSearch(event: SubmitEvent) {
@@ -296,6 +305,14 @@
             <option value="deprecated">{$messages.lifecycleDeprecated}</option>
             <option value="archived">{$messages.lifecycleArchived}</option>
             <option value="all">{$messages.lifecycleAllStates}</option>
+          </select>
+        </label>
+        <label>
+          <FieldLabel label={$messages.browseFreshness} />
+          <select bind:value={freshness}>
+            <option value="all">{$messages.browseFreshnessAll}</option>
+            <option value="needed">{$messages.browseFreshnessNeeded}</option>
+            <option value="clear">{$messages.browseFreshnessClear}</option>
           </select>
         </label>
         <label>

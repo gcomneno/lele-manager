@@ -125,8 +125,10 @@ navigation and avoids horizontal overflow.
 
 The Dashboard reads bounded workspace state only. It can distinguish a fresh
 setup with no vault, an empty vault, a partially ready workspace, a ready
-workspace and recoverable loading errors. It does not run duplicate review,
-Vault Doctor, import, refresh or model training automatically.
+workspace and recoverable loading errors. It also shows a bounded
+**Knowledge review attention** count when derived freshness is available. That
+count is advisory and does not mutate lessons. The Dashboard does not run
+duplicate review, Vault Doctor, import, refresh or model training automatically.
 
 The Markdown vault remains authoritative. Dataset projections, caches and
 topic-model artifacts are derived and rebuildable.
@@ -179,6 +181,11 @@ revision-aware canonical authoring boundary. No reciprocal link is created
 automatically. **Supersedes** is not a generic editable relationship:
 **Superseded by** remains the single canonical supersession authority.
 
+Editor also exposes an optional **Review interval (days)** field, bounded from
+1 through 3650. Empty removes the per-LeLe override and restores the 365-day
+derived default. `reviewed_at` is intentionally not directly editable here:
+recording that a human review actually happened is a separate Detail action.
+
 ## Managing an existing LeLe
 
 Browse and lesson Detail expose the same actions for an existing LeLe:
@@ -189,7 +196,9 @@ editing.
 Browse, search, List all, and Markdown export are Active-only by default. Use
 the Lifecycle selector to explicitly request Review needed, Deprecated,
 Archived, or All states. Non-active lessons receive a distinct visual treatment
-and lifecycle badge. The same lifecycle scope is applied to export.
+and lifecycle badge. Search also exposes a separate **Review attention** filter
+for derived freshness. It does not change or replace the Lifecycle selector.
+The same explicit search filters are applied to export.
 
 Detail remains available by stable ID even for non-active lessons. When a lesson
 has `superseded_by`, Detail links to the maintained replacement. The replacement
@@ -204,6 +213,21 @@ links are derived from the current projection so reverse navigation does not
 duplicate canonical metadata. Both are directly navigable by stable ID.
 Existing broken relationship targets remain canonical until explicitly repaired
 or removed; Vault Doctor can diagnose them when validating the complete Vault.
+
+Detail also presents explainable freshness independently from lifecycle.
+Freshness may recommend review because the explicit lifecycle is Review needed,
+the effective review interval is due, a strictly newer dated LeLe corrects or
+extends the lesson, or the lesson names a canonical replacement. Same-date,
+older, or undated related lessons do not produce a newer-knowledge claim.
+Deprecated and Archived lessons suppress freshness noise.
+
+Use **Record review** only after actually reviewing the canonical lesson. It
+records today's UTC calendar date as `reviewed_at`; an explicit Review needed
+lifecycle becomes Active, while Active, Deprecated, and Archived retain their
+current lifecycle. The action uses the exact canonical revision loaded by
+Detail and rejects stale state instead of overwriting it. If canonical review
+metadata is saved but derived refresh fails, the GUI reports that partial
+success rather than pretending the canonical action rolled back.
 
 Delete always shows the lesson title (or *Untitled*) and stable ID for
 confirmation before permanently removing that exact canonical Markdown file.

@@ -24,8 +24,32 @@ export interface Lesson {
   date?: string | null
   title?: string | null
   created_at?: string | null
+  reviewed_at?: string | null
+  review_interval_days?: number | null
   lifecycle?: LessonLifecycleState
   superseded_by?: string | null
+}
+
+export type FreshnessReasonCode =
+  | 'lifecycle-review-needed'
+  | 'review-overdue'
+  | 'corrected-by-related-knowledge'
+  | 'extended-by-related-knowledge'
+  | 'superseded'
+
+export interface FreshnessReason {
+  code: FreshnessReasonCode
+  message: string
+  related_lesson_ids: string[]
+}
+
+export interface FreshnessAssessment {
+  review_needed: boolean
+  lifecycle: LessonLifecycleState
+  baseline_date: string | null
+  age_days: number | null
+  review_interval_days: number
+  reasons: FreshnessReason[]
 }
 
 export interface LessonDetail extends Lesson {
@@ -33,6 +57,7 @@ export interface LessonDetail extends Lesson {
   incoming_relationships: LessonRelationships
   canonical_revision: string | null
   supersedes: string[]
+  freshness?: FreshnessAssessment | null
 }
 
 export interface LessonSearchRequest {
@@ -42,6 +67,7 @@ export interface LessonSearchRequest {
   importance_gte?: number | null
   importance_lte?: number | null
   lifecycle_in?: LessonLifecycleState[] | null
+  freshness_review_needed?: boolean | null
   limit?: number
 }
 
@@ -97,6 +123,12 @@ export interface DashboardCandidateSummary {
   approved: number
 }
 
+export interface DashboardFreshnessSummary {
+  review_needed: number
+  as_of: string
+  default_review_interval_days: number
+}
+
 export interface DashboardSummaryResponse {
   health_status: string
   vault_exists: boolean
@@ -104,6 +136,7 @@ export interface DashboardSummaryResponse {
   projection_exists: boolean
   model_exists: boolean
   stats: StatsSummaryResponse | null
+  freshness: DashboardFreshnessSummary | null
   candidates: DashboardCandidateSummary | null
 }
 
@@ -358,6 +391,8 @@ export interface LessonVaultWrite {
   tags?: string[] | null
   date?: string | null
   title?: string | null
+  reviewed_at?: string | null
+  review_interval_days?: number | null
   lifecycle?: LessonLifecycleState | null
   superseded_by?: string | null
   relationships?: LessonRelationships
@@ -398,6 +433,16 @@ export interface LessonRevisionDiffResponse {
   from_revision: number
   to_revision: number
   unified_diff: string
+}
+
+export interface LessonReviewResponse {
+  lesson_id: string
+  reviewed_at: string
+  lifecycle: LessonLifecycleState
+  revision: number | null
+  canonical_revision: string
+  canonical_changed: boolean
+  refresh_outcome: { refreshed: boolean }
 }
 
 export interface LessonRollbackResponse {
@@ -903,6 +948,18 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
+
+  markLessonReviewed: (id: string, expectedRevision: string) =>
+    request<LessonReviewResponse>(
+      `/lessons/${encodeURIComponent(id)}/review`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expected_revision: expectedRevision,
+        }),
+      },
+    ),
 
   lessonHistory: (lessonId: string) => {
     const params = new URLSearchParams({ lesson_id: lessonId })

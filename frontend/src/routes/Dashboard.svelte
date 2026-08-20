@@ -370,6 +370,51 @@
       </section>
     {/if}
 
+    {#if summary.freshness}
+      <section
+        class="freshness-summary"
+        aria-labelledby="dashboard-freshness-title"
+        data-testid="dashboard-freshness"
+      >
+        <div class="section-heading">
+          <div>
+            <h2 id="dashboard-freshness-title">
+              {$messages.dashboardFreshnessTitle}
+            </h2>
+            <p class="meta">
+              {$messages.dashboardFreshnessDescription}
+            </p>
+          </div>
+
+          <Button
+            variant="secondary"
+            size="compact"
+            class="lele-secondary-button"
+            onclick={() => navigate({ view: 'browse' })}
+          >
+            {$messages.dashboardReviewBrowse}
+          </Button>
+        </div>
+
+        <div class="knowledge-grid">
+          <div class="summary-card">
+            <Surface>
+              <span class="label">
+                {$messages.dashboardReviewNeeded}
+              </span>
+              <strong>{summary.freshness.review_needed}</strong>
+              <span class="meta">
+                {formatMessage(
+                  $messages.dashboardFreshnessAsOf,
+                  { date: summary.freshness.as_of },
+                )}
+              </span>
+            </Surface>
+          </div>
+        </div>
+      </section>
+    {/if}
+
     {#if summary.candidates}
       <section
         class="candidate-summary"

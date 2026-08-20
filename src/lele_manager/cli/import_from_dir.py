@@ -22,6 +22,11 @@ from lele_manager.core.import_plan import (
     PendingSourceWrite,
     ValidationProblem,
 )
+from lele_manager.core.freshness import (
+    FreshnessValidationError,
+    normalize_review_interval_days,
+    normalize_reviewed_at,
+)
 from lele_manager.core.json_compat import json_native
 from lele_manager.core.lifecycle import (
     LifecycleState,
@@ -50,6 +55,8 @@ class LeLeRecord:
     tags: List[str]
     date: Optional[str]
     title: Optional[str]
+    reviewed_at: Optional[str]
+    review_interval_days: Optional[int]
     lifecycle: LifecycleState
     superseded_by: Optional[str]
     relationships: Dict[CanonicalRelationshipType, List[str]]
@@ -323,6 +330,42 @@ def analyze_import_from_dir(
         if "title" in frontmatter and isinstance(frontmatter["title"], str):
             title = frontmatter["title"].strip() or None
 
+        # maintained review metadata
+        try:
+            reviewed_at = normalize_reviewed_at(frontmatter.get("reviewed_at"))
+        except FreshnessValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_reviewed_at",
+                    message=str(exc),
+                    path=rel_path,
+                    field="reviewed_at",
+                    blocking=True,
+                )
+            )
+            continue
+
+        try:
+            review_interval_days = normalize_review_interval_days(
+                frontmatter.get("review_interval_days")
+            )
+        except FreshnessValidationError as exc:
+            plan.validation_problems.append(
+                ValidationProblem(
+                    code="invalid_review_interval_days",
+                    message=str(exc),
+                    path=rel_path,
+                    field="review_interval_days",
+                    blocking=True,
+                )
+            )
+            continue
+
+        if reviewed_at is not None:
+            frontmatter["reviewed_at"] = reviewed_at
+        if review_interval_days is not None:
+            frontmatter["review_interval_days"] = review_interval_days
+
         # maintained lifecycle
         try:
             lifecycle = normalize_lifecycle(frontmatter.get("lifecycle"))
@@ -389,6 +432,8 @@ def analyze_import_from_dir(
             tags=tags,
             date=date,
             title=title,
+            reviewed_at=reviewed_at,
+            review_interval_days=review_interval_days,
             lifecycle=lifecycle,
             superseded_by=superseded_by,
             relationships=relationships,

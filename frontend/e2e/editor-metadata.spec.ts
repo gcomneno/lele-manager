@@ -318,6 +318,112 @@ test('edit mode hydrates lifecycle and can explicitly clear lifecycle metadata',
   })
 })
 
+test('new lessons can author an explicit review interval', async ({ page }) => {
+  await mockOptions(page)
+  const writes = watchWrites(page)
+  await page.route('**/vault/lessons', async route => {
+    await route.fulfill({
+      status: 201,
+      json: {
+        id: 'review-interval/new',
+        ...(route.request().postDataJSON() as object),
+      },
+    })
+  })
+
+  await page.goto('/app/#/editor')
+  await page.getByLabel('Topic').fill('review-interval')
+  await page.getByLabel('Review interval (days)').fill('180')
+  await fillRequiredBody(page)
+  await page.getByRole('button', { name: 'Save to vault' }).click()
+
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({
+    review_interval_days: 180,
+  })
+})
+
+
+test('edit mode hydrates and can explicitly clear the review interval', async ({ page }) => {
+  await mockOptions(page)
+  const writes = watchWrites(page)
+
+  const id = 'review-interval/existing'
+  const encoded = encodeURIComponent(id)
+  const current: Record<string, unknown> = {
+    id,
+    text: 'Review interval body.',
+    topic: 'review-interval',
+    source: 'note',
+    importance: 3,
+    tags: [],
+    date: '2026-08-20',
+    review_interval_days: 180,
+    lifecycle: 'active',
+    superseded_by: null,
+    relationships: {},
+    incoming_relationships: {},
+    supersedes: [],
+    canonical_revision: `sha256:${'e'.repeat(64)}`,
+  }
+
+  await page.route(`**/lessons/${encoded}`, async route => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: current })
+      return
+    }
+
+    await route.fulfill({
+      json: {
+        ...current,
+        ...(route.request().postDataJSON() as object),
+      },
+    })
+  })
+
+  await page.goto(`/app/#/editor/${encoded}`)
+
+  const reviewInterval = page.getByLabel('Review interval (days)')
+  await expect(reviewInterval).toHaveValue('180')
+  expect(writes).toHaveLength(0)
+
+  await reviewInterval.fill('')
+  await page.getByRole('button', { name: 'Save to vault' }).click()
+
+  await expect.poll(() => writes.length).toBe(1)
+  expect(writes[0]).toMatchObject({
+    review_interval_days: null,
+  })
+})
+
+
+test('invalid review intervals are rejected before writing', async ({ page }) => {
+  await mockOptions(page)
+  const writes = watchWrites(page)
+
+  await page.route('**/vault/lessons', route => {
+    route.fulfill({ status: 500, body: 'unexpected write' })
+  })
+
+  await page.goto('/app/#/editor')
+  await page.getByLabel('Topic').fill('review-interval')
+  await fillRequiredBody(page)
+
+  const reviewInterval = page.getByLabel('Review interval (days)')
+
+  for (const invalid of ['0', '3651']) {
+    await reviewInterval.fill(invalid)
+    await page.getByRole('button', { name: 'Save to vault' }).click()
+    await expect(
+      page.getByText(
+        'Review interval must be a whole number from 1 to 3650 days.',
+      ),
+    ).toBeVisible()
+    expect(writes).toHaveLength(0)
+  }
+})
+
+
 test('edit mode explicitly adds and removes typed relationships and sends the complete mapping', async ({ page }) => {
   await mockOptions(page)
   const writes = watchWrites(page)
@@ -436,6 +542,7 @@ test('Italian metadata labels localize without changing author-controlled values
   await expect(page.getByPlaceholder('Scegli o scrivi un topic')).toBeVisible()
   await expect(page.getByPlaceholder('Aggiungi un tag')).toBeVisible()
   await expect(page.getByLabel('Importanza').locator('option').first()).toHaveText('1 Bassa')
+  await expect(page.getByLabel('Intervallo revisione (giorni)')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Rimuovi tag: pytest' })).toBeVisible()
   await expect(page.getByLabel('Topic')).toHaveValue('Python')
   await expect(page.getByLabel('Fonte')).toHaveValue('Book')

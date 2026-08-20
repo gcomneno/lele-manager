@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 import yaml
 
+from lele_manager.core.freshness import (
+    FreshnessValidationError,
+    normalize_review_interval_days,
+    normalize_reviewed_at,
+)
 from lele_manager.core.relationships import (
     RelationshipValidationError,
     normalize_relationships,
@@ -249,6 +254,32 @@ def _validate_frontmatter(
             path=display_path,
             field="date",
         )
+
+    if "reviewed_at" in frontmatter:
+        try:
+            normalize_reviewed_at(frontmatter["reviewed_at"])
+        except FreshnessValidationError as exc:
+            _problem(
+                problems,
+                code="invalid_reviewed_at",
+                message=str(exc),
+                path=display_path,
+                field="reviewed_at",
+            )
+
+    if "review_interval_days" in frontmatter:
+        try:
+            normalize_review_interval_days(
+                frontmatter["review_interval_days"]
+            )
+        except FreshnessValidationError as exc:
+            _problem(
+                problems,
+                code="invalid_review_interval_days",
+                message=str(exc),
+                path=display_path,
+                field="review_interval_days",
+            )
 
     if "relationships" in frontmatter:
         raw_id = frontmatter.get("id")

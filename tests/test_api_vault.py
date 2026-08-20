@@ -1020,3 +1020,637 @@ def test_api_rejects_missing_relationship_target_before_canonical_update(
     assert response.status_code == 400, response.text
     assert "does not exist" in response.text
     assert canonical.read_bytes() == before
+
+
+
+def test_api_detail_exposes_review_metadata_and_explainable_age_signal(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/freshness-age",
+            "text": "Knowledge worth revisiting.",
+            "topic": "python",
+            "source": "note",
+            "importance": 5,
+            "tags": ["freshness"],
+            "date": "2020-01-01",
+            "reviewed_at": "2020-01-01",
+            "review_interval_days": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["reviewed_at"] == "2020-01-01"
+    assert created.json()["review_interval_days"] == 30
+
+    detail = client.get("/lessons/python%2Ffreshness-age")
+    assert detail.status_code == 200, detail.text
+
+    payload = detail.json()
+    assert payload["reviewed_at"] == "2020-01-01"
+    assert payload["review_interval_days"] == 30
+    assert payload["freshness"]["review_needed"] is True
+    assert payload["freshness"]["review_interval_days"] == 30
+    assert payload["freshness"]["age_days"] >= 30
+    assert "review-overdue" in {
+        reason["code"] for reason in payload["freshness"]["reasons"]
+    }
+
+
+def test_api_detail_exposes_relation_based_freshness_signal(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    target = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/freshness-target",
+            "text": "Earlier knowledge.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-19",
+        },
+    )
+    assert target.status_code == 201, target.text
+
+    correction = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/freshness-correction",
+            "text": "Newer correction.",
+            "topic": "python",
+            "source": "note",
+            "importance": 4,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "relationships": {
+                "corrects": ["python/freshness-target"],
+            },
+        },
+    )
+    assert correction.status_code == 201, correction.text
+
+    detail = client.get("/lessons/python%2Ffreshness-target")
+    assert detail.status_code == 200, detail.text
+
+    reasons = detail.json()["freshness"]["reasons"]
+    correction_reason = next(
+        reason
+        for reason in reasons
+        if reason["code"] == "corrected-by-related-knowledge"
+    )
+    assert correction_reason["related_lesson_ids"] == [
+        "python/freshness-correction"
+    ]
+
+
+def test_api_update_preserves_and_explicitly_clears_review_metadata(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/freshness-authoring",
+            "text": "Before.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "reviewed_at": "2026-08-01",
+            "review_interval_days": 180,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    before = client.get("/lessons/python%2Ffreshness-authoring").json()
+
+    preserved = client.put(
+        "/lessons/python%2Ffreshness-authoring",
+        json={
+            "text": "After preserve.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "expected_revision": before["canonical_revision"],
+        },
+    )
+    assert preserved.status_code == 200, preserved.text
+    assert preserved.json()["reviewed_at"] == "2026-08-01"
+    assert preserved.json()["review_interval_days"] == 180
+
+    after_preserve = client.get(
+        "/lessons/python%2Ffreshness-authoring"
+    ).json()
+
+    cleared = client.put(
+        "/lessons/python%2Ffreshness-authoring",
+        json={
+            "text": "After preserve.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "reviewed_at": None,
+            "review_interval_days": None,
+            "expected_revision": after_preserve["canonical_revision"],
+        },
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["reviewed_at"] is None
+    assert cleared.json()["review_interval_days"] is None
+
+
+
+def test_mark_reviewed_records_explicit_review_and_activates_review_needed(
+    vault_env: tuple[Path, Path],
+) -> None:
+    from datetime import datetime, timezone
+
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/review-action",
+            "text": "Needs an explicit human review.",
+            "topic": "python",
+            "source": "note",
+            "importance": 5,
+            "tags": ["freshness"],
+            "date": "2025-01-01",
+            "lifecycle": "review-needed",
+            "review_interval_days": 180,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    before = client.get("/lessons/python%2Freview-action")
+    assert before.status_code == 200, before.text
+    before_payload = before.json()
+    assert before_payload["lifecycle"] == "review-needed"
+    assert before_payload["reviewed_at"] is None
+
+    expected_reviewed_at = datetime.now(timezone.utc).date().isoformat()
+
+    reviewed = client.post(
+        "/lessons/python%2Freview-action/review",
+        json={
+            "expected_revision": before_payload["canonical_revision"],
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+
+    payload = reviewed.json()
+    assert payload["lesson_id"] == "python/review-action"
+    assert payload["reviewed_at"] == expected_reviewed_at
+    assert payload["lifecycle"] == "active"
+    assert payload["canonical_changed"] is True
+    assert payload["revision"] == 1
+    assert payload["refresh_outcome"]["refreshed"] is True
+
+    after = client.get("/lessons/python%2Freview-action")
+    assert after.status_code == 200, after.text
+    after_payload = after.json()
+
+    assert after_payload["reviewed_at"] == expected_reviewed_at
+    assert after_payload["review_interval_days"] == 180
+    assert after_payload["lifecycle"] == "active"
+    assert (
+        after_payload["canonical_revision"]
+        == payload["canonical_revision"]
+    )
+
+
+def test_mark_reviewed_preserves_canonical_provenance(
+    vault_env: tuple[Path, Path],
+) -> None:
+    from datetime import datetime, timezone
+
+    from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
+    from lele_manager.core.vault import import_vault_to_jsonl, write_lesson_markdown
+
+    vault, projection = vault_env
+    provenance = {
+        "source_kind": "markdown",
+        "source_logical_name": "source.md",
+        "source_fingerprint": "sha256:source",
+        "run_metadata": {"batch": 7},
+        "transformations": [{"kind": "extract"}],
+    }
+
+    canonical = write_lesson_markdown(
+        vault,
+        lesson_id="python/review-provenance",
+        body="Canonical knowledge with maintained provenance.",
+        topic="python",
+        source="note",
+        importance=4,
+        tags=["freshness"],
+        date="2026-08-20",
+        title="Review provenance",
+        provenance=provenance,
+        lifecycle="review-needed",
+        review_interval_days=180,
+    )
+    import_vault_to_jsonl(vault, projection)
+
+    client = TestClient(app)
+    before = client.get("/lessons/python%2Freview-provenance")
+    assert before.status_code == 200, before.text
+
+    reviewed = client.post(
+        "/lessons/python%2Freview-provenance/review",
+        json={
+            "expected_revision": before.json()["canonical_revision"],
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+
+    frontmatter, _ = parse_markdown_with_frontmatter(
+        canonical.read_text(encoding="utf-8")
+    )
+
+    assert frontmatter["provenance"] == provenance
+    assert str(frontmatter["reviewed_at"]) == datetime.now(
+        timezone.utc
+    ).date().isoformat()
+    assert "lifecycle" not in frontmatter
+    assert frontmatter["review_interval_days"] == 180
+
+
+def test_mark_reviewed_rejects_malformed_canonical_provenance_without_mutation(
+    vault_env: tuple[Path, Path],
+) -> None:
+    from lele_manager.core.vault import import_vault_to_jsonl, write_lesson_markdown
+
+    vault, projection = vault_env
+    canonical = write_lesson_markdown(
+        vault,
+        lesson_id="python/review-invalid-provenance",
+        body="Canonical knowledge.",
+        topic="python",
+        source="note",
+        importance=3,
+        tags=["freshness"],
+        date="2026-08-20",
+        title="Invalid provenance",
+        provenance={1: "invalid"},  # type: ignore[dict-item]
+        lifecycle="review-needed",
+    )
+    import_vault_to_jsonl(vault, projection)
+
+    client = TestClient(app)
+    before = client.get("/lessons/python%2Freview-invalid-provenance")
+    assert before.status_code == 200, before.text
+
+    canonical_before = canonical.read_bytes()
+
+    reviewed = client.post(
+        "/lessons/python%2Freview-invalid-provenance/review",
+        json={
+            "expected_revision": before.json()["canonical_revision"],
+        },
+    )
+
+    assert reviewed.status_code == 503, reviewed.text
+    assert reviewed.json()["detail"]["code"] == "lesson_review_write_failed"
+    assert canonical.read_bytes() == canonical_before
+
+
+def test_mark_reviewed_same_day_is_revision_aware_noop(
+    vault_env: tuple[Path, Path],
+) -> None:
+    from datetime import datetime, timezone
+
+    client = TestClient(app)
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/review-noop",
+            "text": "Already reviewed today.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "reviewed_at": today,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    canonical = find_markdown_by_id(vault_env[0], "python/review-noop")
+    assert canonical is not None
+    canonical_text = canonical.read_text(encoding="utf-8")
+    marker = "\n\nAlready reviewed today.\n"
+    assert canonical_text.count(marker) == 1
+    canonical.write_text(
+        canonical_text.replace(
+            marker,
+            "\n\n  Already reviewed today.  \n\n\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    import_vault_to_jsonl(vault_env[0], vault_env[1])
+    canonical_before = canonical.read_bytes()
+
+    before = client.get("/lessons/python%2Freview-noop").json()
+
+    reviewed = client.post(
+        "/lessons/python%2Freview-noop/review",
+        json={
+            "expected_revision": before["canonical_revision"],
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+
+    payload = reviewed.json()
+    assert payload["reviewed_at"] == today
+    assert payload["lifecycle"] == "active"
+    assert payload["canonical_changed"] is False
+    assert payload["revision"] is None
+    assert payload["refresh_outcome"]["refreshed"] is False
+    assert canonical.read_bytes() == canonical_before
+
+    history = client.get(
+        "/lesson-history",
+        params={"lesson_id": "python/review-noop"},
+    )
+    assert history.status_code == 200, history.text
+    assert history.json()["revisions"] == []
+
+
+def test_mark_reviewed_rejects_stale_revision_without_mutating_review_metadata(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/review-stale",
+            "text": "Original.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "lifecycle": "review-needed",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    before = client.get("/lessons/python%2Freview-stale").json()
+    stale_revision = before["canonical_revision"]
+
+    edited = client.put(
+        "/lessons/python%2Freview-stale",
+        json={
+            "text": "Changed before review.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "expected_revision": stale_revision,
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    rejected = client.post(
+        "/lessons/python%2Freview-stale/review",
+        json={"expected_revision": stale_revision},
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "lesson_revision_stale"
+
+    after = client.get("/lessons/python%2Freview-stale")
+    assert after.status_code == 200, after.text
+    assert after.json()["reviewed_at"] is None
+    assert after.json()["lifecycle"] == "review-needed"
+
+
+def test_mark_reviewed_surfaces_partial_success_when_refresh_fails(
+    vault_env: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = TestClient(app)
+
+    created = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/review-partial",
+            "text": "Review me.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "lifecycle": "review-needed",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    before = client.get("/lessons/python%2Freview-partial").json()
+
+    def fail_refresh(_context: object = None) -> None:
+        raise OSError("projection unavailable")
+
+    monkeypatch.setattr(server_mod, "_sync_vault_import", fail_refresh)
+
+    response = client.post(
+        "/lessons/python%2Freview-partial/review",
+        json={
+            "expected_revision": before["canonical_revision"],
+        },
+    )
+
+    assert response.status_code == 503, response.text
+    detail = response.json()["detail"]
+
+    assert detail["code"] == "lesson_review_refresh_failed"
+    assert detail["recovery"]["canonical_saved"] is True
+    assert detail["recovery"]["lifecycle"] == "active"
+    assert detail["recovery"]["reviewed_at"]
+    assert detail["recovery"]["refresh_outcome"] == {
+        "attempted": True,
+        "refreshed": False,
+    }
+
+
+
+def test_search_can_filter_derived_freshness_without_changing_lifecycle(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    old = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/search-review-needed",
+            "text": "Old active knowledge.",
+            "topic": "python",
+            "source": "note",
+            "importance": 4,
+            "tags": ["freshness"],
+            "date": "2020-01-01",
+            "review_interval_days": 30,
+        },
+    )
+    assert old.status_code == 201, old.text
+
+    recent = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/search-fresh",
+            "text": "Recent active knowledge.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+        },
+    )
+    assert recent.status_code == 201, recent.text
+
+    needs_review = client.post(
+        "/lessons/search",
+        json={
+            "topic_in": ["python"],
+            "lifecycle_in": ["active"],
+            "freshness_review_needed": True,
+            "limit": 50,
+        },
+    )
+    assert needs_review.status_code == 200, needs_review.text
+    assert {
+        item["id"] for item in needs_review.json()
+    } == {"python/search-review-needed"}
+
+    fresh = client.post(
+        "/lessons/search",
+        json={
+            "topic_in": ["python"],
+            "lifecycle_in": ["active"],
+            "freshness_review_needed": False,
+            "limit": 50,
+        },
+    )
+    assert fresh.status_code == 200, fresh.text
+    assert {
+        item["id"] for item in fresh.json()
+    } == {"python/search-fresh"}
+
+    detail = client.get(
+        "/lessons/python%2Fsearch-review-needed"
+    ).json()
+    assert detail["lifecycle"] == "active"
+    assert detail["freshness"]["review_needed"] is True
+
+
+def test_search_freshness_filter_keeps_incoming_relation_evidence(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    target = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/search-relation-target",
+            "text": "Target knowledge.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-19",
+        },
+    )
+    assert target.status_code == 201, target.text
+
+    correction = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/search-relation-correction",
+            "text": "Correcting knowledge.",
+            "topic": "other",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+            "relationships": {
+                "corrects": ["python/search-relation-target"],
+            },
+        },
+    )
+    assert correction.status_code == 201, correction.text
+
+    response = client.post(
+        "/lessons/search",
+        json={
+            "topic_in": ["python"],
+            "lifecycle_in": ["active"],
+            "freshness_review_needed": True,
+            "limit": 50,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert {
+        item["id"] for item in response.json()
+    } == {"python/search-relation-target"}
+
+
+def test_dashboard_reports_bounded_derived_review_count(
+    vault_env: tuple[Path, Path],
+) -> None:
+    client = TestClient(app)
+
+    old = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/dashboard-review",
+            "text": "Needs review.",
+            "topic": "python",
+            "source": "note",
+            "importance": 5,
+            "tags": ["freshness"],
+            "date": "2020-01-01",
+            "review_interval_days": 30,
+        },
+    )
+    assert old.status_code == 201, old.text
+
+    recent = client.post(
+        "/vault/lessons",
+        json={
+            "id": "python/dashboard-fresh",
+            "text": "Fresh.",
+            "topic": "python",
+            "source": "note",
+            "importance": 3,
+            "tags": ["freshness"],
+            "date": "2026-08-20",
+        },
+    )
+    assert recent.status_code == 201, recent.text
+
+    response = client.get("/dashboard/summary")
+    assert response.status_code == 200, response.text
+
+    freshness = response.json()["freshness"]
+    assert freshness["review_needed"] == 1
+    assert freshness["default_review_interval_days"] == 365
+    assert freshness["as_of"]

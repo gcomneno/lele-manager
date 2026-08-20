@@ -138,6 +138,8 @@ def test_duplicate_pairs_include_independent_read_only_lesson_snapshots(monkeypa
         "path": "first.md",
         "lifecycle": "active",
         "superseded_by": None,
+        "reviewed_at": None,
+        "review_interval_days": None,
     }
     assert pair["right_lesson"]["text"] == "second independently inspectable lesson"
     assert pair["right_lesson"]["title"] == "Second"
