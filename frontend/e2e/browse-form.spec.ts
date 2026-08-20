@@ -6,6 +6,8 @@ interface SearchRequest {
   source_in: string[] | null
   importance_gte: number | null
   importance_lte: number | null
+  lifecycle_in?: string[] | null
+  freshness_review_needed?: boolean | null
   limit: number
   include_frontmatter: boolean
 }
@@ -117,6 +119,29 @@ test.describe('Browse filter form', () => {
       'deprecated',
       'archived',
     ])
+  })
+
+
+  test('keeps derived review attention separate from lifecycle', async ({
+    page,
+  }) => {
+    const requests = await openBrowse(page)
+
+    expect(requests[0].freshness_review_needed).toBeNull()
+    await expect(page.getByLabel('Review attention')).toHaveValue('all')
+
+    await page.getByLabel('Review attention').selectOption('needed')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1].lifecycle_in).toEqual(['active'])
+    expect(requests[1].freshness_review_needed).toBe(true)
+
+    await page.getByLabel('Review attention').selectOption('clear')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+
+    await expect.poll(() => requests.length).toBe(3)
+    expect(requests[2].freshness_review_needed).toBe(false)
   })
 
 

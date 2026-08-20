@@ -68,7 +68,7 @@ test('renders Browse with direct Giada UI primitives', async ({ page }) => {
   )
 
   await expect(panel.locator('.giu-form-actions')).toBeVisible()
-  await expect(panel.locator('.giu-field-label')).toHaveCount(7)
+  await expect(panel.locator('.giu-field-label')).toHaveCount(8)
 
   const resultStatus = panel.getByRole('status')
   await expect(resultStatus).toBeVisible()
@@ -190,7 +190,7 @@ test('renders Detail, Editor, and duplicate controls with Giada UI', async ({
   await expect(editorPanel).toBeVisible()
   await expect(
     editorPanel.locator('.giu-field-label'),
-  ).toHaveCount(17)
+  ).toHaveCount(18)
 
   const similarityButton = editorPanel.getByRole('button', {
     name: 'Check similarity',

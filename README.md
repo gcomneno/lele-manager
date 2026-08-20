@@ -274,7 +274,11 @@ The importer accepts a tolerant input schema:
 - `relationships` is an optional typed mapping for explicit directional
   `derives-from`, `corrects`, `extends`, `contradicts`, and `see-also` links.
   Targets are stable lesson IDs. Semantic `supersedes` remains derived from
-  canonical `superseded_by` and is not stored in the generic mapping.
+  canonical `superseded_by` and is not stored in the generic mapping;
+- `reviewed_at` is optional maintained `YYYY-MM-DD` metadata recording the last
+  explicitly confirmed human review;
+- `review_interval_days` is an optional integer from 1 through 3650. When
+  absent, derived freshness uses the maintained 365-day default.
 
 Lifecycle changes are explicit canonical edits. Derived signals such as
 similarity, freshness, or contradiction detection may suggest review, but never
@@ -300,6 +304,10 @@ Importer tolerance does not mean every importable file satisfies the canonical
 - `title`.
 
 `id`, `topic`, `source`, and `title` must be non-empty strings.
+
+When present, `reviewed_at` must be a valid `YYYY-MM-DD` calendar date and
+`review_interval_days` must be an integer from 1 through 3650. Vault Doctor
+validates these optional maintained fields without adding them to older lessons.
 `importance` must be an integer from 1 to 5. `date` must be a valid
 `YYYY-MM-DD` date. `tags` must be a non-empty list of non-empty strings. The
 Markdown body must also be non-empty.
@@ -565,10 +573,10 @@ Available views:
 
 | View | Purpose |
 |---|---|
-| **Dashboard** | Workspace readiness, bounded knowledge summary, and next useful actions |
-| **Browse** | Advanced search, lifecycle filtering, and Markdown export |
-| **Detail** | Full lesson content, lifecycle, typed outgoing/incoming relationships, supersession links, explained similarity, and revision history |
-| **Editor** | Revision-aware canonical Markdown authoring with explicit lifecycle, supersession, and typed relationship controls |
+| **Dashboard** | Workspace readiness, bounded knowledge summary, review-attention count, and next useful actions |
+| **Browse** | Advanced search, lifecycle and derived review-attention filtering, and Markdown export |
+| **Detail** | Full lesson content, explainable freshness, explicit review recording, lifecycle, typed relationships, supersession, similarity, and revision history |
+| **Editor** | Revision-aware canonical Markdown authoring with lifecycle, review interval, supersession, and typed relationship controls |
 | **TritaLeLe** | Controlled candidate ingestion, review, rejection, and approval |
 | **Duplicates** | Read-only review of exact and near-duplicate pairs |
 | **Timeline** | Knowledge-acquisition timeline and bucket export |
@@ -602,6 +610,21 @@ Targets must identify existing canonical LeLe. Adding or removing a link only
 takes effect on Save, and saving the empty relationship mapping deliberately
 clears all generic relationships. Generic `supersedes` cannot be authored:
 `superseded_by` remains its single canonical authority.
+
+Freshness is a separate derived review-attention signal, not canonical
+lifecycle and not a truth verdict. It uses `reviewed_at` when present, otherwise
+a parseable lesson `date`, with a 365-day default review interval unless the
+lesson defines `review_interval_days`. Newer incoming `corrects` or `extends`
+relationships contribute only when the source lesson date is strictly newer
+than that baseline; `superseded_by` remains a persistent semantic signal.
+Deprecated and archived lessons do not add freshness noise.
+
+Dashboard surfaces only a bounded review-attention count. Browse exposes a
+separate **Review attention** filter independent from Lifecycle. Detail explains
+the reasons and provides **Record review**, which explicitly records today's
+review date and moves canonical `review-needed` back to `active` while leaving
+other lifecycle states unchanged. Editor may set or clear the optional review
+interval, but does not manually edit `reviewed_at`.
 
 The Detail revision-history panel shows the maintained per-LeLe timeline and
 supports explicit comparison between historical revisions. Diffs are derived

@@ -129,8 +129,11 @@ navigazione recuperabile ed evita overflow orizzontale.
 
 La Dashboard legge soltanto uno stato bounded dello spazio di lavoro. Distingue
 un primo avvio senza vault, un vault vuoto, uno spazio parzialmente pronto, uno
-spazio pronto ed errori di caricamento recuperabili. Non avvia automaticamente
-la revisione duplicati, Vault Doctor, import, refresh o training del modello.
+spazio pronto ed errori di caricamento recuperabili. Quando la freshness
+derivata è disponibile mostra anche un conteggio bounded **Conoscenza da
+rivedere**. Il conteggio è consultivo e non modifica le LeLe. La Dashboard non
+avvia automaticamente revisione duplicati, Vault Doctor, import, refresh o
+training del modello.
 
 Il vault Markdown resta la fonte autorevole. Proiezioni dataset, cache e
 artefatti del topic model sono derivati e ricostruibili.
@@ -185,6 +188,12 @@ Non viene creata automaticamente alcuna relazione reciproca. **Sostituisce**
 non è una relazione generica modificabile: **Sostituita da** resta l’unica
 autorità canonica della supersession.
 
+L’Editor espone anche il campo opzionale **Intervallo revisione (giorni)**,
+limitato da 1 a 3650. Svuotarlo rimuove l’override della singola LeLe e ripristina
+il default derivato di 365 giorni. `reviewed_at` non è modificabile direttamente
+qui: dichiarare che una review umana è realmente avvenuta resta un’azione
+distinta del Dettaglio.
+
 ## Gestire una LeLe esistente
 
 Browse e Dettaglio della lesson espongono le stesse azioni per una LeLe
@@ -195,8 +204,10 @@ mantiene l’azione esplicita **Verifica similarità**.
 Browse, ricerca, Lista tutte ed export Markdown usano per default soltanto LeLe
 Attive. Usa il selettore Stato per richiedere esplicitamente Da rivedere,
 Deprecata, Archiviata oppure Tutti gli stati. Le LeLe non attive ricevono una
-presentazione visiva distinta e un badge di stato. Lo stesso scope lifecycle
-viene applicato all’export.
+presentazione visiva distinta e un badge di stato. La ricerca espone anche un
+filtro separato **Attenzione revisione** per la freshness derivata: non modifica
+né sostituisce il selettore Stato. Gli stessi filtri espliciti di ricerca vengono
+applicati all’export.
 
 Il Dettaglio resta raggiungibile tramite ID stabile anche per LeLe non attive.
 Quando una LeLe contiene `superseded_by`, il Dettaglio collega alla sostitutiva
@@ -213,6 +224,22 @@ navigabili direttamente tramite ID stabile. Un riferimento generico già
 esistente ma interrotto resta canonico finché non viene riparato o rimosso
 esplicitamente; Vault Doctor può diagnosticarlo durante la validazione
 dell’intero Vault.
+
+Il Dettaglio presenta inoltre una freshness spiegabile separata dal lifecycle.
+Può suggerire una revisione perché lo stato canonico è **Da rivedere**, perché
+l’intervallo effettivo di revisione è scaduto, perché una LeLe con data
+strettamente successiva corregge o estende quella corrente, oppure perché esiste
+una sostituzione canonica. Relazioni con la stessa data, più vecchie o prive di
+una data verificabile non vengono presentate come conoscenza più nuova. Le LeLe
+Deprecate e Archiviate non generano rumore di freshness.
+
+Usa **Registra revisione** solo dopo aver realmente revisionato la LeLe canonica.
+L’azione registra la data UTC odierna in `reviewed_at`; uno stato canonico
+**Da rivedere** torna **Attivo**, mentre Attivo, Deprecato e Archiviato restano
+invariati. L’azione usa la revisione canonica esatta caricata dal Dettaglio e
+rifiuta uno stato stale invece di sovrascriverlo. Se i metadati canonici di
+review vengono salvati ma il refresh derivato fallisce, la GUI segnala il
+successo parziale senza fingere un rollback canonico.
 
 Elimina mostra sempre il titolo della lesson (oppure *Senza titolo*) e l’ID
 stabile per la conferma, prima di rimuovere permanentemente quel preciso file

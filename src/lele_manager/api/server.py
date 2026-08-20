@@ -9,7 +9,7 @@ from typing import Annotated, Any, Callable, Dict, List, Literal, Mapping, Optio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from threading import Lock
@@ -62,6 +62,13 @@ from lele_manager.application.lesson_deletion import (
 )
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
 from lele_manager.core.canonical_mutation import canonical_mutation_boundary
+from lele_manager.core.freshness import (
+    DEFAULT_REVIEW_INTERVAL_DAYS,
+    FreshnessAssessment,
+    assess_freshness,
+    normalize_review_interval_days,
+    normalize_reviewed_at,
+)
 from lele_manager.core.lifecycle import (
     LifecycleState,
     normalize_lifecycle,
@@ -238,6 +245,16 @@ class LessonBase(BaseModel):
         default=None,
         description="Timestamp tecnico (ISO 8601 UTC). Se omesso viene generato dal server.",
     )
+    reviewed_at: Optional[str] = Field(
+        default=None,
+        description="Data YYYY-MM-DD dell'ultima review esplicitamente confermata.",
+    )
+    review_interval_days: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=3650,
+        description="Intervallo canonico opzionale tra review, in giorni.",
+    )
     lifecycle: LifecycleState = Field(
         default="active",
         description="Stato lifecycle canonico della LeLe.",
@@ -261,6 +278,21 @@ class Lesson(LessonBase):
 
 class LessonSearchResult(Lesson):
     pass
+
+
+class FreshnessReasonResponse(BaseModel):
+    code: str
+    message: str
+    related_lesson_ids: List[str] = Field(default_factory=list)
+
+
+class FreshnessAssessmentResponse(BaseModel):
+    review_needed: bool
+    lifecycle: LifecycleState
+    baseline_date: Optional[str]
+    age_days: Optional[int]
+    review_interval_days: int
+    reasons: List[FreshnessReasonResponse] = Field(default_factory=list)
 
 
 class LessonDetail(Lesson):
@@ -287,6 +319,13 @@ class LessonDetail(Lesson):
         description=(
             "Stable IDs delle LeLe che indicano questa LeLe come loro sostituzione. "
             "Relazione inversa derivata dalla projection, non canonica."
+        ),
+    )
+    freshness: Optional[FreshnessAssessmentResponse] = Field(
+        default=None,
+        description=(
+            "Valutazione derivata e spiegabile della priorità di review. "
+            "Non modifica automaticamente Markdown o lifecycle."
         ),
     )
 
@@ -338,6 +377,13 @@ class LessonSearchRequest(BaseModel):
         default=None,
         description=(
             "Stati lifecycle ammessi. Se omesso, la ricerca include solo active."
+        ),
+    )
+    freshness_review_needed: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Filtro derivato di freshness. True include solo LeLe che possono "
+            "meritare review; False solo quelle senza segnale. Non modifica lifecycle."
         ),
     )
     limit: int = Field(
@@ -705,6 +751,12 @@ class DashboardCandidateSummary(BaseModel):
     approved: int
 
 
+class DashboardFreshnessSummary(BaseModel):
+    review_needed: int
+    as_of: str
+    default_review_interval_days: int
+
+
 class DashboardSummaryResponse(BaseModel):
     health_status: str
     vault_exists: bool
@@ -712,6 +764,7 @@ class DashboardSummaryResponse(BaseModel):
     projection_exists: bool
     model_exists: bool
     stats: Optional["StatsSummaryResponse"] = None
+    freshness: Optional[DashboardFreshnessSummary] = None
     candidates: Optional[DashboardCandidateSummary] = None
 
 
@@ -754,6 +807,22 @@ class LessonVaultWrite(BaseModel):
     tags: Optional[List[str]] = Field(default=None)
     date: Optional[str] = Field(default=None)
     title: Optional[str] = Field(default=None)
+    reviewed_at: str | None = Field(
+        default=None,
+        description=(
+            "Data YYYY-MM-DD dell'ultima review esplicita. "
+            "Se omessa in update viene preservata; null esplicito la rimuove."
+        ),
+    )
+    review_interval_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=3650,
+        description=(
+            "Intervallo canonico opzionale tra review. "
+            "Se omesso in update viene preservato; null esplicito lo rimuove."
+        ),
+    )
     lifecycle: LifecycleState | None = Field(
         default=None,
         description=(
@@ -967,6 +1036,8 @@ def load_lessons_df(context: ActiveVaultContext | None = None) -> pd.DataFrame:
         "date",
         "title",
         "created_at",
+        "reviewed_at",
+        "review_interval_days",
         "lifecycle",
         "superseded_by",
     ]:
@@ -1231,6 +1302,120 @@ def _to_optional_str(value) -> Optional[str]:
     return str(value)
 
 
+def _projection_freshness_date(value: object) -> str | None:
+    """Preserve canonical date semantics across Pandas datetime coercion."""
+
+    if value is None:
+        return None
+
+    if value is pd.NaT:
+        return None
+
+    if isinstance(value, pd.Timestamp):
+        return value.date().isoformat()
+
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+
+    normalized = _to_optional_str(value)
+    if normalized is None:
+        return None
+
+    if normalized.strip().casefold() in {
+        "",
+        "nat",
+        "nan",
+        "none",
+        "<na>",
+    }:
+        return None
+
+    return normalized
+
+def _projection_freshness_assessments(
+    df: pd.DataFrame,
+    *,
+    as_of: date | None = None,
+) -> dict[str, FreshnessAssessment]:
+    if df.empty:
+        return {}
+
+    incoming: dict[
+        str,
+        dict[CanonicalRelationshipType, list[str]],
+    ] = {}
+    related_lesson_dates: dict[str, str | None] = {}
+
+    records = df.to_dict(orient="records")
+
+    for row in records:
+        source_id = _to_optional_str(row.get("id"))
+        if not source_id:
+            continue
+
+        related_lesson_dates[source_id] = _projection_freshness_date(
+            row.get("date")
+        )
+
+        relationships = _projection_relationships(
+            row.get("relationships"),
+            lesson_id=source_id,
+        )
+        for relation_type, targets in relationships.items():
+            for target_id in targets:
+                relation_sources = incoming.setdefault(
+                    target_id,
+                    {},
+                ).setdefault(relation_type, [])
+                relation_sources.append(source_id)
+
+    assessment_date = as_of or datetime.now(timezone.utc).date()
+    assessments: dict[str, FreshnessAssessment] = {}
+
+    for row in records:
+        lesson_id = _to_optional_str(row.get("id"))
+        if not lesson_id:
+            continue
+
+        raw_review_interval = row.get("review_interval_days")
+        review_interval_days: int | None
+        if raw_review_interval is None or (
+            isinstance(raw_review_interval, float)
+            and pd.isna(raw_review_interval)
+        ):
+            review_interval_days = None
+        else:
+            try:
+                review_interval_days = int(raw_review_interval)
+            except (TypeError, ValueError):
+                review_interval_days = None
+
+        incoming_relationships = {
+            str(relation_type): sorted(set(source_ids))
+            for relation_type, source_ids in incoming.get(
+                lesson_id,
+                {},
+            ).items()
+        }
+
+        assessments[lesson_id] = assess_freshness(
+            lifecycle=_to_optional_str(row.get("lifecycle")),
+            reviewed_at=_projection_freshness_date(
+                row.get("reviewed_at")
+            ),
+            review_interval_days=review_interval_days,
+            lesson_date=_projection_freshness_date(
+                row.get("date")
+            ),
+            incoming_relationships=incoming_relationships,
+            related_lesson_dates=related_lesson_dates,
+            superseded_by=_to_optional_str(row.get("superseded_by")),
+            as_of=assessment_date,
+        )
+
+    return assessments
+
+
 def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
     """Converte una riga (dict) del DataFrame in LessonSearchResult, con la stessa
     normalizzazione usata in GET /lessons.
@@ -1244,6 +1429,20 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
+    reviewed_at_val = _projection_freshness_date(
+        row.get("reviewed_at")
+    )
+    raw_review_interval = row.get("review_interval_days")
+    if raw_review_interval is None or (
+        isinstance(raw_review_interval, float) and pd.isna(raw_review_interval)
+    ):
+        review_interval_days_val: Optional[int] = None
+    else:
+        try:
+            review_interval_days_val = int(raw_review_interval)
+        except (TypeError, ValueError):
+            review_interval_days_val = None
+
     lifecycle_val = normalize_lifecycle(_to_optional_str(row.get("lifecycle")))
     superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
@@ -1276,6 +1475,8 @@ def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
         tags=tags_val,
         date=date_val,
         title=title_val,
+        reviewed_at=reviewed_at_val,
+        review_interval_days=review_interval_days_val,
         lifecycle=lifecycle_val,
         superseded_by=superseded_by_val,
     )
@@ -1581,8 +1782,23 @@ def dashboard_summary() -> DashboardSummaryResponse:
         vault_markdown_files = _count_vault_markdown_files(tree.to_dict())
 
     stats: Optional[StatsSummaryResponse] = None
+    freshness: Optional[DashboardFreshnessSummary] = None
     if health_state.has_data:
         stats = _stats_summary_from_context(context)
+        projection = load_lessons_df(context)
+        as_of = datetime.now(timezone.utc).date()
+        assessments = _projection_freshness_assessments(
+            projection,
+            as_of=as_of,
+        )
+        freshness = DashboardFreshnessSummary(
+            review_needed=sum(
+                assessment.review_needed
+                for assessment in assessments.values()
+            ),
+            as_of=as_of.isoformat(),
+            default_review_interval_days=DEFAULT_REVIEW_INTERVAL_DAYS,
+        )
 
     candidates: Optional[DashboardCandidateSummary]
     try:
@@ -1608,6 +1824,7 @@ def dashboard_summary() -> DashboardSummaryResponse:
         projection_exists=health_state.has_data,
         model_exists=health_state.has_model,
         stats=stats,
+        freshness=freshness,
         candidates=candidates,
     )
 
@@ -1930,8 +2147,23 @@ def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
     if df.empty:
         return []
 
+    freshness_assessments = _projection_freshness_assessments(df)
+
     df = df.copy()
     df = _filter_lifecycle_scope(df, body.lifecycle_in)
+    if df.empty:
+        return []
+
+    if body.freshness_review_needed is not None:
+        wanted = body.freshness_review_needed
+        freshness_mask = df["id"].astype(str).map(
+            lambda lesson_id: (
+                freshness_assessments.get(lesson_id) is not None
+                and freshness_assessments[lesson_id].review_needed == wanted
+            )
+        )
+        df = df[freshness_mask]
+
     if df.empty:
         return []
 
@@ -2013,6 +2245,11 @@ def _export_filters_summary(body: ExportSearchRequest) -> str:
         parts.append("lifecycle_in=['active']")
     else:
         parts.append(f"lifecycle_in={body.lifecycle_in}")
+    if body.freshness_review_needed is not None:
+        parts.append(
+            "freshness_review_needed="
+            f"{body.freshness_review_needed}"
+        )
     if body.ids_in:
         parts.append(f"ids_in={len(body.ids_in)} ids")
     parts.append(f"limit={body.limit}")
@@ -2035,6 +2272,7 @@ def export_search(
         importance_gte=body.importance_gte,
         importance_lte=body.importance_lte,
         lifecycle_in=body.lifecycle_in,
+        freshness_review_needed=body.freshness_review_needed,
         limit=body.limit,
     )
     results = search_lessons(search_body)
@@ -2181,12 +2419,17 @@ def get_lesson(lesson_id: str) -> LessonDetail:
     reverse_ids: set[str] = set()
     projected_outgoing: CanonicalRelationships = {}
     incoming_sources: Dict[CanonicalRelationshipType, set[str]] = {}
+    related_lesson_dates: Dict[str, str | None] = {}
 
     if not df.empty:
         for row in df.to_dict(orient="records"):
             source_id = _to_optional_str(row.get("id"))
             if not source_id:
                 continue
+
+            related_lesson_dates[source_id] = _projection_freshness_date(
+                row.get("date")
+            )
 
             target_id = _to_optional_str(row.get("superseded_by"))
             if target_id == lesson_id:
@@ -2264,12 +2507,63 @@ def get_lesson(lesson_id: str) -> LessonDetail:
         tags=canonical_state.tags,
         date=canonical_state.date,
         title=canonical_state.title,
+        reviewed_at=canonical_state.reviewed_at,
+        review_interval_days=canonical_state.review_interval_days,
         lifecycle=canonical_state.lifecycle,
         superseded_by=canonical_state.superseded_by,
         relationships=_relationship_lists(canonical_state.relationships),
         incoming_relationships=incoming_relationships,
         canonical_revision=canonical_state.canonical_revision,
         supersedes=sorted(reverse_ids),
+        freshness=_freshness_response(
+            lifecycle=canonical_state.lifecycle,
+            reviewed_at=canonical_state.reviewed_at,
+            review_interval_days=canonical_state.review_interval_days,
+            lesson_date=canonical_state.date,
+            incoming_relationships=incoming_relationships,
+            related_lesson_dates=related_lesson_dates,
+            superseded_by=canonical_state.superseded_by,
+        ),
+    )
+
+
+def _freshness_response(
+    *,
+    lifecycle: LifecycleState,
+    reviewed_at: str | None,
+    review_interval_days: int | None,
+    lesson_date: str | None,
+    incoming_relationships: Dict[CanonicalRelationshipType, List[str]],
+    related_lesson_dates: Dict[str, str | None],
+    superseded_by: str | None,
+) -> FreshnessAssessmentResponse:
+    assessment = assess_freshness(
+        lifecycle=lifecycle,
+        reviewed_at=reviewed_at,
+        review_interval_days=review_interval_days,
+        lesson_date=lesson_date,
+        incoming_relationships={
+            str(relation_type): targets
+            for relation_type, targets in incoming_relationships.items()
+        },
+        related_lesson_dates=related_lesson_dates,
+        superseded_by=superseded_by,
+        as_of=datetime.now(timezone.utc).date(),
+    )
+    return FreshnessAssessmentResponse(
+        review_needed=assessment.review_needed,
+        lifecycle=assessment.lifecycle,
+        baseline_date=assessment.baseline_date,
+        age_days=assessment.age_days,
+        review_interval_days=assessment.review_interval_days,
+        reasons=[
+            FreshnessReasonResponse(
+                code=reason.code,
+                message=reason.message,
+                related_lesson_ids=list(reason.related_lesson_ids),
+            )
+            for reason in assessment.reasons
+        ],
     )
 
 
@@ -2293,6 +2587,21 @@ def _get_lesson_from_context(
     source_val = _to_optional_str(row.get("source"))
     date_val = _to_optional_str(row.get("date"))
     title_val = _to_optional_str(row.get("title"))
+    reviewed_at_val = _projection_freshness_date(
+        row.get("reviewed_at")
+    )
+
+    raw_review_interval = row.get("review_interval_days")
+    if raw_review_interval is None or (
+        isinstance(raw_review_interval, float) and pd.isna(raw_review_interval)
+    ):
+        review_interval_days_val: Optional[int] = None
+    else:
+        try:
+            review_interval_days_val = int(raw_review_interval)
+        except (TypeError, ValueError):
+            review_interval_days_val = None
+
     lifecycle_val = normalize_lifecycle(_to_optional_str(row.get("lifecycle")))
     superseded_by_val = _to_optional_str(row.get("superseded_by"))
 
@@ -2319,6 +2628,8 @@ def _get_lesson_from_context(
         tags=tags_val,
         date=date_val,
         title=title_val,
+        reviewed_at=reviewed_at_val,
+        review_interval_days=review_interval_days_val,
         lifecycle=lifecycle_val,
         superseded_by=superseded_by_val,
     )
@@ -2500,6 +2811,27 @@ def _canonical_lifecycle_metadata(
     )
 
 
+def _canonical_review_metadata(
+    vault_dir: Path,
+    lesson_id: str,
+) -> tuple[str | None, int | None]:
+    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    if not matches:
+        return None, None
+    if len(matches) != 1:
+        raise ValueError(f"canonical lesson id {lesson_id!r} is ambiguous")
+
+    frontmatter, _ = parse_markdown_with_frontmatter(
+        matches[0].read_text(encoding="utf-8")
+    )
+    return (
+        normalize_reviewed_at(frontmatter.get("reviewed_at")),
+        normalize_review_interval_days(
+            frontmatter.get("review_interval_days")
+        ),
+    )
+
+
 def _canonical_relationship_metadata(
     vault_dir: Path,
     lesson_id: str,
@@ -2583,6 +2915,20 @@ def _write_lesson_to_vault(
             vault_dir,
             lesson_id,
         )
+        current_reviewed_at, current_review_interval_days = (
+            _canonical_review_metadata(vault_dir, lesson_id)
+        )
+
+        reviewed_at = (
+            normalize_reviewed_at(payload.reviewed_at)
+            if "reviewed_at" in payload.model_fields_set
+            else current_reviewed_at
+        )
+        review_interval_days = (
+            normalize_review_interval_days(payload.review_interval_days)
+            if "review_interval_days" in payload.model_fields_set
+            else current_review_interval_days
+        )
 
         lifecycle = (
             normalize_lifecycle(payload.lifecycle)
@@ -2630,6 +2976,8 @@ def _write_lesson_to_vault(
             lifecycle=lifecycle,
             superseded_by=superseded_by,
             relationships=relationships,
+            reviewed_at=reviewed_at,
+            review_interval_days=review_interval_days,
         )
 
 
@@ -3371,6 +3719,174 @@ def rollback_lesson_revision(
     )
 
 
+
+class LessonReviewRequest(BaseModel):
+    expected_revision: str = Field(
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+        description="Exact canonical revision token returned by lesson Detail.",
+    )
+
+
+class LessonReviewResponse(BaseModel):
+    lesson_id: str
+    reviewed_at: str
+    lifecycle: LifecycleState
+    revision: Optional[int]
+    canonical_revision: str
+    canonical_changed: bool
+    refresh_outcome: RefreshOutcomeResponse
+
+
+@app.post(
+    "/lessons/{lesson_id:path}/review",
+    response_model=LessonReviewResponse,
+)
+def mark_lesson_reviewed(
+    lesson_id: str,
+    body: LessonReviewRequest,
+) -> LessonReviewResponse:
+    """Record an explicit human review without deriving canonical truth."""
+
+    context = get_active_vault_context()
+    reviewed_at = datetime.now(timezone.utc).date().isoformat()
+
+    try:
+        snapshot = read_canonical_lesson_snapshot(
+            vault_dir=context.vault_dir,
+            lesson_id=lesson_id,
+        )
+
+        if (
+            snapshot.topic is None
+            or snapshot.source is None
+            or snapshot.importance is None
+            or snapshot.date is None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "lesson_review_canonical_incomplete",
+                    "message": (
+                        "Canonical lesson is missing maintained fields required "
+                        "for a revision-aware review update."
+                    ),
+                },
+            )
+
+        lifecycle: LifecycleState = (
+            "active"
+            if snapshot.lifecycle == "review-needed"
+            else snapshot.lifecycle
+        )
+
+        result = write_revisioned_canonical_lesson_source(
+            vault_dir=context.vault_dir,
+            lesson_id=lesson_id,
+            expected_revision=body.expected_revision,
+            history_store=LessonRevisionHistoryStore(
+                context.revision_history_path
+            ),
+            body=snapshot.text,
+            topic=snapshot.topic,
+            source=snapshot.source,
+            importance=snapshot.importance,
+            tags=snapshot.tags,
+            date=snapshot.date,
+            title=snapshot.title,
+            lifecycle=lifecycle,
+            superseded_by=snapshot.superseded_by,
+            relationships=snapshot.relationships,
+            reviewed_at=reviewed_at,
+            review_interval_days=snapshot.review_interval_days,
+            preserve_current_body=True,
+            invalidate_cache=invalidate_similarity_cache,
+            reason="mark-reviewed",
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "lesson_not_found", "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except (
+        CanonicalLessonWriteStaleError,
+        CanonicalLessonWriteHistoryError,
+    ) as exc:
+        code = (
+            "lesson_revision_stale"
+            if isinstance(exc, CanonicalLessonWriteStaleError)
+            else "lesson_revision_history_diverged"
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"code": code, "message": str(exc)},
+        ) from exc
+    except CanonicalLessonWriteRecoveryError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_revision_recovery_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_review_write_failed",
+                "message": str(exc),
+            },
+        ) from exc
+
+    refreshed = False
+    if result.canonical_changed:
+        try:
+            _sync_vault_import(context)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "lesson_review_refresh_failed",
+                    "message": (
+                        "Canonical review metadata and revision history were "
+                        "saved, but derived data could not be refreshed."
+                    ),
+                    "recovery": {
+                        "lesson_id": lesson_id,
+                        "canonical_saved": True,
+                        "canonical_revision": result.canonical_revision,
+                        "revision": result.revision,
+                        "reviewed_at": reviewed_at,
+                        "lifecycle": lifecycle,
+                        "refresh_outcome": {
+                            "attempted": True,
+                            "refreshed": False,
+                        },
+                    },
+                },
+            ) from exc
+        refreshed = True
+
+    return LessonReviewResponse(
+        lesson_id=lesson_id,
+        reviewed_at=reviewed_at,
+        lifecycle=lifecycle,
+        revision=result.revision,
+        canonical_revision=result.canonical_revision,
+        canonical_changed=result.canonical_changed,
+        refresh_outcome=RefreshOutcomeResponse(refreshed=refreshed),
+    )
+
+
 @app.put("/lessons/{lesson_id:path}", response_model=Lesson)
 def update_lesson(lesson_id: str, body: LessonVaultUpdate) -> Lesson:
     """Revision-aware canonical edit followed by derived reconciliation."""
@@ -3383,6 +3899,21 @@ def update_lesson(lesson_id: str, body: LessonVaultUpdate) -> Lesson:
                 vault_dir,
                 lesson_id,
             )
+            current_reviewed_at, current_review_interval_days = (
+                _canonical_review_metadata(vault_dir, lesson_id)
+            )
+
+            reviewed_at = (
+                normalize_reviewed_at(body.reviewed_at)
+                if "reviewed_at" in body.model_fields_set
+                else current_reviewed_at
+            )
+            review_interval_days = (
+                normalize_review_interval_days(body.review_interval_days)
+                if "review_interval_days" in body.model_fields_set
+                else current_review_interval_days
+            )
+
             lifecycle = (
                 normalize_lifecycle(body.lifecycle)
                 if "lifecycle" in body.model_fields_set
@@ -3436,6 +3967,8 @@ def update_lesson(lesson_id: str, body: LessonVaultUpdate) -> Lesson:
                 lifecycle=lifecycle,
                 superseded_by=superseded_by,
                 relationships=relationships,
+                reviewed_at=reviewed_at,
+                review_interval_days=review_interval_days,
                 invalidate_cache=invalidate_similarity_cache,
             )
 

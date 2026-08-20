@@ -36,6 +36,7 @@
   let source = $state('note')
   let importance = $state(3)
   let date = $state(new Date().toISOString().slice(0, 10))
+  let reviewIntervalDays = $state<number | undefined>(undefined)
   let tags = $state<string[]>([])
   let tagDraft = $state('')
   let title = $state('')
@@ -303,6 +304,7 @@
       source = lesson.source ?? ''
       importance = lesson.importance ?? 3
       date = lesson.date ?? date
+      reviewIntervalDays = lesson.review_interval_days ?? undefined
       title = lesson.title ?? ''
       tags = [...(lesson.tags ?? [])]
       lifecycle = lesson.lifecycle ?? 'active'
@@ -335,6 +337,24 @@
       throw new Error($messages.editorImportanceInvalid)
     }
 
+    const normalizedReviewIntervalDays = (
+      reviewIntervalDays == null
+      || Number.isNaN(reviewIntervalDays)
+    )
+      ? undefined
+      : reviewIntervalDays
+
+    if (
+      normalizedReviewIntervalDays !== undefined
+      && (
+        !Number.isInteger(normalizedReviewIntervalDays)
+        || normalizedReviewIntervalDays < 1
+        || normalizedReviewIntervalDays > 3650
+      )
+    ) {
+      throw new Error($messages.editorReviewIntervalInvalid)
+    }
+
     return {
       text: body,
       topic: topic.trim(),
@@ -344,6 +364,9 @@
       tags: [...tags],
       date: date || null,
       title: title.trim() || null,
+      // The interval is explicit authoring metadata. Empty deliberately clears
+      // the per-LeLe override and restores the bounded product default.
+      review_interval_days: normalizedReviewIntervalDays ?? null,
       // The Editor is an explicit canonical authoring surface: always send
       // lifecycle fields so active/null can deliberately clear old metadata.
       lifecycle,
@@ -602,6 +625,21 @@
           bind:value={date}
           oninput={invalidateSimilarity}
         />
+      </label>
+
+      <label>
+        <FieldLabel label={$messages.editorReviewInterval} />
+        <input
+          type="number"
+          min="1"
+          max="3650"
+          step="1"
+          bind:value={reviewIntervalDays}
+          aria-label={$messages.editorReviewInterval}
+        />
+        <span class="field-help">
+          {$messages.editorReviewIntervalHelp}
+        </span>
       </label>
 
       <label class="wide">

@@ -128,9 +128,9 @@ def test_detail_editor_and_duplicate_controls_use_giada_ui() -> None:
     assert "from 'giadaware-ui-components'" in detail
     assert "from 'giadaware-ui-components/studio'" in detail
     assert "<Panel" in detail
-    # Modify and Inspect are maintained Giada UI controls; Delete is a
-    # deliberately local destructive button with stronger semantic styling.
-    assert detail.count("<Button") == 2
+    # Modify, Inspect, and explicit Record review are maintained Giada UI
+    # controls; Delete remains a local destructive button with stronger styling.
+    assert detail.count("<Button") == 3
     assert "<FormStatus" in detail
     assert '<section class="card main-pane">' not in detail
     assert '<button class="btn' not in detail
@@ -140,8 +140,8 @@ def test_detail_editor_and_duplicate_controls_use_giada_ui() -> None:
     assert "<Panel" in editor
     # Save plus the explicit similarity-check action are both Giada UI buttons.
     assert editor.count("<Button") == 2
-    # Typed relationships add one maintained FieldLabel source block.
-    assert editor.count("<FieldLabel") == 13
+    # Typed relationships plus review interval are maintained metadata fields.
+    assert editor.count("<FieldLabel") == 14
     assert "<FormStatus" in editor
     assert '<section class="card editor-pane">' not in editor
     assert '<button class="btn' not in editor

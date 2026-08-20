@@ -185,6 +185,111 @@ def test_date_must_be_iso_and_real(tmp_path: Path, date: str) -> None:
     assert "invalid_date" in problem_codes(path, vault)
 
 
+def _lesson_with_review_metadata(
+    lesson_id: str,
+    metadata_yaml: str,
+) -> str:
+    content = lesson_text(lesson_id)
+    marker = "title: Una lesson\n---"
+    if content.count(marker) != 1:
+        raise AssertionError("lesson_text frontmatter marker changed")
+    return content.replace(
+        marker,
+        "title: Una lesson\n"
+        f"{metadata_yaml}"
+        "---",
+        1,
+    )
+
+
+def test_valid_review_metadata_passes_doctor(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    path = vault / "python" / "review-valid.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        _lesson_with_review_metadata(
+            "python/review-valid",
+            "reviewed_at: 2026-08-20\n"
+            "review_interval_days: 180\n",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([path], vault_dir=vault)
+
+    assert report.valid
+    assert report.problems == ()
+
+
+@pytest.mark.parametrize(
+    "reviewed_at_yaml",
+    [
+        "20-08-2026",
+        "2026-02-30",
+        "[2026, 8, 20]",
+    ],
+)
+def test_doctor_rejects_invalid_reviewed_at(
+    tmp_path: Path,
+    reviewed_at_yaml: str,
+) -> None:
+    vault = tmp_path / "vault"
+    path = vault / "python" / "reviewed-at.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        _lesson_with_review_metadata(
+            "python/reviewed-at",
+            f"reviewed_at: {reviewed_at_yaml}\n",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([path], vault_dir=vault)
+
+    problems = [
+        problem
+        for problem in report.problems
+        if problem.code == "invalid_reviewed_at"
+    ]
+    assert len(problems) == 1
+    assert problems[0].field == "reviewed_at"
+
+
+@pytest.mark.parametrize(
+    "review_interval_yaml",
+    [
+        "0",
+        "3651",
+        "true",
+        "'365'",
+    ],
+)
+def test_doctor_rejects_invalid_review_interval_days(
+    tmp_path: Path,
+    review_interval_yaml: str,
+) -> None:
+    vault = tmp_path / "vault"
+    path = vault / "python" / "review-interval.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        _lesson_with_review_metadata(
+            "python/review-interval",
+            f"review_interval_days: {review_interval_yaml}\n",
+        ),
+        encoding="utf-8",
+    )
+
+    report = check_markdown_files([path], vault_dir=vault)
+
+    problems = [
+        problem
+        for problem in report.problems
+        if problem.code == "invalid_review_interval_days"
+    ]
+    assert len(problems) == 1
+    assert problems[0].field == "review_interval_days"
+
+
 def test_body_must_not_be_empty(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     path = vault / "python" / "empty-body.md"

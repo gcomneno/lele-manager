@@ -6,6 +6,11 @@ interface DashboardFixture {
   vault_markdown_files: number | null
   projection_exists: boolean
   model_exists: boolean
+  freshness: {
+    review_needed: number
+    as_of: string
+    default_review_interval_days: number
+  } | null
   stats: {
     n_lessons: number
     n_topics: number
@@ -30,6 +35,11 @@ const baseSummary: DashboardFixture = {
   vault_markdown_files: 4,
   projection_exists: true,
   model_exists: true,
+  freshness: {
+    review_needed: 2,
+    as_of: '2026-08-20',
+    default_review_interval_days: 365,
+  },
   stats: {
     n_lessons: 4,
     n_topics: 2,
@@ -315,6 +325,16 @@ test.describe('product dashboard', () => {
 
     await expect(
       page.getByText('4', { exact: true }).first(),
+    ).toBeVisible()
+
+    const freshness = page.getByTestId('dashboard-freshness')
+    await expect(freshness).toContainText('Knowledge review attention')
+    await expect(freshness).toContainText('2')
+    await expect(
+      freshness.getByRole('button', {
+        name: 'Review in Browse',
+        exact: true,
+      }),
     ).toBeVisible()
   })
 

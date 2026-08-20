@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-import math
 import os
 from pathlib import Path
 import tempfile
@@ -16,41 +14,20 @@ from lele_manager.application.candidate_approval import (
     VaultWriteOutcome,
 )
 from lele_manager.cli.import_from_dir import parse_markdown_with_frontmatter
+from lele_manager.core.canonical_provenance import (
+    CanonicalProvenanceValidationError,
+    normalize_canonical_provenance,
+)
 from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.core.vault import render_lesson_markdown
 
 
-def _plain(value: object, active: set[int] | None = None) -> object:
-    active = set() if active is None else active
-    if isinstance(value, Mapping):
-        if any(type(key) is not str for key in value):
-            raise CanonicalVaultStorageError(
-                "canonical provenance mapping keys must be strings"
-            )
-        identity = id(value)
-        if identity in active:
-            raise CanonicalVaultStorageError("canonical provenance must not be cyclic")
-        active.add(identity)
-        try:
-            return {key: _plain(value[key], active) for key in sorted(value)}
-        finally:
-            active.remove(identity)
-    if isinstance(value, (list, tuple)):
-        identity = id(value)
-        if identity in active:
-            raise CanonicalVaultStorageError("canonical provenance must not be cyclic")
-        active.add(identity)
-        try:
-            return [_plain(item, active) for item in value]
-        finally:
-            active.remove(identity)
-    if value is None or type(value) in (bool, int, str):
-        return value
-    if type(value) is float and math.isfinite(value):
-        return value
-    raise CanonicalVaultStorageError(
-        "canonical provenance must contain only JSON-compatible values"
-    )
+def _plain(value: object) -> object:
+    try:
+        return normalize_canonical_provenance(value)
+    except CanonicalProvenanceValidationError as exc:
+        raise CanonicalVaultStorageError(str(exc)) from exc
+
 
 
 class FilesystemCanonicalMarkdownVault:
