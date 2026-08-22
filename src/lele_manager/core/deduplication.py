@@ -10,6 +10,7 @@ import pandas as pd
 from scipy import sparse
 from sklearn.metrics.pairwise import cosine_similarity
 
+from lele_manager.core.exact_duplicates import is_exact_duplicate_record
 from lele_manager.ml.features import LessonFeatureExtractor
 
 
@@ -200,7 +201,7 @@ def find_duplicates(
                 ):
                     exact_reasons.append("equivalent_metadata")
 
-            if exact_reasons:
+            if is_exact_duplicate_record(left, right):
                 kind: Literal["exact", "near"] = "exact"
                 score = 1.0
                 all_reasons = exact_reasons + reasons
