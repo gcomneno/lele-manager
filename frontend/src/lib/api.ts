@@ -593,6 +593,100 @@ export interface DuplicateQuery {
   limit?: number | null
 }
 
+export interface ContradictionLessonSnapshot {
+  id: string
+  text: string
+  title?: string | null
+  topic?: string | null
+  source?: string | null
+  importance?: number | null
+  tags: string[]
+  date?: string | null
+  lifecycle: string
+  superseded_by?: string | null
+  relationships: Record<string, string[]>
+}
+
+export interface ContradictionCandidate {
+  left_id: string
+  right_id: string
+  reasons: string[]
+  same_subject_reasons: string[]
+  tension_reasons: string[]
+  similarity_score?: number | null
+  left_fingerprint: string
+  right_fingerprint: string
+  left_canonical_revision: string
+  right_canonical_revision: string
+  resolution_available: boolean
+  resolution_problem?: string | null
+  left_lesson: ContradictionLessonSnapshot
+  right_lesson: ContradictionLessonSnapshot
+}
+
+export interface ContradictionReportResponse {
+  vault_id: string
+  lessons_analyzed: number
+  analysis_bound: number
+  returned_candidates: number
+  suppressed_candidates: number
+  candidates: ContradictionCandidate[]
+}
+
+export interface ContradictionAuxiliaryRequest {
+  decision: 'different-context' | 'dismissed'
+  left_id: string
+  right_id: string
+  left_fingerprint: string
+  right_fingerprint: string
+  note: string | null
+}
+
+export interface ContradictionAuxiliaryResponse {
+  vault_id: string
+  left_id: string
+  right_id: string
+  decision: 'different-context' | 'dismissed'
+  canonical_success: false
+  canonical_changed: false
+  derived_refresh_success: null
+}
+
+export type ContradictionCanonicalRequest =
+  | {
+      decision: 'superseded-by'
+      superseded_id: string
+      replacement_id: string
+      expected_superseded_revision: string
+    }
+  | {
+      decision: 'corrects'
+      correcting_id: string
+      corrected_id: string
+      expected_correcting_revision: string
+    }
+  | {
+      decision: 'contradicts'
+      source_id: string
+      target_id: string
+      expected_source_revision: string
+    }
+
+export interface ContradictionCanonicalResponse {
+  vault_id: string
+  decision: 'superseded-by' | 'corrects' | 'contradicts'
+  mutated_lesson_id: string
+  referenced_lesson_id: string
+  canonical_success: true
+  canonical_changed: boolean
+  derived_refresh_success: boolean | null
+  partial_success: boolean
+  canonical_revision?: string | null
+  revision?: number | null
+  noop_reason?: string | null
+  refresh_error?: string | null
+}
+
 export type CandidateState = 'staged' | 'in_review' | 'rejected' | 'approved'
 export type SourceKind = 'markdown' | 'plain_text' | 'stdin' | 'in_memory'
 
@@ -766,6 +860,28 @@ export const api = {
     if (limit != null) params.set('limit', String(limit))
     return request<DuplicateReportResponse>(`/duplicates?${params.toString()}`)
   },
+
+  contradictions: ({ limit = 20 }: { limit?: number } = {}) => {
+    const params = new URLSearchParams({ limit: String(limit) })
+    return request<ContradictionReportResponse>(
+      `/contradictions?${params.toString()}`,
+    )
+  },
+
+  dismissContradiction: (body: ContradictionAuxiliaryRequest) =>
+    request<ContradictionAuxiliaryResponse>('/contradictions/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
+  resolveContradiction: (body: ContradictionCanonicalRequest) =>
+    request<ContradictionCanonicalResponse>('/contradictions/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+
 
   markNotDuplicates: (pair: Pick<DuplicatePair, 'left_id' | 'right_id' | 'left_fingerprint' | 'right_fingerprint'>) =>
     request<DuplicateDecisionResponse>('/duplicates/not-duplicates', {

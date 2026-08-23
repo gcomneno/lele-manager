@@ -60,6 +60,7 @@ export const it = {
   navCollection: 'Raccolta',
   navVault: 'Vault',
   navDuplicates: 'Duplicati',
+  navContradictions: 'Potenziali contraddizioni',
   navSystem: 'Sistema',
   navSettings: 'Diagnostica',
   navAbout: 'Informazioni',
@@ -544,6 +545,47 @@ export const it = {
   duplicatesMergePartialRefreshFailed: 'La LeLe canonica risultante è stata salvata. Non è stato possibile eliminare la LeLe sostituita e i dati derivati non sono stati aggiornati. La revisione duplicati potrebbe essere obsoleta.',
   duplicatesMergeFailed: 'Non è stato possibile completare l’accorpamento. Controlla le LeLe canoniche prima di riprovare.',
   duplicatesMerged: 'LeLe accorpate. Mantenuta {survivor}; eliminata {superseded}.',
+
+  contradictionsTitle: 'Revisione potenziali contraddizioni',
+  contradictionsDescription:
+    'Rivedi candidati consultivi e spiegabili. I segnali di emersione non stabiliscono automaticamente quale LeLe sia corretta.',
+  contradictionsStartReview: 'Avvia revisione',
+  contradictionsLoading: 'Revisione potenziali contraddizioni in corso',
+  contradictionsCandidate: 'Candidato potenziale',
+  contradictionsWhySurfaced: 'Perché emerso',
+  contradictionsSameTopic: 'Stesso topic',
+  contradictionsOpposingModalCue: 'Segnale modale opposto',
+  contradictionsRetrievalScore: 'Punteggio di recupero',
+  contradictionsRetrievalMetadata:
+    'I metadati di recupero aiutano a far emergere candidati; non costituiscono una prova.',
+  contradictionsAdvisoryCue:
+    'Segnali consultivi. Nessun giudizio automatico di verità.',
+  contradictionsAuxiliary: 'Decisioni ausiliarie',
+  contradictionsDifferentContext: 'Contesto differente',
+  contradictionsDismiss: 'Ignora candidato',
+  contradictionsCanonical: 'Azioni canoniche direzionali',
+  contradictionsSupersededBy: 'Sostituita da',
+  contradictionsCorrects: 'Corregge',
+  contradictionsContradicts: 'Contraddice',
+  contradictionsDirectionHelp:
+    'Scegli esplicitamente la direzione prima di scrivere una relazione canonica.',
+  contradictionsSaveContradiction: 'Salva contraddizione direzionale',
+  contradictionsDirectionalSaved:
+    'Viene scritta soltanto la relazione direzionale selezionata.',
+  contradictionsNoCandidates: 'Nessun candidato a potenziale contraddizione',
+  contradictionsReviewFailed: 'Revisione potenziali contraddizioni non riuscita',
+  contradictionsAuxiliarySaved:
+    'Decisione ausiliaria salvata. Il Markdown canonico non è stato modificato.',
+  contradictionsSaveSupersession: 'Salva sostituzione direzionale',
+  contradictionsSaveCorrection: 'Salva correzione direzionale',
+  contradictionsStale:
+    'Il candidato è cambiato. Aggiorna la revisione prima di risolverlo.',
+  contradictionsRecoveryIndeterminate:
+    'Lo stato canonico è indeterminato. Non ripetere alla cieca questa azione.',
+  contradictionsPartialSuccess:
+    'La risoluzione canonica è stata salvata, ma i dati derivati della revisione non sono stati aggiornati.',
+  contradictionsStoreFailed:
+    'Lo stato della revisione delle contraddizioni non può essere letto in sicurezza.',
 
   opsTitle: 'Stato e manutenzione',
   opsDescription:

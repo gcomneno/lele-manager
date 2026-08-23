@@ -257,12 +257,12 @@ test.describe('global application header', () => {
     await expect(navigation.getByRole('region', { name: 'Knowledge' })).toBeVisible()
     await expect(navigation.getByRole('region', { name: 'Capture' })).toBeVisible()
     await expect(navigation.getByRole('region', { name: 'Manage' })).toBeVisible()
-    await expect(navigation.locator('svg[data-icon]')).toHaveCount(11)
+    await expect(navigation.locator('svg[data-icon]')).toHaveCount(12)
 
     const expectedIcons = [
       ['Dashboard', 'dashboard'], ['Browse', 'browse'], ['Timeline', 'timeline'],
       ['Statistics', 'stats'], ['New LeLe', 'new'], ['Collection', 'collection'],
-      ['Vault', 'vault'], ['Duplicates', 'duplicates'], ['System', 'system'],
+      ['Vault', 'vault'], ['Duplicates', 'duplicates'], ['Potential contradictions', 'duplicates'], ['System', 'system'],
       ['Diagnostics', 'diagnostics'], ['About', 'about'],
     ] as const
     for (const [label, icon] of expectedIcons) {
@@ -280,7 +280,7 @@ test.describe('global application header', () => {
     await page.goto('/app/#/')
     const navigation = page.getByRole('navigation', { name: 'Primary' })
 
-    await expect(navigation.locator('svg[data-icon]')).toHaveCount(11)
+    await expect(navigation.locator('svg[data-icon]')).toHaveCount(12)
     for (const emoji of ['🏠', '🕒', '📊', '✨', '🗂️', '🧠', '🧪', '⚙️']) {
       await expect(navigation).not.toContainText(emoji)
     }
