@@ -6,6 +6,7 @@ export type Route =
   | { view: 'vault' }
   | { view: 'ops' }
   | { view: 'duplicates' }
+  | { view: 'contradictions' }
   | { view: 'stats' }
   | { view: 'timeline' }
   | { view: 'tritalele' }
@@ -19,6 +20,7 @@ export function parseRoute(hash = location.hash): Route {
   if (path === '/browse') return { view: 'browse' }
   if (path === '/ops') return { view: 'ops' }
   if (path === '/duplicates') return { view: 'duplicates' }
+  if (path === '/contradictions') return { view: 'contradictions' }
   if (path === '/vault') return { view: 'vault' }
   if (path === '/stats') return { view: 'stats' }
   if (path === '/timeline') return { view: 'timeline' }
@@ -46,6 +48,8 @@ export function routeToHash(route: Route): string {
       return '#/ops'
     case 'duplicates':
       return '#/duplicates'
+    case 'contradictions':
+      return '#/contradictions'
     case 'vault':
       return '#/vault'
     case 'stats':

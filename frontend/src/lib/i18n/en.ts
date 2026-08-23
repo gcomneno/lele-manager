@@ -58,6 +58,7 @@ export const en = {
   navCollection: 'Collection',
   navVault: 'Vault',
   navDuplicates: 'Duplicates',
+  navContradictions: 'Potential contradictions',
   navSystem: 'System',
   navSettings: 'Diagnostics',
   navAbout: 'About',
@@ -542,6 +543,47 @@ export const en = {
   duplicatesMergePartialRefreshFailed: 'The resulting canonical LeLe was saved. The superseded LeLe could not be deleted, and derived data could not be refreshed. Duplicate review may be stale.',
   duplicatesMergeFailed: 'The merge could not be completed. Review the canonical lessons before trying again.',
   duplicatesMerged: 'LeLe merged. {survivor} kept; {superseded} deleted.',
+
+  contradictionsTitle: 'Potential contradiction review',
+  contradictionsDescription:
+    'Review explainable advisory candidates. Surfacing signals do not prove that either LeLe is true, false, or wrong.',
+  contradictionsStartReview: 'Run review',
+  contradictionsLoading: 'Potential contradiction review in progress',
+  contradictionsCandidate: 'Potential candidate',
+  contradictionsWhySurfaced: 'Why surfaced',
+  contradictionsSameTopic: 'Same topic',
+  contradictionsOpposingModalCue: 'Opposing modal cue',
+  contradictionsRetrievalScore: 'Retrieval score',
+  contradictionsRetrievalMetadata:
+    'Retrieval metadata helps surface candidates; it is not proof.',
+  contradictionsAdvisoryCue:
+    'This is an advisory review cue and no automatic truth decision is made.',
+  contradictionsAuxiliary: 'Auxiliary decisions',
+  contradictionsDifferentContext: 'Different context',
+  contradictionsDismiss: 'Dismiss candidate',
+  contradictionsCanonical: 'Directional canonical actions',
+  contradictionsSupersededBy: 'Superseded by',
+  contradictionsCorrects: 'Corrects',
+  contradictionsContradicts: 'Contradicts',
+  contradictionsDirectionHelp:
+    'Choose the direction explicitly before writing a canonical relationship.',
+  contradictionsSaveContradiction: 'Save directional contradiction',
+  contradictionsDirectionalSaved:
+    'Only this selected directional relationship is written.',
+  contradictionsNoCandidates: 'No potential contradiction candidates',
+  contradictionsReviewFailed: 'Potential contradiction review failed',
+  contradictionsAuxiliarySaved:
+    'Auxiliary review decision saved. Canonical Markdown was not changed.',
+  contradictionsSaveSupersession: 'Save directional supersession',
+  contradictionsSaveCorrection: 'Save directional correction',
+  contradictionsStale:
+    'This candidate changed. Refresh the contradiction review before resolving.',
+  contradictionsRecoveryIndeterminate:
+    'Canonical state is indeterminate. Do not blindly retry this action.',
+  contradictionsPartialSuccess:
+    'Canonical resolution was saved, but derived contradiction review data could not be refreshed.',
+  contradictionsStoreFailed:
+    'Contradiction review state could not be read safely.',
 
   opsTitle: 'Status and maintenance',
   opsDescription:

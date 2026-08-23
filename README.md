@@ -579,6 +579,7 @@ Available views:
 | **Editor** | Revision-aware canonical Markdown authoring with lifecycle, review interval, supersession, and typed relationship controls |
 | **TritaLeLe** | Controlled candidate ingestion, review, rejection, and approval |
 | **Duplicates** | Read-only review of exact and near-duplicate pairs |
+| **Potential contradictions** | Advisory review of explainable potential contradiction candidates; surfacing signals prioritize human review and do not verify facts |
 | **Timeline** | Knowledge-acquisition timeline and bucket export |
 | **Stats** | Counts, tags, topics, and averages |
 | **Vault** | Real filesystem tree and import |

@@ -98,12 +98,14 @@ navigazione recuperabile ed evita overflow orizzontale.
 3. Cercare, filtrare e leggere le lesson esistenti.
 4. Creare o modificare lesson approvate tramite **Editor**.
 5. Revisionare duplicati esatti e near-duplicate tramite **Duplicates**.
-6. Ingerire appunti grezzi tramite **TritaLeLe**, mantenendo separate anteprima,
+6. Revisionare candidati consultivi a potenziale contraddizione tramite
+   **Potenziali contraddizioni**.
+7. Ingerire appunti grezzi tramite **TritaLeLe**, mantenendo separate anteprima,
    staging, revisione e approvazione.
-7. Usare **Vault**, **Stats** e **Timeline** per controllare la knowledge base.
-8. Usare **Diagnostica** per controllare lo stato di assistenza e preparare un
-   rapporto bounded; usare **Informazioni**
-   per identità del prodotto, licenza e collegamenti di supporto.
+8. Usare **Vault**, **Stats** e **Timeline** per controllare la knowledge base.
+9. Usare **Diagnostica** per controllare lo stato di assistenza e preparare un
+   rapporto bounded; usare **Informazioni** per identità del prodotto, licenza
+   e collegamenti di supporto.
 
 ## Viste della GUI
 
@@ -118,6 +120,7 @@ navigazione recuperabile ed evita overflow orizzontale.
 | TritaLeLe | Anteprima, staging, revisione e approvazione esplicita |
 | Vault | Albero Markdown canonico e import della proiezione |
 | Duplicates | Revisione non distruttiva di duplicati e near-duplicate |
+| Potenziali contraddizioni | Revisione consultiva di candidati a potenziale contraddizione con scelta esplicita della direzione canonica |
 | Ops | Health, Vault Doctor, import, training e refresh |
 | Diagnostica | Stato per l’assistenza, pacchetto diagnostico bounded esplicito e percorsi runtime |
 | Informazioni | Identità prodotto, versione, licenza, dichiarazione local-first e collegamenti di supporto |
@@ -367,6 +370,43 @@ Il Markdown è canonico. Eliminazione e accorpamento modificano prima le fonti
 canoniche e poi aggiornano proiezione e ricerca derivate. Se tale aggiornamento
 fallisce, l'interfaccia indica separatamente la realtà canonica e non finge un
 rollback; quando opportuno aggiorna i dati derivati da Sistema.
+
+### Revisionare separatamente le potenziali contraddizioni
+
+La revisione delle potenziali contraddizioni è un workflow distinto dalla
+revisione duplicati, non una forma più forte di rilevamento duplicati. Mostra
+coppie candidate spiegabili soltanto per revisione umana. Una coppia emersa non
+è una prova, una verifica fattuale, un giudizio automatico di verità o
+un'affermazione che una delle due LeLe sia sbagliata.
+
+La schermata spiega perché una coppia è emersa con segnali di stesso soggetto e
+tensione, e può mostrare punteggi di similarità o recupero. Quei segnali e
+punteggi servono solo per revisione e prioritizzazione. Aiutano a decidere cosa
+controllare per primo, ma non stabiliscono da soli una risoluzione canonica.
+
+**Contesto differente** e **Ignora candidato** sono decisioni ausiliarie
+durevoli di revisione. Possono nascondere la coppia corrente finché il materiale
+revisionato resta lo stesso, ma non modificano mai il Markdown canonico. Se una
+delle due LeLe cambia nel materiale rilevante per questa revisione, la
+soppressione ausiliaria precedente può non valere più e la coppia può tornare
+revisionabile.
+
+Le risoluzioni canoniche sono esplicitamente separate dalle decisioni
+ausiliarie. **Sostituita da**, **Corregge** e **Contraddice** scrivono Markdown
+canonico attraverso il boundary di authoring revision-aware. Ogni azione
+richiede una direzione esplicita: la sostituzione scrive solo il campo
+`superseded_by` selezionato, la correzione scrive solo l'edge `corrects`
+selezionato e la contraddizione scrive solo l'edge direzionale `contradicts`
+selezionato. Le relazioni reciproche non vengono dedotte né create
+automaticamente.
+
+Le scritture canoniche usano la revisione esatta caricata con il candidato. Se
+quello stato è stale, ricarica e revisiona la coppia corrente prima di
+risolverla. Se il recupero viene indicato come indeterminato, controlla le LeLe
+canoniche invece di ripetere alla cieca la stessa azione. Quando la risoluzione
+canonica riesce ma fallisce il refresh derivato della revisione contraddizioni,
+trattalo come successo parziale: il Markdown canonico resta autorevole e lo
+stato derivato di revisione può richiedere un refresh separato.
 
 ![Pannello Ops e report sano del Vault Doctor](../images/gui/ops.png)
 

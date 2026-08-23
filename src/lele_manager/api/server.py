@@ -5,9 +5,9 @@ import platform
 import pandas as pd
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Annotated, Any, Callable, Dict, List, Literal, Mapping, Optional, cast
+from typing import Annotated, Any, Callable, Dict, List, Literal, Mapping, NoReturn, Optional, cast
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pathlib import Path
 from datetime import date, datetime, timezone
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -24,6 +24,22 @@ from lele_manager.core.duplicate_decisions import (
     DuplicateDecisionStore,
     DuplicateDecisionStoreError,
     material_fingerprint,
+)
+from lele_manager.application.contradiction_resolution import (
+    AuxiliaryResolutionIntent,
+    CanonicalResolutionIntent,
+    ContradictionResolutionAmbiguousError,
+    ContradictionResolutionConflictError,
+    ContradictionResolutionInvalidError,
+    ContradictionResolutionNotFoundError,
+    ContradictionResolutionRecoveryError,
+    ContradictionResolutionService,
+    ContradictionResolutionStaleError,
+    ContradictionResolutionStoreError,
+    ContradictionResolutionWriteError,
+    ContradictsResolutionIntent,
+    CorrectsResolutionIntent,
+    SupersededByResolutionIntent,
 )
 from lele_manager.application.lesson_writing import (
     CanonicalLessonWriteAmbiguousError,
@@ -62,6 +78,15 @@ from lele_manager.application.lesson_deletion import (
 )
 from lele_manager.composition import legacy_jsonl_append_facade, projection_store
 from lele_manager.core.canonical_mutation import canonical_mutation_boundary
+from lele_manager.core.contradiction_review import (
+    generate_contradiction_candidates,
+    material_fingerprint as contradiction_material_fingerprint,
+)
+from lele_manager.core.contradiction_review_store import (
+    CONTRADICTION_REVIEW_STORE_FILENAME,
+    ContradictionReviewStore,
+    ContradictionReviewStoreError,
+)
 from lele_manager.core.freshness import (
     DEFAULT_REVIEW_INTERVAL_DAYS,
     FreshnessAssessment,
@@ -1002,6 +1027,133 @@ class TimelineResponse(BaseModel):
     buckets: List[TimelineBucket]
 
 
+
+CONTRADICTION_ANALYSIS_BOUND = 10_000
+
+
+class ContradictionLessonSnapshot(BaseModel):
+    id: str
+    text: str
+    title: str | None = None
+    topic: str | None = None
+    source: str | None = None
+    importance: int | None = None
+    tags: List[str] = Field(default_factory=list)
+    date: str | None = None
+    lifecycle: str
+    superseded_by: str | None = None
+    relationships: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class ContradictionCandidateResponse(BaseModel):
+    left_id: str
+    right_id: str
+    reasons: List[str]
+    same_subject_reasons: List[str]
+    tension_reasons: List[str]
+    similarity_score: float | None = None
+    left_fingerprint: str
+    right_fingerprint: str
+    left_canonical_revision: str
+    right_canonical_revision: str
+    resolution_available: bool
+    resolution_problem: str | None = None
+    left_lesson: ContradictionLessonSnapshot
+    right_lesson: ContradictionLessonSnapshot
+
+
+class ContradictionReportResponse(BaseModel):
+    vault_id: str
+    lessons_analyzed: int
+    analysis_bound: int
+    returned_candidates: int
+    suppressed_candidates: int
+    candidates: List[ContradictionCandidateResponse]
+
+
+class ContradictionDismissRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["different-context", "dismissed"]
+    left_id: str
+    right_id: str
+    left_fingerprint: str
+    right_fingerprint: str
+    note: str | None = None
+
+
+class ContradictionAuxiliaryResponse(BaseModel):
+    vault_id: str
+    left_id: str
+    right_id: str
+    decision: Literal["different-context", "dismissed"]
+    canonical_success: Literal[False]
+    canonical_changed: Literal[False]
+    derived_refresh_success: None
+
+
+class ContradictionSupersededByRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["superseded-by"]
+    superseded_id: str
+    replacement_id: str
+    expected_superseded_revision: str = Field(
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+
+
+class ContradictionCorrectsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["corrects"]
+    correcting_id: str
+    corrected_id: str
+    expected_correcting_revision: str = Field(
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+
+
+class ContradictionContradictsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["contradicts"]
+    source_id: str
+    target_id: str
+    expected_source_revision: str = Field(
+        min_length=71,
+        max_length=71,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+
+
+ContradictionCanonicalRequest = Annotated[
+    ContradictionSupersededByRequest
+    | ContradictionCorrectsRequest
+    | ContradictionContradictsRequest,
+    Field(discriminator="decision"),
+]
+
+
+class ContradictionCanonicalResponse(BaseModel):
+    vault_id: str
+    decision: Literal["superseded-by", "corrects", "contradicts"]
+    mutated_lesson_id: str
+    referenced_lesson_id: str
+    canonical_success: Literal[True]
+    canonical_changed: bool
+    derived_refresh_success: bool | None
+    partial_success: bool
+    canonical_revision: str | None
+    revision: int | None
+    noop_reason: str | None = None
+    refresh_error: str | None = None
+
+
 # -----------------------------------------------------------------------------
 # Helper di I/O
 # -----------------------------------------------------------------------------
@@ -1843,6 +1995,337 @@ def health() -> HealthResponse:
     Stato rapido del servizio: dati e modello presenti/sì-no.
     """
     return _health_from_context(get_active_vault_context())
+
+
+
+def _contradiction_snapshot_record(snapshot: object) -> dict[str, object]:
+    relationships = getattr(snapshot, "relationships")
+    return {
+        "id": getattr(snapshot, "lesson_id"),
+        "text": getattr(snapshot, "text"),
+        "title": getattr(snapshot, "title"),
+        "topic": getattr(snapshot, "topic"),
+        "source": getattr(snapshot, "source"),
+        "importance": getattr(snapshot, "importance"),
+        "tags": list(getattr(snapshot, "tags")),
+        "date": getattr(snapshot, "date"),
+        "lifecycle": getattr(snapshot, "lifecycle"),
+        "superseded_by": getattr(snapshot, "superseded_by"),
+        "relationships": {
+            str(relation_type): list(targets)
+            for relation_type, targets in relationships.items()
+        },
+    }
+
+
+def _contradiction_lesson_response(
+    record: Mapping[str, object],
+) -> ContradictionLessonSnapshot:
+    return ContradictionLessonSnapshot(
+        id=str(record["id"]),
+        text=str(record["text"]),
+        title=cast(str | None, record.get("title")),
+        topic=cast(str | None, record.get("topic")),
+        source=cast(str | None, record.get("source")),
+        importance=cast(int | None, record.get("importance")),
+        tags=[str(tag) for tag in cast(list[object], record.get("tags", []))],
+        date=cast(str | None, record.get("date")),
+        lifecycle=str(record.get("lifecycle") or "active"),
+        superseded_by=cast(str | None, record.get("superseded_by")),
+        relationships={
+            str(key): [str(target) for target in value]
+            for key, value in cast(
+                Mapping[object, list[object]],
+                record.get("relationships", {}),
+            ).items()
+        },
+    )
+
+
+@app.get(
+    "/contradictions",
+    response_model=ContradictionReportResponse,
+)
+def contradictions(
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=500,
+        description="Visible candidates after valid auxiliary suppression.",
+    ),
+) -> ContradictionReportResponse:
+    context = get_active_vault_context()
+    df = load_lessons_df(context)
+
+    rows: list[dict[str, object]] = [
+        cast(dict[str, object], row)
+        for row in df.to_dict(orient="records")
+    ]
+    generated = generate_contradiction_candidates(
+        rows,
+        analysis_bound=CONTRADICTION_ANALYSIS_BOUND,
+    )
+
+    store = ContradictionReviewStore(
+        context.candidates_path.parent / CONTRADICTION_REVIEW_STORE_FILENAME
+    )
+    snapshot_cache: dict[str, object] = {}
+    unresolved: list[ContradictionCandidateResponse] = []
+    suppressed = 0
+
+    for candidate in generated:
+        try:
+            left_snapshot = snapshot_cache.get(candidate.left_id)
+            if left_snapshot is None:
+                left_snapshot = read_canonical_lesson_snapshot(
+                    vault_dir=context.vault_dir,
+                    lesson_id=candidate.left_id,
+                )
+                snapshot_cache[candidate.left_id] = left_snapshot
+
+            right_snapshot = snapshot_cache.get(candidate.right_id)
+            if right_snapshot is None:
+                right_snapshot = read_canonical_lesson_snapshot(
+                    vault_dir=context.vault_dir,
+                    lesson_id=candidate.right_id,
+                )
+                snapshot_cache[candidate.right_id] = right_snapshot
+        except (
+            CanonicalLessonWriteNotFoundError,
+            CanonicalLessonWriteAmbiguousError,
+        ):
+            # Projection-only identity is not enough authority for a review
+            # action. Fail closed by omitting the non-actionable candidate.
+            continue
+
+        left_record = _contradiction_snapshot_record(left_snapshot)
+        right_record = _contradiction_snapshot_record(right_snapshot)
+
+        # Re-evaluate against current canonical material. Projection discovery
+        # may be stale; only current canonical state may enter the review queue.
+        current_candidates = generate_contradiction_candidates(
+            [left_record, right_record],
+            analysis_bound=1,
+        )
+        if len(current_candidates) != 1:
+            continue
+        current = current_candidates[0]
+
+        left_fingerprint = contradiction_material_fingerprint(left_record)
+        right_fingerprint = contradiction_material_fingerprint(right_record)
+
+        try:
+            if store.is_suppressed(
+                scope=context.vault_id,
+                left_id=current.left_id,
+                left_fingerprint=left_fingerprint,
+                right_id=current.right_id,
+                right_fingerprint=right_fingerprint,
+            ):
+                suppressed += 1
+                continue
+        except ContradictionReviewStoreError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "contradiction_store_failed",
+                    "message": (
+                        "Contradiction-review state could not be read safely."
+                    ),
+                },
+            ) from exc
+
+        left_revision = str(getattr(left_snapshot, "canonical_revision"))
+        right_revision = str(getattr(right_snapshot, "canonical_revision"))
+
+        unresolved.append(
+            ContradictionCandidateResponse(
+                left_id=current.left_id,
+                right_id=current.right_id,
+                reasons=list(current.reasons),
+                same_subject_reasons=list(current.same_subject_reasons),
+                tension_reasons=list(current.tension_reasons),
+                similarity_score=current.similarity_score,
+                left_fingerprint=left_fingerprint,
+                right_fingerprint=right_fingerprint,
+                left_canonical_revision=left_revision,
+                right_canonical_revision=right_revision,
+                resolution_available=True,
+                resolution_problem=None,
+                left_lesson=_contradiction_lesson_response(left_record),
+                right_lesson=_contradiction_lesson_response(right_record),
+            )
+        )
+
+    shown = unresolved[:limit]
+    return ContradictionReportResponse(
+        vault_id=context.vault_id,
+        lessons_analyzed=len(rows),
+        analysis_bound=CONTRADICTION_ANALYSIS_BOUND,
+        returned_candidates=len(shown),
+        suppressed_candidates=suppressed,
+        candidates=shown,
+    )
+
+
+def _contradiction_resolution_service() -> ContradictionResolutionService:
+    return ContradictionResolutionService(
+        context_resolver=get_active_vault_context,
+    )
+
+
+def _raise_contradiction_resolution_http_error(
+    exc: Exception,
+) -> NoReturn:
+    if isinstance(exc, ContradictionResolutionNotFoundError):
+        status_code = 404
+        code = "contradiction_not_found"
+        recovery = None
+    elif isinstance(exc, ContradictionResolutionAmbiguousError):
+        status_code = 409
+        code = "contradiction_ambiguous"
+        recovery = None
+    elif isinstance(exc, ContradictionResolutionStaleError):
+        status_code = 409
+        code = "contradiction_stale"
+        recovery = None
+    elif isinstance(exc, ContradictionResolutionConflictError):
+        status_code = 409
+        code = "contradiction_conflict"
+        recovery = None
+    elif isinstance(exc, ContradictionResolutionInvalidError):
+        status_code = 400
+        code = "contradiction_invalid"
+        recovery = None
+    elif isinstance(exc, ContradictionResolutionStoreError):
+        status_code = 503
+        code = "contradiction_store_failed"
+        recovery = None
+    elif isinstance(exc, ContradictionResolutionRecoveryError):
+        status_code = 503
+        code = "contradiction_recovery_indeterminate"
+        recovery = {
+            "retry_safe": False,
+            "message": (
+                "Canonical state may already have changed; "
+                "do not blindly retry the canonical mutation."
+            ),
+        }
+    elif isinstance(exc, ContradictionResolutionWriteError):
+        status_code = 503
+        code = "contradiction_write_failed"
+        recovery = None
+    else:
+        raise exc
+
+    detail: dict[str, object] = {
+        "code": code,
+        "message": str(exc),
+    }
+    if recovery is not None:
+        detail["recovery"] = recovery
+    raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+@app.post(
+    "/contradictions/dismiss",
+    response_model=ContradictionAuxiliaryResponse,
+)
+def dismiss_contradiction(
+    request: ContradictionDismissRequest,
+) -> ContradictionAuxiliaryResponse:
+    service = _contradiction_resolution_service()
+    try:
+        result = service.resolve_auxiliary(
+            AuxiliaryResolutionIntent(
+                decision=request.decision,
+                left_id=request.left_id,
+                right_id=request.right_id,
+                left_fingerprint=request.left_fingerprint,
+                right_fingerprint=request.right_fingerprint,
+                note=request.note,
+            )
+        )
+    except (
+        ContradictionResolutionNotFoundError,
+        ContradictionResolutionAmbiguousError,
+        ContradictionResolutionStaleError,
+        ContradictionResolutionConflictError,
+        ContradictionResolutionInvalidError,
+        ContradictionResolutionStoreError,
+        ContradictionResolutionRecoveryError,
+        ContradictionResolutionWriteError,
+    ) as exc:
+        _raise_contradiction_resolution_http_error(exc)
+
+    return ContradictionAuxiliaryResponse(
+        vault_id=result.vault_id,
+        left_id=result.pair.left_id,
+        right_id=result.pair.right_id,
+        decision=result.decision,
+        canonical_success=result.canonical_success,
+        canonical_changed=result.canonical_changed,
+        derived_refresh_success=result.derived_refresh_success,
+    )
+
+
+@app.post(
+    "/contradictions/resolve",
+    response_model=ContradictionCanonicalResponse,
+)
+def resolve_contradiction(
+    request: ContradictionCanonicalRequest,
+) -> ContradictionCanonicalResponse:
+    service = _contradiction_resolution_service()
+
+    intent: CanonicalResolutionIntent
+    if isinstance(request, ContradictionSupersededByRequest):
+        intent = SupersededByResolutionIntent(
+            superseded_id=request.superseded_id,
+            replacement_id=request.replacement_id,
+            expected_superseded_revision=request.expected_superseded_revision,
+        )
+    elif isinstance(request, ContradictionCorrectsRequest):
+        intent = CorrectsResolutionIntent(
+            correcting_id=request.correcting_id,
+            corrected_id=request.corrected_id,
+            expected_correcting_revision=request.expected_correcting_revision,
+        )
+    else:
+        intent = ContradictsResolutionIntent(
+            source_id=request.source_id,
+            target_id=request.target_id,
+            expected_source_revision=request.expected_source_revision,
+        )
+
+    try:
+        result = service.resolve_canonical(intent)
+    except (
+        ContradictionResolutionNotFoundError,
+        ContradictionResolutionAmbiguousError,
+        ContradictionResolutionStaleError,
+        ContradictionResolutionConflictError,
+        ContradictionResolutionInvalidError,
+        ContradictionResolutionStoreError,
+        ContradictionResolutionRecoveryError,
+        ContradictionResolutionWriteError,
+    ) as exc:
+        _raise_contradiction_resolution_http_error(exc)
+
+    return ContradictionCanonicalResponse(
+        vault_id=result.vault_id,
+        decision=result.decision,
+        mutated_lesson_id=result.mutated_lesson_id,
+        referenced_lesson_id=result.referenced_lesson_id,
+        canonical_success=result.canonical_success,
+        canonical_changed=result.canonical_changed,
+        derived_refresh_success=result.derived_refresh_success,
+        partial_success=result.partial_success,
+        canonical_revision=result.canonical_revision,
+        revision=result.revision,
+        noop_reason=result.noop_reason,
+        refresh_error=result.refresh_error,
+    )
 
 
 @app.get("/duplicates", response_model=DuplicateReportResponse)
