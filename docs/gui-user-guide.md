@@ -94,11 +94,13 @@ navigation and avoids horizontal overflow.
 3. Browse, filter and inspect existing lessons.
 4. Create or edit approved lessons through **Editor**.
 5. Review exact and near duplicates through **Duplicates**.
-6. Ingest raw notes through **TritaLeLe**, keeping preview, staging, review and
+6. Review advisory potential contradiction candidates through **Potential
+   contradictions**.
+7. Ingest raw notes through **TritaLeLe**, keeping preview, staging, review and
    approval as separate actions.
-7. Use **Vault**, **Stats** and **Timeline** to inspect the resulting knowledge
+8. Use **Vault**, **Stats** and **Timeline** to inspect the resulting knowledge
    base.
-8. Use **Diagnostics** to inspect support status and prepare a bounded report;
+9. Use **Diagnostics** to inspect support status and prepare a bounded report;
    use **About** for product identity, license and project
    links.
 
@@ -115,6 +117,7 @@ navigation and avoids horizontal overflow.
 | TritaLeLe | Preview, stage, review and explicitly approve candidates |
 | Vault | Inspect the canonical Markdown tree and trigger projection import |
 | Duplicates | Review duplicate and near-duplicate pairs without mutation |
+| Potential contradictions | Review advisory potential contradiction candidates and explicitly choose any canonical direction |
 | Ops | Inspect health, run Vault Doctor, import, train and refresh |
 | Diagnostics | Inspect support status, prepare an explicit bounded diagnostic package, and inspect runtime paths |
 | About | Inspect product identity, version, license, local-first statement and support links |
@@ -344,6 +347,40 @@ Markdown is canonical. A delete or merge writes canonical sources first and
 refreshes the derived projection/search state afterward. If that refresh fails,
 the screen reports the canonical truth separately and does not pretend that the
 operation rolled back; refresh derived data from System when appropriate.
+
+### Review potential contradiction candidates separately
+
+Potential contradiction review is a distinct workflow from duplicate review,
+not a stronger form of duplicate detection. It surfaces explainable candidate
+pairs for human review only. A surfaced pair is not proof, factual verification,
+an automatic truth judgment, or a claim that either LeLe is wrong.
+
+The screen explains why a pair was surfaced with same-subject and tension cues,
+and may show similarity or retrieval scores. Those cues and scores are review
+and prioritization signals only. They help decide what to inspect first; they do
+not establish a canonical resolution by themselves.
+
+**Different context** and **Dismiss candidate** are durable auxiliary review
+decisions. They can hide the current pair while the reviewed material remains
+the same, but they never mutate canonical Markdown. If either LeLe changes in
+material relevant to this review, the previous auxiliary suppression may no
+longer apply and the pair can become reviewable again.
+
+Canonical resolutions are explicitly separate from auxiliary decisions.
+**Superseded by**, **Corrects**, and **Contradicts** write canonical Markdown
+through the revision-aware authoring boundary. Each action requires an explicit
+direction: supersession writes only the selected `superseded_by` field,
+correction writes only the selected `corrects` edge, and contradiction writes
+only the selected directional `contradicts` edge. Reciprocal relationships are
+not inferred or created automatically.
+
+Canonical writes use the exact revision loaded with the candidate. If that
+state is stale, reload and review the current pair before resolving it. If
+recovery is reported as indeterminate, inspect the canonical lessons instead of
+blindly repeating the same action. When the canonical resolution succeeds but
+derived contradiction-review refresh fails, treat it as partial success:
+canonical Markdown remains authoritative and derived review state may need a
+separate refresh.
 
 ![Operations panel and healthy Vault Doctor report](images/gui/ops.png)
 
