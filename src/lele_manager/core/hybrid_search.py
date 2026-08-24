@@ -55,6 +55,14 @@ def _tokens(value: str | None) -> frozenset[str]:
     return frozenset(_WORD_RE.findall(_normalize(value)))
 
 
+def _contains_phrase(value: str, phrase: str) -> bool:
+    if not value or not phrase:
+        return False
+
+    pattern = rf"(?<!\w){re.escape(phrase)}(?!\w)"
+    return re.search(pattern, value, re.UNICODE) is not None
+
+
 def _overlap_ratio(query_tokens: frozenset[str], value: str | None) -> float:
     if not query_tokens:
         return 0.0
@@ -98,9 +106,9 @@ def _rank_document(
         reasons.append(HybridSearchReason("exact-title-match"))
     else:
         phrase_fields: list[str] = []
-        if title and normalized_query in title:
+        if _contains_phrase(title, normalized_query):
             phrase_fields.append("title")
-        if text and normalized_query in text:
+        if _contains_phrase(text, normalized_query):
             phrase_fields.append("text")
 
         if phrase_fields:
@@ -122,6 +130,16 @@ def _rank_document(
                         round(title_overlap, 6),
                     )
                 )
+            elif title and normalized_query in title:
+                # Preserve legacy substring retrieval without granting
+                # protected exact-phrase semantics inside a larger word.
+                score += 0.30
+                reasons.append(
+                    HybridSearchReason(
+                        "title-match",
+                        0.5,
+                    )
+                )
 
             text_overlap = _overlap_ratio(query_tokens, document.text)
             if text_overlap > 0.0:
@@ -130,6 +148,15 @@ def _rank_document(
                     HybridSearchReason(
                         "text-match",
                         round(text_overlap, 6),
+                    )
+                )
+            elif text and normalized_query in text:
+                # Legacy substring compatibility remains weak evidence only.
+                score += 0.20
+                reasons.append(
+                    HybridSearchReason(
+                        "text-match",
+                        0.5,
                     )
                 )
 

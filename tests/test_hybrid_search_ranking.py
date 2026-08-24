@@ -60,6 +60,39 @@ def test_exact_phrase_match_is_protected_from_semantic_only_candidate() -> None:
     assert results[0].reasons[0].value == "text"
 
 
+def test_phrase_protection_requires_word_boundaries() -> None:
+    results = rank_hybrid_documents(
+        [
+            _doc("nosql", text="NoSQL databases are useful here."),
+            _doc("semantic", text="Relational database guidance."),
+        ],
+        query="sql",
+        semantic_scores={"semantic": 1.0},
+    )
+
+    assert [result.lesson_id for result in results] == [
+        "semantic",
+        "nosql",
+    ]
+    assert results[1].protected_lexical_tier == 0
+    assert [reason.code for reason in results[1].reasons] == [
+        "text-match"
+    ]
+
+
+def test_legacy_substring_match_remains_retrievable_without_phrase_protection() -> None:
+    results = rank_hybrid_documents(
+        [_doc("banana", text="banana")],
+        query="an",
+    )
+
+    assert [result.lesson_id for result in results] == ["banana"]
+    assert results[0].protected_lexical_tier == 0
+    assert [reason.code for reason in results[0].reasons] == [
+        "text-match"
+    ]
+
+
 def test_semantic_only_candidate_can_be_retrieved_without_literal_query() -> None:
     results = rank_hybrid_documents(
         [_doc("semantic", text="Retry operations must be safe to repeat.")],
