@@ -67,6 +67,14 @@ from lele_manager.core.runtime_transparency import (
 from lele_manager.core.analytics import compute_metadata_options, compute_stats_summary, compute_timeline
 from lele_manager.application.dataframes import records_to_legacy_dataframe
 from lele_manager.application.external_lessons import external_lessons_feed
+from lele_manager.application.hybrid_search import (
+    HybridSearchFilters,
+    HybridSearchRecord,
+    HybridSearchRequest as ApplicationHybridSearchRequest,
+    SemanticSearchProvider,
+    SemanticSearchUnavailable,
+    search_hybrid,
+)
 from lele_manager.application.lesson_deletion import (
     CanonicalLessonDeletionResult,
     LessonDeletionNotFoundError,
@@ -301,8 +309,16 @@ class Lesson(LessonBase):
     id: str
 
 
+class HybridSearchReasonResponse(BaseModel):
+    code: str
+    value: str | float | int | None = None
+
+
 class LessonSearchResult(Lesson):
-    pass
+    rank: Optional[int] = None
+    hybrid_score: Optional[float] = None
+    why: List[HybridSearchReasonResponse] = Field(default_factory=list)
+    semantic_available: Optional[bool] = None
 
 
 class FreshnessReasonResponse(BaseModel):
@@ -1436,6 +1452,69 @@ def build_similarity_index(df: pd.DataFrame, context: ActiveVaultContext | None 
         return index
 
 
+class _ProjectionSemanticSearchProvider(SemanticSearchProvider):
+    """Local semantic evidence adapter for the hybrid-search workflow."""
+
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        *,
+        context: ActiveVaultContext | None,
+    ) -> None:
+        self._df = df
+        self._context = context
+
+    def scores_for_query(
+        self,
+        documents,
+        query: str,
+    ) -> Mapping[str, float]:
+        eligible_ids = {document.lesson_id for document in documents}
+        if not eligible_ids:
+            return {}
+
+        model_path = (
+            self._context.topic_model_path
+            if self._context is not None
+            else MODEL_PATH
+        )
+        if model_path is None or not model_path.exists():
+            raise SemanticSearchUnavailable
+
+        eligible_df = self._df[
+            self._df["id"].astype(str).isin(eligible_ids)
+        ].copy()
+        if eligible_df.empty:
+            return {}
+
+        index = build_similarity_index(self._df, self._context)
+        raw_results = similar_by_text(
+            eligible_df,
+            query,
+            transformer=index.transformer,
+            top_k=len(eligible_df),
+            min_score=0.0,
+        )
+
+        return {
+            str(result.lesson_id): float(result.score)
+            for result in raw_results
+            if str(result.lesson_id) in eligible_ids
+        }
+
+
+def _hybrid_search_context() -> ActiveVaultContext | None:
+    """Resolve one coherent production Vault context.
+
+    DATA_PATH remains the narrow historical test seam. In that mode no
+    registry context is required and semantic search degrades unless MODEL_PATH
+    is explicitly supplied by the test.
+    """
+    if DATA_PATH is not None:
+        return None
+    return get_active_vault_context()
+
+
 def _to_optional_str(value) -> Optional[str]:
     """
     Converte un valore generico in Optional[str]:
@@ -1566,6 +1645,56 @@ def _projection_freshness_assessments(
         )
 
     return assessments
+
+
+def _hybrid_search_record(
+    row: Mapping[Any, Any],
+    *,
+    freshness_assessments: Mapping[str, FreshnessAssessment],
+) -> HybridSearchRecord:
+    lesson_id = _to_optional_str(row.get("id")) or ""
+
+    raw_tags = row.get("tags")
+    tags = (
+        tuple(str(tag) for tag in raw_tags)
+        if isinstance(raw_tags, list)
+        else ()
+    )
+
+    raw_importance = row.get("importance")
+    importance: int | None
+    if raw_importance is None or (
+        isinstance(raw_importance, float)
+        and pd.isna(raw_importance)
+    ):
+        importance = None
+    else:
+        try:
+            importance = int(raw_importance)
+        except (TypeError, ValueError):
+            importance = None
+
+    freshness = freshness_assessments.get(lesson_id)
+
+    return HybridSearchRecord(
+        lesson_id=lesson_id,
+        text=_to_optional_str(row.get("text")) or "",
+        title=_to_optional_str(row.get("title")),
+        topic=_to_optional_str(row.get("topic")),
+        source=_to_optional_str(row.get("source")),
+        importance=importance,
+        tags=tags,
+        date=_projection_freshness_date(row.get("date")),
+        created_at=_to_optional_str(row.get("created_at")),
+        lifecycle=normalize_lifecycle(
+            _to_optional_str(row.get("lifecycle"))
+        ),
+        freshness_review_needed=(
+            freshness.review_needed
+            if freshness is not None
+            else None
+        ),
+    )
 
 
 def _row_to_search_result(row: Mapping[Any, Any]) -> LessonSearchResult:
@@ -2621,94 +2750,103 @@ def list_lessons(
 
 @app.post("/lessons/search", response_model=List[LessonSearchResult])
 def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
-    """Ricerca avanzata sulle lessons via POST.
+    """Explainable hybrid search over the current projection."""
 
-    Applica filtri su testo, topic, source e importance, riutilizzando la
-    stessa normalizzazione di GET /lessons.
-    """
-    df = load_lessons_df()
+    context = _hybrid_search_context()
+    df = (
+        load_lessons_df(context)
+        if context is not None
+        else load_lessons_df()
+    )
     if df.empty:
         return []
 
     freshness_assessments = _projection_freshness_assessments(df)
+    rows = df.to_dict(orient="records")
 
-    df = df.copy()
-    df = _filter_lifecycle_scope(df, body.lifecycle_in)
-    if df.empty:
-        return []
+    records = [
+        _hybrid_search_record(
+            row,
+            freshness_assessments=freshness_assessments,
+        )
+        for row in rows
+    ]
 
-    if body.freshness_review_needed is not None:
-        wanted = body.freshness_review_needed
-        freshness_mask = df["id"].astype(str).map(
-            lambda lesson_id: (
-                freshness_assessments.get(lesson_id) is not None
-                and freshness_assessments[lesson_id].review_needed == wanted
+    filters = HybridSearchFilters(
+        topic_in=(
+            tuple(body.topic_in)
+            if body.topic_in
+            else None
+        ),
+        source_in=(
+            tuple(body.source_in)
+            if body.source_in
+            else None
+        ),
+        importance_gte=body.importance_gte,
+        importance_lte=body.importance_lte,
+        lifecycle_in=(
+            tuple(body.lifecycle_in)
+            if body.lifecycle_in is not None
+            else None
+        ),
+        freshness_review_needed=body.freshness_review_needed,
+    )
+
+    query = body.q.strip() if body.q else None
+
+    semantic_provider: SemanticSearchProvider | None = None
+    if query:
+        semantic_provider = _ProjectionSemanticSearchProvider(
+            df,
+            context=context,
+        )
+
+    outcome = search_hybrid(
+        records,
+        ApplicationHybridSearchRequest(
+            query=query,
+            filters=filters,
+            limit=body.limit,
+        ),
+        semantic_provider=semantic_provider,
+    )
+
+    rows_by_id: dict[str, Mapping[Any, Any]] = {}
+    for row in rows:
+        lesson_id = _to_optional_str(row.get("id"))
+        if lesson_id is not None:
+            rows_by_id[lesson_id] = row
+
+    results: List[LessonSearchResult] = []
+
+    for item in outcome.items:
+        result_row = rows_by_id.get(item.record.lesson_id)
+        if result_row is None:
+            continue
+
+        base = _row_to_search_result(result_row)
+        results.append(
+            base.model_copy(
+                update={
+                    "rank": item.rank,
+                    "hybrid_score": item.hybrid_score,
+                    "why": [
+                        HybridSearchReasonResponse(
+                            code=reason.code,
+                            value=reason.value,
+                        )
+                        for reason in item.reasons
+                    ],
+                    "semantic_available": (
+                        outcome.semantic_available
+                        if query
+                        else None
+                    ),
+                }
             )
         )
-        df = df[freshness_mask]
 
-    if df.empty:
-        return []
-
-    # Filtro testo (q)
-    if body.q:
-        q_lower = body.q.lower()
-        df = df[df["text"].astype(str).str.lower().str.contains(q_lower, na=False)]
-
-    # Filtro topic_in
-    if body.topic_in:
-        df = df[df["topic"].astype(str).isin(body.topic_in)]
-
-    # Filtro source_in
-    if body.source_in:
-        df = df[df["source"].astype(str).isin(body.source_in)]
-
-    # Filtro importance range
-    if body.importance_gte is not None or body.importance_lte is not None:
-        importance = df.get("importance")
-        if importance is None:
-            df["importance"] = pd.NA
-        else:
-            df["importance"] = pd.to_numeric(importance, errors="coerce")
-
-        if body.importance_gte is not None:
-            df = df[df["importance"] >= body.importance_gte]
-
-        if body.importance_lte is not None:
-            df = df[df["importance"] <= body.importance_lte]
-
-    # Deterministic ordering (#29): importance DESC (NaN last), created_at DESC (NaT last), id ASC
-    if "importance" not in df.columns:
-        df["importance"] = pd.NA
-    if "date" not in df.columns:
-        df["date"] = pd.NA
-    if "id" not in df.columns:
-        df["id"] = ""
-
-    df["_importance_num"] = pd.to_numeric(df["importance"], errors="coerce")
-    if "created_at" not in df.columns:
-        df["created_at"] = pd.NA
-    df["_created_at_dt"] = _safe_dt_series(df["created_at"])
-    df["_id_sort"] = _safe_str_series(df["id"])
-
-    df = df.sort_values(
-        by=["_importance_num", "_created_at_dt", "_id_sort"],
-        ascending=[False, False, True],
-        na_position="last",
-        kind="mergesort",  # stable sort for determinism
-    )
-    df = df.drop(
-        columns=["_importance_num", "_created_at_dt", "_id_sort"], errors="ignore"
-    )
-
-    # Limit
-    df = df.head(body.limit)
-
-    if df.empty:
-        return []
-
-    records = df.to_dict(orient="records")
-    results: List[LessonSearchResult] = [_row_to_search_result(row) for row in records]
     return results
 
 
@@ -2764,7 +2902,17 @@ def export_search(
         results = [r for r in results if r.id in allowed]
 
     markdown = search_results_to_markdown(
-        [r.model_dump() for r in results],
+        [
+            r.model_dump(
+                exclude={
+                    "rank",
+                    "hybrid_score",
+                    "why",
+                    "semantic_available",
+                }
+            )
+            for r in results
+        ],
         include_frontmatter=body.include_frontmatter,
         filters_summary=_export_filters_summary(body),
     )
