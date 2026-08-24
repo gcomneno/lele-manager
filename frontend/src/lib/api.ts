@@ -60,6 +60,28 @@ export interface LessonDetail extends Lesson {
   freshness?: FreshnessAssessment | null
 }
 
+export type HybridSearchReasonCode =
+  | 'exact-title-match'
+  | 'exact-phrase-match'
+  | 'title-match'
+  | 'text-match'
+  | 'topic-match'
+  | 'tag-match'
+  | 'source-match'
+  | 'semantic-similarity'
+
+export interface HybridSearchReason {
+  code: HybridSearchReasonCode
+  value?: string | number | null
+}
+
+export interface LessonSearchResult extends Lesson {
+  rank?: number | null
+  hybrid_score?: number | null
+  why?: HybridSearchReason[]
+  semantic_available?: boolean | null
+}
+
 export interface LessonSearchRequest {
   q?: string | null
   topic_in?: string[] | null
@@ -908,7 +930,7 @@ export const api = {
   },
 
   searchLessons: (body: LessonSearchRequest) =>
-    request<Lesson[]>('/lessons/search', {
+    request<LessonSearchResult[]>('/lessons/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
