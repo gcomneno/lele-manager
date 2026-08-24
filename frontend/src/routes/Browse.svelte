@@ -3,8 +3,10 @@
   import {
     api,
     type ExportSearchRequest,
+    type HybridSearchReason,
     type Lesson,
     type LessonLifecycleState,
+    type LessonSearchResult,
   } from '../lib/api'
   import { navigate } from '../lib/router'
   import { formatMessage, messages } from '../lib/i18n'
@@ -48,7 +50,7 @@
     return null
   }
 
-  let lessons = $state<Lesson[]>([])
+  let lessons = $state<LessonSearchResult[]>([])
   let selectedIds = $state<Set<string>>(new Set())
   let loading = $state(false)
   let exporting = $state(false)
@@ -66,7 +68,7 @@
     selectedIds = new Set()
   }
 
-  function replaceResults(nextLessons: Lesson[]) {
+  function replaceResults(nextLessons: LessonSearchResult[]) {
     lessons = nextLessons
     // A result set is a destructive-selection snapshot boundary. Even IDs in
     // both snapshots must be explicitly selected again after a new query.
@@ -88,6 +90,31 @@
 
   function selectedVisibleLessons() {
     return lessons.filter((lesson) => selectedIds.has(lesson.id))
+  }
+
+  function hybridReasonLabel(reason: HybridSearchReason): string {
+    switch (reason.code) {
+      case 'exact-title-match':
+        return $messages.browseWhyExactTitle
+      case 'exact-phrase-match':
+        return $messages.browseWhyExactPhrase
+      case 'title-match':
+        return $messages.browseWhyTitle
+      case 'text-match':
+        return $messages.browseWhyText
+      case 'topic-match':
+        return $messages.browseWhyTopic
+      case 'tag-match':
+        return $messages.browseWhyTag
+      case 'source-match':
+        return $messages.browseWhySource
+      case 'semantic-similarity':
+        return $messages.browseWhySemantic
+    }
+  }
+
+  function hasSearchExplanation(lesson: LessonSearchResult): boolean {
+    return (lesson.why?.length ?? 0) > 0
   }
 
   function buildSearchBody(): ExportSearchRequest {
@@ -451,6 +478,30 @@
             }}
             onclick={() => navigate({ view: 'detail', id: lesson.id })}
           />
+
+          {#if hasSearchExplanation(lesson)}
+            <div
+              class="search-explanation"
+              data-testid={`search-explanation-${lesson.id}`}
+            >
+              <strong>{$messages.browseWhyResult}</strong>
+              <ul>
+                {#each lesson.why ?? [] as reason}
+                  <li>{hybridReasonLabel(reason)}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+
+          {#if lesson.semantic_available === false && hasSearchExplanation(lesson)}
+            <p
+              class="semantic-degraded"
+              data-testid={`semantic-degraded-${lesson.id}`}
+            >
+              {$messages.browseSemanticUnavailable}
+            </p>
+          {/if}
+
           <div class="lesson-actions" aria-label={`${lesson.id} actions`}>
             <Button
               type="button"
@@ -536,6 +587,34 @@
   }
 
   .lesson-result.selected { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .search-explanation {
+    margin-inline: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    font-size: 0.85rem;
+  }
+
+  .search-explanation strong {
+    display: block;
+    margin-bottom: var(--space-1);
+  }
+
+  .search-explanation ul {
+    margin: 0;
+    padding-left: 1.1rem;
+  }
+
+  .search-explanation li + li {
+    margin-top: 2px;
+  }
+
+  .semantic-degraded {
+    margin: 0 var(--space-2);
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
 
   .lesson-selection { display: flex; align-items: center; gap: var(--space-2); padding-inline: var(--space-2); color: var(--color-text); cursor: pointer; }
   .lesson-selection input { width: 1rem; height: 1rem; accent-color: var(--accent); }
