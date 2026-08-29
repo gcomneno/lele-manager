@@ -185,3 +185,55 @@ def test_native_release_verifies_normalized_reproducibility() -> None:
     assert 'Path("_internal") / "base_library.zip"' in verifier
     assert "sorted(archive.namelist())" in verifier
     assert "content differs:" in verifier
+
+
+def test_native_release_attests_exact_downloadable_artifacts() -> None:
+    release = read(".github/workflows/release.yml")
+
+    native_job = release.index("native-packages:")
+    github_release_job = release.index("github-release:")
+
+    native_section = release[native_job:github_release_job]
+
+    assert "contents: read" in native_section
+    assert "id-token: write" in native_section
+    assert "attestations: write" in native_section
+
+    assert (
+        "actions/attest@"
+        "1e69f48acb82d1966a394da916b4c1698aa569d6 # v4"
+        in native_section
+    )
+    assert "subject-path: dist/release/*" in native_section
+
+    package = native_section.index("Package native release")
+    smoke = native_section.index("Smoke published-style native release")
+    attest = native_section.index("Attest native package provenance")
+    upload = native_section.index("Upload native package")
+
+    assert package < smoke < attest < upload
+
+
+def test_github_release_job_does_not_gain_attestation_permissions() -> None:
+    release = read(".github/workflows/release.yml")
+
+    github_release_job = release.index("github-release:")
+    github_release_section = release[github_release_job:]
+
+    assert "contents: write" in github_release_section
+    assert "id-token: write" not in github_release_section
+    assert "attestations: write" not in github_release_section
+
+
+def test_native_release_integrity_contract_is_documented() -> None:
+    contract = read("docs/native-release-integrity.md")
+
+    assert "GitHub Immutable Releases are enabled" in contract
+    assert "`v1.11.1`" in contract
+    assert "immutable: false" in contract
+    assert "SHA-256 digest" in contract
+    assert "dist/release/*" in contract
+    assert "gh release verify <tag>" in contract
+    assert "gh release verify-asset <tag>" in contract
+    assert "gh attestation verify" in contract
+    assert "docs/native-release-reproducibility.md" in contract
