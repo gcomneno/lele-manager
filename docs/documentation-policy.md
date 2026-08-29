@@ -49,6 +49,7 @@ paths, filenames, and code snippets are never translated.
 | `docs/brand-design-system.md` | Not present | Bilingual and maintained; English canonical | Maintained product brand and design-system contract |
 | `docs/it/brand-design-system.md` | Not present | Bilingual and maintained; Italian mirror | Official Italian brand and design-system translation |
 | `docs/pro-commercial-readiness.md` | Not present | Bilingual and maintained; English canonical | Maintained Pro product readiness and positioning contract |
+| `docs/pypi-environment-policy.md` | Not present | English-only technical source | Maintained PyPI deployment-security and release-governance contract |
 | `docs/it/pro-commercial-readiness.md` | Not present | Bilingual and maintained; Italian mirror | Official Italian Pro product readiness translation |
 | `docs/adr/0001-storage-backend.md` | Predominantly Italian | English-only technical source | ADRs are canonical technical records maintained in English |
 | `docs/gui-design.md` | Predominantly Italian | Historical/archive document | Completed GUI design record; retained in its original language |
