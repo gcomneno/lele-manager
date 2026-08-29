@@ -1,0 +1,55 @@
+# Native-release Python toolchain lock.
+#
+# Authority:
+# - Python 3.12 is selected by .github/workflows/release.yml.
+# - This file freezes the Python dependency identities used to build native
+#   PyInstaller releases.
+# - Application runtime dependencies and PyInstaller build dependencies are
+#   deliberately frozen together here because both affect the native bundle.
+# - Development/test tools do not belong to this environment.
+# - Platform-specific PyInstaller dependencies remain explicitly pinned behind
+#   environment markers and are verified on their native CI runners.
+#
+# Update deliberately: resolve on supported release platforms, review the
+# resulting identities, rebuild, smoke-test, and repeat the reproducibility
+# verification before committing a new lock.
+
+pip==26.2.1
+setuptools==84.0.0
+
+altgraph==0.17.5
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+certifi==2026.7.22
+click==8.5.0
+fastapi==0.141.1
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.19
+joblib==1.5.3
+narwhals==2.25.0
+numpy==2.5.2
+packaging==26.3
+pandas==3.0.5
+platformdirs==4.11.5
+pydantic==2.13.5
+pydantic_core==2.46.5
+pyinstaller==6.22.2
+pyinstaller-hooks-contrib==2026.7
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+scikit-learn==1.9.0
+scipy==1.18.1
+six==1.17.0
+starlette==1.6.0
+threadpoolctl==3.6.0
+typing_extensions==4.16.0
+typing-inspection==0.4.4
+uvicorn==0.52.4
+
+# PyInstaller platform-specific dependencies.
+macholib==1.16.4; sys_platform == "darwin"
+pefile==2024.8.26; sys_platform == "win32"
+pywin32-ctypes==0.2.3; sys_platform == "win32"

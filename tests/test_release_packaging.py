@@ -145,3 +145,43 @@ def test_pypi_publication_uses_dedicated_manual_trusted_workflow() -> None:
         "dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1"
         in pypi
     )
+
+
+def test_native_release_uses_frozen_toolchain() -> None:
+    release = read(".github/workflows/release.yml")
+    lock = read("requirements/native-release.txt")
+
+    assert "requirements/native-release.txt" in release
+    assert 'pip==26.2.1' in release
+    assert "--no-build-isolation --no-deps -e ." in release
+    assert 'pip install -e ".[dev]"' not in release
+
+    assert "pyinstaller==6.22.2" in lock
+    assert "pyinstaller-hooks-contrib==2026.7" in lock
+    assert "setuptools==84.0.0" in lock
+    assert 'macholib==1.16.4; sys_platform == "darwin"' in lock
+    assert 'pefile==2024.8.26; sys_platform == "win32"' in lock
+    assert 'pywin32-ctypes==0.2.3; sys_platform == "win32"' in lock
+
+
+def test_native_release_reproducibility_contract_is_documented() -> None:
+    contract = read("docs/native-release-reproducibility.md")
+
+    assert "81 installed package entries" in contract
+    assert "33 entries" in contract
+    assert "all 155 files" in contract
+    assert "did not produce byte-identical outer archives" in contract
+    assert "normalized-content comparison" in contract
+    assert "frontend/package-lock.json" in contract
+    assert "npm ci" in contract
+
+
+def test_native_release_verifies_normalized_reproducibility() -> None:
+    release = read(".github/workflows/release.yml")
+    verifier = read("scripts/verify-native-reproducibility.py")
+
+    assert "scripts/verify-native-reproducibility.py" in release
+    assert "normalized_bundle_manifest" in verifier
+    assert 'Path("_internal") / "base_library.zip"' in verifier
+    assert "sorted(archive.namelist())" in verifier
+    assert "content differs:" in verifier
