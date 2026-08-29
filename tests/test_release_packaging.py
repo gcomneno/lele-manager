@@ -128,4 +128,8 @@ def test_pypi_publication_uses_dedicated_manual_trusted_workflow() -> None:
     assert BUILD_COMMAND in pypi
     assert "environment: pypi" in pypi
     assert "id-token: write" in pypi
-    assert "pypa/gh-action-pypi-publish@release/v1" in pypi
+    assert (
+        "pypa/gh-action-pypi-publish@"
+        "dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1"
+        in pypi
+    )
