@@ -38,7 +38,7 @@ def verify_installed_version() -> None:
         raise SystemExit(
             "ERRORE: metadata lele-manager non allineata al checkout: "
             f"installata={installed}, attesa={expected}. "
-            'Riallinea l\'ambiente con: python -m pip install -e ".[dev]"'
+            "Riallinea l'ambiente usando requirements/native-release.txt."
         )
 
 
