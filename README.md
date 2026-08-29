@@ -42,6 +42,7 @@ pytest tests/test_documentation.py
 - Contributor guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Documentation policy: [docs/documentation-policy.md](docs/documentation-policy.md)
 - GUI user guide: [docs/gui-user-guide.md](docs/gui-user-guide.md)
+- Pro commercial readiness: [docs/pro-commercial-readiness.md](docs/pro-commercial-readiness.md)
 - Projection-store contract:
   [docs/projection-store.md](docs/projection-store.md)
 - LeLe Manager PKPS consumer contract:
