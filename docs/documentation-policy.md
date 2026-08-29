@@ -52,6 +52,7 @@ paths, filenames, and code snippets are never translated.
 | `docs/pypi-environment-policy.md` | Not present | English-only technical source | Maintained PyPI deployment-security and release-governance contract |
 | `docs/native-release-reproducibility.md` | Not present | English-only technical source | Maintained native-release dependency and reproducibility contract |
 | `docs/native-release-integrity.md` | Not present | English-only technical source | Maintained native-release immutability, digest and provenance contract |
+| `docs/main-branch-protection.md` | Not present | English-only technical source | Maintained main-branch governance and required-check contract |
 | `docs/it/pro-commercial-readiness.md` | Not present | Bilingual and maintained; Italian mirror | Official Italian Pro product readiness translation |
 | `docs/adr/0001-storage-backend.md` | Predominantly Italian | English-only technical source | ADRs are canonical technical records maintained in English |
 | `docs/gui-design.md` | Predominantly Italian | Historical/archive document | Completed GUI design record; retained in its original language |
