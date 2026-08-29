@@ -114,6 +114,18 @@ def test_linux_native_release_ships_the_user_local_installer() -> None:
     assert 'LINUX_ICON = ROOT / "frontend" / "public" / "favicon.svg"' in script
     assert 'shutil.copy2(LINUX_ICON, staging / "lele-manager.svg")' in script
 
+def test_pypi_environment_policy_is_documented() -> None:
+    policy = read("docs/pypi-environment-policy.md")
+
+    assert "Only a workflow run whose GitHub execution ref" in policy
+    assert "branch `main`" in policy
+    assert "Administrator bypass is disabled" in policy
+    assert "Required reviewers are intentionally not configured" in policy
+    assert "`contents: read`" in policy
+    assert "`id-token: write`" in policy
+    assert "OIDC trusted publishing" in policy
+
+
 def test_pypi_publication_uses_dedicated_manual_trusted_workflow() -> None:
     release = read(".github/workflows/release.yml")
     pypi = read(".github/workflows/publish-pypi.yml")
