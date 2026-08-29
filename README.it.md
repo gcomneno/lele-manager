@@ -50,6 +50,7 @@ pytest tests/test_documentation.py
   [docs/it/pkps-package.md](docs/it/pkps-package.md)
 
 - Manuale della GUI: [docs/it/gui-user-guide.md](docs/it/gui-user-guide.md)
+- Readiness commerciale Pro: [docs/it/pro-commercial-readiness.md](docs/it/pro-commercial-readiness.md)
 
 ## Obiettivi principali
 
