@@ -41,7 +41,19 @@ from lele_manager.application.contradiction_resolution import (
     CorrectsResolutionIntent,
     SupersededByResolutionIntent,
 )
+from lele_manager.application.context_packs import (
+    add_context_pack_members,
+    create_context_pack,
+    get_resolved_context_pack,
+)
+from lele_manager.core.context_pack_store import (
+    ContextPack,
+    ContextPackStore,
+    ContextPackStoreError,
+    context_pack_store_path,
+)
 from lele_manager.application.lesson_writing import (
+    CanonicalLessonSnapshot,
     CanonicalLessonWriteAmbiguousError,
     CanonicalLessonWriteHistoryError,
     CanonicalLessonWriteNotFoundError,
@@ -248,6 +260,39 @@ app.include_router(tritalele_router)
 # -----------------------------------------------------------------------------
 # Schemi Pydantic
 # -----------------------------------------------------------------------------
+class ContextPackCreateRequest(BaseModel):
+    name: str
+    lesson_ids: List[str]
+
+
+class ContextPackRenameRequest(BaseModel):
+    name: str
+
+
+class ContextPackMembersRequest(BaseModel):
+    lesson_ids: List[str]
+
+
+class ContextPackResponse(BaseModel):
+    id: str
+    name: str
+    vault_id: str
+    lesson_ids: List[str]
+    created_at: str
+    updated_at: str
+
+
+class ContextPackMemberResponse(BaseModel):
+    lesson_id: str
+    position: int
+    resolved: bool
+    lesson: Optional[Lesson] = None
+
+
+class ContextPackDetailResponse(ContextPackResponse):
+    members: List[ContextPackMemberResponse]
+
+
 class LessonBase(BaseModel):
     text: str = Field(..., description="Testo della lesson learned")
     topic: Optional[str] = Field(
@@ -3033,6 +3078,392 @@ def _projection_relationships(
                 ),
             },
         ) from exc
+
+
+def _context_pack_response(pack: ContextPack) -> ContextPackResponse:
+    return ContextPackResponse(
+        id=pack.id,
+        name=pack.name,
+        vault_id=pack.vault_id,
+        lesson_ids=list(pack.lesson_ids),
+        created_at=pack.created_at,
+        updated_at=pack.updated_at,
+    )
+
+
+def _context_pack_lesson_response(
+    snapshot: CanonicalLessonSnapshot,
+) -> Lesson:
+    return Lesson(
+        id=snapshot.lesson_id,
+        text=snapshot.text,
+        topic=snapshot.topic,
+        source=snapshot.source,
+        importance=snapshot.importance,
+        tags=snapshot.tags,
+        date=snapshot.date,
+        title=snapshot.title,
+        reviewed_at=snapshot.reviewed_at,
+        review_interval_days=snapshot.review_interval_days,
+        lifecycle=snapshot.lifecycle,
+        superseded_by=snapshot.superseded_by,
+    )
+
+
+def _context_pack_store_error(
+    exc: ContextPackStoreError,
+    *,
+    status_code: int = 400,
+    code: str = "context_pack_invalid",
+) -> NoReturn:
+    raise HTTPException(
+        status_code=status_code,
+        detail={
+            "code": code,
+            "message": str(exc),
+        },
+    ) from exc
+
+
+def _context_pack_member_read_error(exc: Exception) -> NoReturn:
+    if isinstance(exc, CanonicalLessonWriteNotFoundError):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "context_pack_member_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    if isinstance(exc, CanonicalLessonWriteAmbiguousError):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    if isinstance(exc, CanonicalLessonWriteStorageError):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    raise exc
+
+
+@app.get(
+    "/context-packs",
+    response_model=List[ContextPackResponse],
+)
+def list_context_packs_endpoint() -> List[ContextPackResponse]:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        packs = store.list(vault_id=context.vault_id)
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=503,
+            code="context_pack_store_failed",
+        )
+
+    return [_context_pack_response(pack) for pack in packs]
+
+
+@app.patch(
+    "/context-packs/{pack_id}",
+    response_model=ContextPackResponse,
+)
+def rename_context_pack_endpoint(
+    pack_id: str,
+    body: ContextPackRenameRequest,
+) -> ContextPackResponse:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        pack = store.rename(
+            pack_id,
+            vault_id=context.vault_id,
+            name=body.name,
+        )
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=404,
+            code="context_pack_not_found",
+        )
+
+    return _context_pack_response(pack)
+
+
+@app.post(
+    "/context-packs/{pack_id}/members",
+    response_model=ContextPackResponse,
+)
+def add_context_pack_members_endpoint(
+    pack_id: str,
+    body: ContextPackMembersRequest,
+) -> ContextPackResponse:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        pack = add_context_pack_members(
+            pack_id=pack_id,
+            lesson_ids=tuple(body.lesson_ids),
+            context=context,
+            store=store,
+        )
+    except (
+        CanonicalLessonWriteNotFoundError,
+        CanonicalLessonWriteAmbiguousError,
+        CanonicalLessonWriteStorageError,
+    ) as exc:
+        _context_pack_member_read_error(exc)
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=404,
+            code="context_pack_not_found",
+        )
+
+    return _context_pack_response(pack)
+
+
+@app.delete(
+    "/context-packs/{pack_id}/members",
+    response_model=ContextPackResponse,
+)
+def remove_context_pack_members_endpoint(
+    pack_id: str,
+    body: ContextPackMembersRequest,
+) -> ContextPackResponse:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        pack = store.remove_members(
+            pack_id,
+            vault_id=context.vault_id,
+            lesson_ids=tuple(body.lesson_ids),
+        )
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=404,
+            code="context_pack_not_found",
+        )
+
+    return _context_pack_response(pack)
+
+
+@app.delete(
+    "/context-packs/{pack_id}",
+    status_code=204,
+)
+def delete_context_pack_endpoint(pack_id: str) -> None:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        store.delete(
+            pack_id,
+            vault_id=context.vault_id,
+        )
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=404,
+            code="context_pack_not_found",
+        )
+
+
+@app.post(
+    "/context-packs",
+    response_model=ContextPackResponse,
+    status_code=201,
+)
+def create_context_pack_endpoint(
+    body: ContextPackCreateRequest,
+) -> ContextPackResponse:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        pack = create_context_pack(
+            name=body.name,
+            lesson_ids=tuple(body.lesson_ids),
+            context=context,
+            store=store,
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "context_pack_member_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except ContextPackStoreError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "context_pack_invalid",
+                "message": str(exc),
+            },
+        ) from exc
+
+    return _context_pack_response(pack)
+
+
+@app.get("/context-packs/{pack_id}/export")
+def export_context_pack_endpoint(
+    pack_id: str,
+    format: Literal["markdown", "json"] = Query(
+        default="markdown",
+        description="markdown → text/markdown; json → {markdown, n_lessons}.",
+    ),
+):
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        resolved = get_resolved_context_pack(
+            pack_id=pack_id,
+            context=context,
+            store=store,
+        )
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=404,
+            code="context_pack_not_found",
+        )
+    except CanonicalLessonWriteAmbiguousError as exc:
+        _context_pack_member_read_error(exc)
+    except CanonicalLessonWriteStorageError as exc:
+        _context_pack_member_read_error(exc)
+
+    missing_ids = [
+        member.lesson_id
+        for member in resolved.members
+        if not member.resolved
+    ]
+    if missing_ids:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "context_pack_has_broken_references",
+                "message": (
+                    "Context Pack cannot be exported while canonical "
+                    "references are missing."
+                ),
+                "lesson_ids": missing_ids,
+            },
+        )
+
+    lessons = [
+        _context_pack_lesson_response(member.lesson).model_dump()
+        for member in resolved.members
+        if member.lesson is not None
+    ]
+
+    markdown = search_results_to_markdown(
+        lessons,
+        include_frontmatter=True,
+        filters_summary=f"context_pack={resolved.pack.name!r}",
+    )
+
+    if format == "json":
+        return ExportSearchResponse(
+            markdown=markdown,
+            n_lessons=len(lessons),
+        )
+
+    return Response(
+        content=markdown.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+    )
+
+
+@app.get(
+    "/context-packs/{pack_id}",
+    response_model=ContextPackDetailResponse,
+)
+def inspect_context_pack_endpoint(
+    pack_id: str,
+) -> ContextPackDetailResponse:
+    context = get_active_vault_context()
+    store = ContextPackStore(context_pack_store_path())
+
+    try:
+        resolved = get_resolved_context_pack(
+            pack_id=pack_id,
+            context=context,
+            store=store,
+        )
+    except ContextPackStoreError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "context_pack_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+
+    pack = resolved.pack
+    return ContextPackDetailResponse(
+        **_context_pack_response(pack).model_dump(),
+        members=[
+            ContextPackMemberResponse(
+                lesson_id=member.lesson_id,
+                position=member.position,
+                resolved=member.resolved,
+                lesson=(
+                    _context_pack_lesson_response(member.lesson)
+                    if member.lesson is not None
+                    else None
+                ),
+            )
+            for member in resolved.members
+        ],
+    )
 
 
 @app.get("/lessons/{lesson_id:path}", response_model=LessonDetail)

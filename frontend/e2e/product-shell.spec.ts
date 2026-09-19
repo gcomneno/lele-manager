@@ -478,3 +478,79 @@ test.describe('responsive shell recovery', () => {
     await expect(page.getByRole('heading', { name: 'Status and maintenance' })).toBeVisible()
   })
 })
+
+test.describe("Browse context packs", () => {
+  test("creates an ordered Context Pack from selected visible LeLe", async ({ page }) => {
+    const createdBodies: unknown[] = []
+
+    await page.route("**/lessons/search", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            id: "topic/bravo",
+            text: "Bravo body",
+            title: "Bravo",
+            lifecycle: "active",
+          },
+          {
+            id: "topic/charlie",
+            text: "Charlie body",
+            title: "Charlie",
+            lifecycle: "review-needed",
+          },
+        ]),
+      })
+    })
+
+    await page.route("**/context-packs", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback()
+        return
+      }
+
+      const body = route.request().postDataJSON()
+      createdBodies.push(body)
+
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "pack-1",
+          name: body.name,
+          vault_id: "vault-1",
+          lesson_ids: body.lesson_ids,
+          created_at: "2026-09-19T10:00:00+00:00",
+          updated_at: "2026-09-19T10:00:00+00:00",
+        }),
+      })
+    })
+
+    await page.goto("/app/#/browse")
+
+    await page.getByRole("button", { name: "Search", exact: true }).click()
+
+    await page.getByLabel(/Select LeLe Bravo/).check()
+    await page.getByLabel(/Select LeLe Charlie/).check()
+
+    await page
+      .getByLabel("Context Pack name")
+      .fill("Release LeLe Manager")
+
+    await page
+      .getByRole("button", { name: "Create Context Pack" })
+      .click()
+
+    await expect(
+      page.getByText('Context Pack "Release LeLe Manager" created with 2 LeLe.'),
+    ).toBeVisible()
+
+    expect(createdBodies).toEqual([
+      {
+        name: "Release LeLe Manager",
+        lesson_ids: ["topic/bravo", "topic/charlie"],
+      },
+    ])
+  })
+})
