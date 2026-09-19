@@ -97,6 +97,31 @@ export interface ExportSearchResponse {
   n_lessons: number;
 }
 
+export interface ContextPack {
+  id: string;
+  name: string;
+  vault_id: string;
+  lesson_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContextPackMember {
+  lesson_id: string;
+  position: number;
+  resolved: boolean;
+  lesson: Lesson | null;
+}
+
+export interface ContextPackDetail extends ContextPack {
+  members: ContextPackMember[];
+}
+
+export interface ContextPackExportResponse {
+  markdown: string;
+  n_lessons: number;
+}
+
 export interface SimilarItem {
   id: string;
   score: number;
@@ -972,6 +997,76 @@ export const api = {
     }
     if (format === "json") {
       return (await resp.json()) as ExportSearchResponse;
+    }
+    return resp.text();
+  },
+
+  listContextPacks: () =>
+    request<ContextPack[]>("/context-packs"),
+
+  createContextPack: (name: string, lessonIds: string[]) =>
+    request<ContextPack>("/context-packs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        lesson_ids: lessonIds,
+      }),
+    }),
+
+  getContextPack: (id: string) =>
+    request<ContextPackDetail>(
+      `/context-packs/${encodeURIComponent(id)}`,
+    ),
+
+  renameContextPack: (id: string, name: string) =>
+    request<ContextPack>(
+      `/context-packs/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      },
+    ),
+
+  addContextPackMembers: (id: string, lessonIds: string[]) =>
+    request<ContextPack>(
+      `/context-packs/${encodeURIComponent(id)}/members`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lesson_ids: lessonIds }),
+      },
+    ),
+
+  removeContextPackMembers: (id: string, lessonIds: string[]) =>
+    request<ContextPack>(
+      `/context-packs/${encodeURIComponent(id)}/members`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lesson_ids: lessonIds }),
+      },
+    ),
+
+  deleteContextPack: (id: string) =>
+    request<void>(
+      `/context-packs/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
+
+  exportContextPack: async (
+    id: string,
+    format: "markdown" | "json" = "markdown",
+  ): Promise<string | ContextPackExportResponse> => {
+    const resp = await fetch(
+      `/context-packs/${encodeURIComponent(id)}/export?format=${encodeURIComponent(format)}`,
+    );
+    if (!resp.ok) {
+      throw await responseError(resp);
+    }
+    if (format === "json") {
+      return (await resp.json()) as ContextPackExportResponse;
     }
     return resp.text();
   },

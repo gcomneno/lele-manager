@@ -16,6 +16,7 @@
   import LessonCard from '../components/LessonCard.svelte'
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
   import BulkDeleteLessonsDialog from '../components/BulkDeleteLessonsDialog.svelte'
+  import ContextPacksManager from '../components/ContextPacksManager.svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
     Button,
@@ -63,6 +64,10 @@
   let bulkNotice = $state('')
   let bulkNoticeTone = $state<'success' | 'warning' | 'error'>('success')
   let bulkFailedIds = $state<string[]>([])
+  let contextPackName = $state('')
+  let contextPackCreating = $state(false)
+  let contextPackNotice = $state('')
+  let contextPackRefreshToken = $state(0)
 
   function clearSelection() {
     selectedIds = new Set()
@@ -90,6 +95,37 @@
 
   function selectedVisibleLessons() {
     return lessons.filter((lesson) => selectedIds.has(lesson.id))
+  }
+
+  async function createContextPackFromSelection() {
+    const name = contextPackName.trim()
+    const selectedLessons = selectedVisibleLessons()
+
+    if (!name || selectedLessons.length === 0) return
+
+    contextPackCreating = true
+    contextPackNotice = ''
+    error = ''
+
+    try {
+      const pack = await api.createContextPack(
+        name,
+        selectedLessons.map((lesson) => lesson.id),
+      )
+      contextPackName = ''
+      contextPackRefreshToken += 1
+      contextPackNotice = formatMessage(
+        $messages.contextPackCreated,
+        {
+          name: pack.name,
+          count: pack.lesson_ids.length,
+        },
+      )
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e)
+    } finally {
+      contextPackCreating = false
+    }
   }
 
   function hybridReasonLabel(reason: HybridSearchReason): string {
@@ -436,6 +472,11 @@
     {/if}
   </Panel>
 
+  <ContextPacksManager
+    selectedLessonIds={selectedVisibleLessons().map((lesson) => lesson.id)}
+    refreshToken={contextPackRefreshToken}
+  />
+
   <section class="results">
     {#if loading}
       <p class="meta">{$messages.commonLoading}</p>
@@ -456,6 +497,39 @@
               {$messages.bulkDeleteSelected}
             </button>
           </div>
+
+          <div
+            class="context-pack-create"
+            data-testid="context-pack-create"
+          >
+            <label>
+              <FieldLabel label={$messages.contextPackNameLabel} />
+              <input
+                bind:value={contextPackName}
+                placeholder={$messages.contextPackNamePlaceholder}
+              />
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              class="lele-secondary-button"
+              disabled={contextPackCreating || !contextPackName.trim()}
+              onclick={createContextPackFromSelection}
+            >
+              {contextPackCreating
+                ? $messages.contextPackCreating
+                : $messages.contextPackCreate}
+            </Button>
+          </div>
+
+          {#if contextPackNotice}
+            <FormStatus
+              message={contextPackNotice}
+              tone="success"
+              style="--giu-form-status-padding: var(--space-2) var(--space-3)"
+            />
+          {/if}
         {/if}
       </div>
       {#each lessons as lesson}
@@ -664,6 +738,17 @@
     .browse-filter-grid {
       width: 100%;
     }
+  }
+
+  .context-pack-create {
+    display: flex;
+    align-items: end;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .context-pack-create label {
+    min-width: min(100%, 20rem);
   }
 
 </style>
