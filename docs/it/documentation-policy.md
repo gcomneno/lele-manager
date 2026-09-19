@@ -15,6 +15,41 @@ limitazioni e significato tecnico; non deve diventare un riassunto abbreviato.
 Comandi, opzioni CLI, endpoint HTTP, simboli Python, variabili d'ambiente,
 percorsi, nomi di file e snippet di codice non vengono mai tradotti.
 
+## Presentazione del prodotto
+
+L'inglese è anche la fonte canonica e predefinita mantenuta per la
+presentazione pubblica corrente del prodotto, salvo superfici che mantengono
+esplicitamente cataloghi localizzati deterministici.
+
+La selezione della lingua incide solo sulla presentazione. Non deve cambiare
+regole di dominio, autorizzazione, mutazioni, risultati strutturati, exit code,
+validazione, comportamento dei workflow, identificatori, route, fingerprint o
+contratti machine-readable.
+
+La GUI mantiene oggi cataloghi deterministici in inglese e italiano. L'inglese
+è il contratto sorgente; l'italiano è un catalogo di presentazione derivato. Le
+locale GUI non supportate ricadono sull'inglese.
+
+CLI e API non espongono attualmente un selettore di lingua e possono mantenere
+testo di presentazione legacy. Il nuovo testo di presentazione mantenuto usa
+l'inglese canonico, salvo che quella superficie adotti esplicitamente cataloghi
+localizzati deterministici. Un selettore è appropriato solo quando quella
+superficie mantiene cataloghi di presentazione reali con semantica linguistica
+equivalente.
+
+Le stringhe statiche devono usare cataloghi o risorse sorgente deterministici.
+Il contenuto dinamico leggibile da persone può usare una capacità condivisa e
+provider-independent di GiadaWare AI Translation solo quando la traduzione
+runtime è davvero necessaria. Tale traduzione deve preservare il significato,
+non deve riassumere, riscrivere, arricchire, semplificare materialmente o
+correggere contenuto di dominio, e deve ricadere sull'inglese canonico in caso
+di errore. La traduzione dinamica è comportamento opzionale di integrazione, non
+una dipendenza runtime core di LeLe Manager.
+
+Conoscenza scritta dall'utente, Markdown canonico, risultati API/CLI
+strutturati, chiavi JSON, error code, valori enum, route, ID, fingerprint,
+percorsi e altri contratti machine-readable non vengono tradotti.
+
 ## Nomi e navigazione
 
 - I documenti nella root usano `.it.md` per il mirror italiano:
@@ -106,6 +141,11 @@ release. Le nuove voci devono usare l'inglese.
 
 ## Non obiettivi
 
-Questa politica non introduce internazionalizzazione della GUI, localizzazione
-di CLI o API, selezione dinamica della lingua, traduzione automatica, un
-generatore di sito documentale o una piattaforma di gestione traduzioni.
+Questa politica non introduce selezione runtime della lingua per CLI o API,
+traduzione automatica, un generatore di sito documentale o una piattaforma di
+gestione traduzioni. Inoltre non rende GiadaWare AI una dipendenza core runtime,
+di rete, cloud, account, telemetry o provider di LeLe Manager.
+
+Possono restare eccezioni specifiche del repository per ragioni legali, imposte
+dall'esterno, educative, upstream, archivistiche, generate, storiche o di
+compatibilità esplicitamente documentate.

@@ -97,3 +97,17 @@ def test_root_navigation_stays_in_the_same_language() -> None:
     assert "(CONTRIBUTING.md)" in english_readme
     assert "(ROADMAP.it.md)" in italian_readme
     assert "(CONTRIBUTING.it.md)" in italian_readme
+
+
+def test_product_presentation_contract_preserves_semantics() -> None:
+    policy = _read(Path("docs/documentation-policy.md"))
+    normalized_policy = " ".join(policy.split())
+
+    assert "English is also the canonical and default maintained source" in normalized_policy
+    assert "Language selection affects presentation only" in normalized_policy
+    assert "CLI and API do not currently expose a language selector" in normalized_policy
+    assert "may retain legacy presentation text" in normalized_policy
+    assert "New maintained presentation text uses canonical English" in normalized_policy
+    assert "provider-independent GiadaWare AI Translation" in normalized_policy
+    assert "must fall back to canonical English on failure" in normalized_policy
+    assert "machine-readable contracts are not translated" in normalized_policy
