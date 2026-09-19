@@ -38,6 +38,7 @@ from lele_manager.application.lesson_candidate import (
     CandidateReviewAction,
     CandidateReviewEvent,
     CandidateRevisionConflictError,
+    CandidateSourceEvidence,
     CandidateState,
     LessonCandidate,
 )
@@ -64,6 +65,11 @@ def reviewed(
             SourceSpan(10, 23),
             {"run": "r1"},
             ({"kind": "trim"},),
+            (
+                CandidateSourceEvidence(1, SourceSpan(0, 9)),
+                CandidateSourceEvidence(2, SourceSpan(10, 23)),
+            ),
+            "sha256:semantic-derivation",
         ),
         {
             "topic": "architecture",
@@ -165,14 +171,20 @@ def test_approval_writes_valid_markdown_and_complete_provenance(tmp_path: Path) 
     assert frontmatter["provenance"] == {
         "candidate_id": item.candidate_id,
         "chunk_index": 2,
+        "derivation_id": "sha256:semantic-derivation",
         "ingested_at": NOW.isoformat(),
         "run_metadata": {"run": "r1"},
         "source_fingerprint": "sha256:source",
         "source_kind": "markdown",
         "source_logical_name": "inbox/lesson.md",
         "source_span": {"end": 23, "start": 10},
+        "supporting_evidence": [
+            {"chunk_index": 1, "source_span": {"end": 9, "start": 0}},
+            {"chunk_index": 2, "source_span": {"end": 23, "start": 10}},
+        ],
         "transformations": [{"kind": "trim"}],
     }
+    assert canonical_lesson_for(repository.item).provenance == frontmatter["provenance"]
     assert check_markdown_files([path], vault_dir=tmp_path / "vault").valid
 
 
@@ -302,6 +314,8 @@ def test_nested_provenance_order_has_identical_specification_and_bytes(
             left.provenance.source_span,
             {"outer": {"b": 2, "a": 1}, "items": [{"z": 0, "a": 9}]},
             ({"nested": {"y": 2, "x": 1}},),
+            left.provenance.supporting_evidence,
+            left.provenance.derivation_id,
         ),
         left.proposed_metadata,
     )
@@ -316,6 +330,8 @@ def test_nested_provenance_order_has_identical_specification_and_bytes(
             left.provenance.source_span,
             {"items": [{"a": 9, "z": 0}], "outer": {"a": 1, "b": 2}},
             ({"nested": {"x": 1, "y": 2}},),
+            left.provenance.supporting_evidence,
+            left.provenance.derivation_id,
         ),
     )
     right = replace(right, state=left.state, revision=left.revision,

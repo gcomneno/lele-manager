@@ -33,6 +33,8 @@ API = "/api/v1/tritalele"
 EXPECTED_PATHS = {
     f"{API}/ingestion/preview": {"post"},
     f"{API}/ingestion/stage": {"post"},
+    f"{API}/semantic/preview": {"post"},
+    f"{API}/semantic/stage": {"post"},
     f"{API}/candidates": {"get"},
     f"{API}/candidates/{{candidate_id}}": {"get", "patch"},
     f"{API}/candidates/{{candidate_id}}/accept": {"post"},
@@ -79,9 +81,7 @@ def raw_payload(
     }
 
 
-def metadata(
-    *, topic: str = "python", title: str = "Stable API"
-) -> dict[str, object]:
+def metadata(*, topic: str = "python", title: str = "Stable API") -> dict[str, object]:
     return {
         "topic": topic,
         "source": "api-test",
@@ -127,7 +127,10 @@ def prepare_accepted_candidate(
     item_id = candidate_id(created)
     revised = client.patch(
         f"{API}/candidates/{item_id}",
-        json={"expected_revision": 0, "proposed_metadata": metadata(topic=topic, title=title)},
+        json={
+            "expected_revision": 0,
+            "proposed_metadata": metadata(topic=topic, title=title),
+        },
     )
     assert revised.status_code == 200, revised.text
     accepted = client.post(
@@ -170,9 +173,7 @@ def test_approval_uses_one_cached_vault_snapshot_per_request(
 def test_openapi_exposes_exact_versioned_surface_and_schemas() -> None:
     document = app.openapi()
     expected_operations = {
-        (path, method)
-        for path, methods in EXPECTED_PATHS.items()
-        for method in methods
+        (path, method) for path, methods in EXPECTED_PATHS.items() for method in methods
     }
     actual_operations = {
         (path, method)
@@ -210,9 +211,9 @@ def test_openapi_exposes_exact_versioned_surface_and_schemas() -> None:
         operation = document["paths"][path][method]
         operation_ids.append(operation["operationId"])
         assert operation["operationId"].startswith("tritalele_")
-        assert operation["responses"]["200"]["content"]["application/json"][
-            "schema"
-        ]["$ref"].startswith("#/components/schemas/")
+        assert operation["responses"]["200"]["content"]["application/json"]["schema"][
+            "$ref"
+        ].startswith("#/components/schemas/")
         for status, response in operation["responses"].items():
             if status in {"200", "422"}:
                 continue
@@ -220,9 +221,9 @@ def test_openapi_exposes_exact_versioned_surface_and_schemas() -> None:
                 "$ref": "#/components/schemas/APIErrorResponse"
             }
         if method in {"patch", "post"}:
-            assert operation["requestBody"]["content"]["application/json"][
-                "schema"
-            ]["$ref"].startswith("#/components/schemas/")
+            assert operation["requestBody"]["content"]["application/json"]["schema"][
+                "$ref"
+            ].startswith("#/components/schemas/")
     assert len(operation_ids) == len(set(operation_ids))
 
 
@@ -349,7 +350,9 @@ def test_stage_creates_only_candidates_and_replay_is_idempotent(
     assert second_body["created_candidate_ids"] == []
     assert second_body["skipped_candidate_ids"] == first_body["candidate_ids"]
     assert preview_existing.status_code == 200
-    assert preview_existing.json()["skipped_candidate_ids"] == first_body["candidate_ids"]
+    assert (
+        preview_existing.json()["skipped_candidate_ids"] == first_body["candidate_ids"]
+    )
     assert preview_existing.json()["pending_candidate_ids"] == []
     assert active_context.candidates_path.is_file()
     assert not (tmp_path / "vault").exists()
@@ -407,9 +410,7 @@ def test_candidate_filters_are_passed_to_review_service(client: TestClient) -> N
     seen: list[CandidateReviewFilter] = []
 
     class RecordingReviewService:
-        def list_candidates(
-            self, filters: CandidateReviewFilter
-        ) -> tuple[object, ...]:
+        def list_candidates(self, filters: CandidateReviewFilter) -> tuple[object, ...]:
             seen.append(filters)
             return ()
 
@@ -444,9 +445,7 @@ def test_candidate_list_filtering_and_order_are_deterministic(
     second = stage_one(client, content="Plain candidate", logical_name="b.txt")
 
     all_candidates = client.get(f"{API}/candidates")
-    filtered = client.get(
-        f"{API}/candidates", params={"source_logical_name": "a.md"}
-    )
+    filtered = client.get(f"{API}/candidates", params={"source_logical_name": "a.md"})
 
     assert all_candidates.status_code == filtered.status_code == 200
     ids = [item["candidate_id"] for item in all_candidates.json()["candidates"]]
@@ -489,6 +488,7 @@ def test_candidate_retrieval_has_stable_transport_only_representation(
         "proposed_text",
         "effective_text",
         "proposed_metadata",
+        "proposal_rationale",
         "approval_destination",
         "provenance",
         "review_history",
@@ -496,6 +496,7 @@ def test_candidate_retrieval_has_stable_transport_only_representation(
     assert body["candidate_id"] == item_id
     assert body["approval_destination"] is None
     assert body["original_text"] == body["effective_text"]
+    assert body["proposal_rationale"] is None
     assert body["provenance"]["ingested_at"].endswith("+00:00")
     assert set(body["provenance"]) == {
         "source_kind",
@@ -506,7 +507,11 @@ def test_candidate_retrieval_has_stable_transport_only_representation(
         "source_span",
         "run_metadata",
         "transformations",
+        "supporting_evidence",
+        "derivation_id",
     }
+    assert body["provenance"]["supporting_evidence"] == []
+    assert body["provenance"]["derivation_id"] is None
     assert str(tmp_path) not in response.text
     assert "JsonCandidateRepository" not in response.text
     assert "MappingProxyType" not in response.text
@@ -521,9 +526,7 @@ def test_approval_destination_is_backend_computed_and_additive(
         f"{API}/candidates/{item_id}",
         json={
             "expected_revision": 0,
-            "proposed_metadata": metadata(
-                topic="python", title="Déstination canonica"
-            ),
+            "proposed_metadata": metadata(topic="python", title="Déstination canonica"),
         },
     )
 
@@ -595,9 +598,10 @@ def test_revision_supports_text_metadata_and_complete_updates(
     assert initial_metadata.status_code == initial_text.status_code == 200
     assert text_response.status_code == 200
     assert text_response.json()["proposed_text"] == "Rewritten text."
-    assert text_response.json()["proposed_metadata"] == initial_metadata.json()[
-        "proposed_metadata"
-    ]
+    assert (
+        text_response.json()["proposed_metadata"]
+        == initial_metadata.json()["proposed_metadata"]
+    )
     assert metadata_response.status_code == 200
     assert metadata_response.json()["proposed_text"] == "Preserved text."
     assert metadata_response.json()["proposed_metadata"]["title"] == "Metadata"
@@ -615,9 +619,7 @@ def test_revision_rejects_incomplete_noop_and_identical_proposals(
         f"{API}/candidates/{item_id}",
         json={"expected_revision": 0, "proposed_metadata": {"topic": "python"}},
     )
-    no_op = client.patch(
-        f"{API}/candidates/{item_id}", json={"expected_revision": 0}
-    )
+    no_op = client.patch(f"{API}/candidates/{item_id}", json={"expected_revision": 0})
     first = client.patch(
         f"{API}/candidates/{item_id}",
         json={"expected_revision": 0, "proposed_text": "Changed."},
@@ -701,7 +703,9 @@ def test_accept_and_reject_enforce_lifecycle_and_expected_revision(
     )
 
 
-def test_approval_is_ordered_and_idempotent(client: TestClient, tmp_path: Path, active_context) -> None:
+def test_approval_is_ordered_and_idempotent(
+    client: TestClient, tmp_path: Path, active_context
+) -> None:
     item_id, revision = prepare_accepted_candidate(client)
     projection = active_context.projection_path
     vault = tmp_path / "vault"
@@ -720,7 +724,9 @@ def test_approval_is_ordered_and_idempotent(client: TestClient, tmp_path: Path, 
     assert result["candidate_state_changed"] is True
     assert result["refresh_outcome"] == {"refreshed": True}
     assert projection.is_file()
-    records = [json.loads(line) for line in projection.read_text(encoding="utf-8").splitlines()]
+    records = [
+        json.loads(line) for line in projection.read_text(encoding="utf-8").splitlines()
+    ]
     assert [record["id"] for record in records] == [result["lesson_id"]]
     assert client.get(f"{API}/candidates/{item_id}").json()["state"] == "approved"
     assert len(list(vault.rglob("*.md"))) == 1
@@ -821,7 +827,9 @@ def test_approval_path_and_identity_collisions_are_controlled(
 
 def test_partial_ingestion_exposes_stable_recovery_payload(client: TestClient) -> None:
     class FailingIngestionService:
-        def ingest(self, source: object, settings: object, preview: bool = False) -> None:
+        def ingest(
+            self, source: object, settings: object, preview: bool = False
+        ) -> None:
             raise PartialIngestionError(
                 created_candidate_ids=("created-a",),
                 failed_candidate_id="failed-b",
@@ -932,7 +940,9 @@ def test_storage_failure_never_leaks_paths_or_exception_details(
     assert "CandidateReviewStorageError" not in response.text
 
 
-def test_full_api_happy_path(client: TestClient, tmp_path: Path, active_context) -> None:
+def test_full_api_happy_path(
+    client: TestClient, tmp_path: Path, active_context
+) -> None:
     payload = raw_payload(
         "# API boundary\n\nA complete lesson candidate.",
         source_kind="markdown",
@@ -1027,3 +1037,117 @@ def test_boundary_isolation_and_no_forbidden_framework_leakage() -> None:
 def test_dependency_overrides_are_cleared_after_each_test() -> None:
     assert app.dependency_overrides == {}
     assert candidates_path().name == "candidates.json"
+
+
+def test_semantic_api_disabled_returns_controlled_503(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LELE_SEMANTIC_PROVIDER", raising=False)
+    monkeypatch.delenv("LELE_SEMANTIC_MODEL", raising=False)
+
+    response = client.post(f"{API}/semantic/preview", json=raw_payload())
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "semantic_disabled"
+
+
+def test_semantic_api_configuration_failure_is_sanitized(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LELE_SEMANTIC_PROVIDER", "openai")
+    monkeypatch.setenv("LELE_SEMANTIC_MODEL", "private-model")
+
+    response = client.post(f"{API}/semantic/preview", json=raw_payload())
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "semantic_configuration_invalid"
+    assert "openai" not in response.text.lower()
+    assert "private-model" not in response.text
+
+
+def test_semantic_api_candidate_exposes_advisory_evidence(
+    client: TestClient,
+) -> None:
+    from lele_manager.application.semantic_lesson_extraction import (
+        SemanticLessonExtractionResult,
+        SemanticLessonProposal,
+        SemanticRawSourceIngestionService,
+    )
+    from lele_manager.application.raw_source_chunking import (
+        DeterministicRawSourceChunker,
+    )
+
+    class FakeExtractor:
+        def execute(self, value):
+            return SemanticLessonExtractionResult(
+                (
+                    SemanticLessonProposal(
+                        title="Validation boundary",
+                        body="Validate untrusted data before granting authority.",
+                        rationale="The source directly supports the proposal.",
+                        supporting_chunk_indexes=(value.chunks[0].index,),
+                        topic="architecture",
+                        tags=("validation",),
+                        source_label="api-test",
+                        importance=5,
+                    ),
+                )
+            )
+
+    repository = tritalele.get_candidate_repository()
+    service = SemanticRawSourceIngestionService(
+        DeterministicRawSourceChunker(),
+        FakeExtractor(),
+        repository,
+        extraction_metadata={
+            "strategy": "semantic",
+            "provider": "ollama",
+            "model": "test-model",
+            "locality": "local",
+            "endpoint": "http://127.0.0.1:11434",
+        },
+    )
+    app.dependency_overrides[tritalele.get_semantic_ingestion_service] = lambda: service
+
+    response = client.post(
+        f"{API}/semantic/preview",
+        json=raw_payload(
+            "Validate untrusted data before granting authority.",
+            max_characters=2_000,
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    candidate = body["candidates"][0]
+    assert candidate["proposal_rationale"] == (
+        "The source directly supports the proposal."
+    )
+    assert candidate["provenance"]["derivation_id"].startswith("sha256:")
+    assert candidate["provenance"]["chunk_index"] is None
+    assert candidate["provenance"]["source_span"] is None
+    assert len(candidate["provenance"]["supporting_evidence"]) == 1
+
+
+def test_semantic_api_extraction_failure_is_controlled(
+    client: TestClient,
+) -> None:
+    from lele_manager.application.semantic_lesson_extraction import (
+        SemanticExtractionError,
+    )
+
+    class FailingSemanticService:
+        def ingest(self, source, settings, preview=False):
+            raise SemanticExtractionError("/private/provider detail")
+
+    app.dependency_overrides[tritalele.get_semantic_ingestion_service] = (
+        FailingSemanticService
+    )
+
+    response = client.post(f"{API}/semantic/stage", json=raw_payload())
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "semantic_extraction_failed"
+    assert "/private/provider" not in response.text

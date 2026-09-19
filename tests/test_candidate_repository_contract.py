@@ -137,9 +137,10 @@ def test_create_get_list_and_update_lifecycle_and_metadata(
     assert repository.get(original.candidate_id) == original
 
     updated = mutated(original, proposed_metadata={"topic": "revised"})
-    assert repository.update(
-        original.candidate_id, updated, expected_revision=0
-    ) == updated
+    assert (
+        repository.update(original.candidate_id, updated, expected_revision=0)
+        == updated
+    )
     assert repository.get(original.candidate_id) == updated
 
 
@@ -235,7 +236,9 @@ def test_aware_timestamp_round_trips(tmp_path: Path) -> None:
     assert loaded.provenance.ingested_at.utcoffset() is not None
 
 
-def test_explicit_empty_document_and_deterministic_order_and_bytes(tmp_path: Path) -> None:
+def test_explicit_empty_document_and_deterministic_order_and_bytes(
+    tmp_path: Path,
+) -> None:
     empty_path = tmp_path / "empty.json"
     empty_path.write_text('{"candidates":[],"schema_version":1}\n', encoding="utf-8")
     assert JsonCandidateRepository(empty_path).list() == ()
@@ -262,7 +265,7 @@ def test_explicit_empty_document_and_deterministic_order_and_bytes(tmp_path: Pat
         "",
         "not json",
         "[]",
-        '{"schema_version":3,"candidates":[]}',
+        '{"schema_version":4,"candidates":[]}',
         '{"schema_version":1,"candidates":{}}',
         '{"schema_version":1,"candidates":[{}]}',
         '{"schema_version":true,"candidates":[]}',
@@ -357,7 +360,9 @@ def test_storage_failures_are_controlled_and_do_not_leak_paths(tmp_path: Path) -
     blocked_parent = tmp_path / "parent-is-a-file"
     blocked_parent.write_text("x", encoding="utf-8")
     with pytest.raises(CandidateStorageError, match="write staging storage") as caught:
-        JsonCandidateRepository(blocked_parent / "candidates.json").create(candidate("x"))
+        JsonCandidateRepository(blocked_parent / "candidates.json").create(
+            candidate("x")
+        )
     assert str(blocked_parent) not in str(caught.value)
     assert caught.value.__cause__ is None
 
@@ -398,25 +403,38 @@ def test_failed_atomic_replace_preserves_previous_storage(
     assert list(tmp_path.glob(".candidates.json.*.tmp")) == []
 
 
-def test_schema_v1_is_readable_and_successful_update_rewrites_v2(tmp_path: Path) -> None:
+def test_schema_v1_is_readable_and_successful_update_rewrites_current_schema(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "candidates.json"
     repository = JsonCandidateRepository(path)
     original = repository.create(candidate("legacy"))
     document = json.loads(path.read_text(encoding="utf-8"))
     document["schema_version"] = 1
     record = document["candidates"][0]
-    for field in ("proposed_text", "revision", "review_history"):
+    for field in (
+        "proposed_text",
+        "revision",
+        "review_history",
+        "proposal_rationale",
+    ):
         del record[field]
+    for field in ("supporting_evidence", "derivation_id"):
+        del record["provenance"][field]
     path.write_text(json.dumps(document), encoding="utf-8")
 
     legacy = repository.get(original.candidate_id)
-    assert (legacy.proposed_text, legacy.revision, legacy.review_history) == (None, 0, ())
+    assert (legacy.proposed_text, legacy.revision, legacy.review_history) == (
+        None,
+        0,
+        (),
+    )
     updated = mutated(legacy, proposed_metadata={"legacy": False})
     updated = replace(updated, proposed_text="reviewed text")
     repository.update(legacy.candidate_id, updated, expected_revision=0)
 
     rewritten = json.loads(path.read_text(encoding="utf-8"))
-    assert rewritten["schema_version"] == 2
+    assert rewritten["schema_version"] == 3
     assert repository.get(original.candidate_id) == updated
 
 
@@ -439,7 +457,9 @@ def test_genuine_schema_v1_all_states_round_trip_without_read_rewrite(
         item.proposed_metadata == {"legacy": ("kept", {"nested": True})}
         for item in loaded
     )
-    assert all(item.provenance.run_metadata == {"legacy_run": (1, 2)} for item in loaded)
+    assert all(
+        item.provenance.run_metadata == {"legacy_run": (1, 2)} for item in loaded
+    )
     assert all(
         item.provenance.transformations == ({"kind": "legacy-transform"},)
         for item in loaded
@@ -465,9 +485,9 @@ def test_first_genuine_schema_v1_mutation_rewrites_every_record_deterministicall
         )
 
     first_document = json.loads(first_path.read_text(encoding="utf-8"))
-    assert first_document["schema_version"] == 2
+    assert first_document["schema_version"] == 3
     assert all(
-        set(record) == json_adapter.CANDIDATE_FIELDS_V2
+        set(record) == json_adapter.CANDIDATE_FIELDS_V3
         for record in first_document["candidates"]
     )
     assert first_path.read_bytes() == second_path.read_bytes()
@@ -547,7 +567,9 @@ def test_mixed_schema_record_and_unknown_review_event_field_are_rejected(
         repository.list()
 
 
-def test_stale_update_and_rewritten_history_leave_bytes_unchanged(tmp_path: Path) -> None:
+def test_stale_update_and_rewritten_history_leave_bytes_unchanged(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "candidates.json"
     repository = JsonCandidateRepository(path)
     original = repository.create(candidate("concurrent"))
@@ -637,7 +659,9 @@ def test_equal_instant_provenance_timestamp_cannot_be_rewritten(tmp_path: Path) 
     assert path.read_bytes() == before
 
 
-def test_equal_comparing_json_metadata_cannot_rewrite_provenance(tmp_path: Path) -> None:
+def test_equal_comparing_json_metadata_cannot_rewrite_provenance(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "provenance-metadata-rewrite.json"
     repository = JsonCandidateRepository(path)
     seeded = candidate("provenance metadata")
@@ -675,7 +699,9 @@ def test_missing_candidate_id_on_malformed_update_is_controlled(
     assert path.read_bytes() == before
 
 
-def test_malformed_empty_appended_history_is_a_controlled_conflict(tmp_path: Path) -> None:
+def test_malformed_empty_appended_history_is_a_controlled_conflict(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "candidates.json"
     repository = JsonCandidateRepository(path)
     original = repository.create(candidate("malformed update"))
@@ -762,9 +788,7 @@ def test_all_rejected_update_shapes_preserve_storage_bytes(tmp_path: Path) -> No
 
     for candidate_id, proposed, expected, error_type in attempts:
         with pytest.raises(error_type):
-            repository.update(
-                candidate_id, proposed, expected_revision=expected
-            )
+            repository.update(candidate_id, proposed, expected_revision=expected)
         assert path.read_bytes() == before
 
 
@@ -787,7 +811,9 @@ def test_invalid_expected_revision_never_writes(
     assert path.read_bytes() == before
 
 
-def test_staging_never_touches_vault_projection_exports_or_ml_datasets(tmp_path: Path) -> None:
+def test_staging_never_touches_vault_projection_exports_or_ml_datasets(
+    tmp_path: Path,
+) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
     approved = vault / "approved.md"
@@ -815,7 +841,9 @@ def test_staging_never_touches_vault_projection_exports_or_ml_datasets(tmp_path:
     )
 
     assert {path: path.read_bytes() for path in protected} == protected
-    assert sorted(path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*")) == [
+    assert sorted(
+        path.relative_to(tmp_path).as_posix() for path in tmp_path.rglob("*")
+    ) == [
         "export.jsonl",
         "lessons.jsonl",
         "staging",
