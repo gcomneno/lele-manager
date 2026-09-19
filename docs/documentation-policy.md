@@ -15,6 +15,38 @@ and technical meaning; it must not be a shortened summary.
 Commands, CLI options, HTTP endpoints, Python symbols, environment variables,
 paths, filenames, and code snippets are never translated.
 
+## Product presentation
+
+English is also the canonical and default maintained source for current public
+product presentation unless a surface explicitly maintains deterministic
+localized catalogs.
+
+Language selection affects presentation only. It must not change domain rules,
+authorization, mutations, structured results, exit codes, validation, workflow
+behavior, identifiers, routes, fingerprints, or machine-readable contracts.
+
+The GUI currently maintains deterministic English and Italian catalogs. English
+is the source contract; Italian is a derived presentation catalog. Unsupported
+GUI locales fall back to English.
+
+The CLI and API do not currently expose a language selector and may retain
+legacy presentation text. New maintained presentation text uses canonical
+English unless that surface explicitly adopts deterministic localized catalogs.
+A selector is appropriate only when that surface maintains real presentation
+catalogs with equivalent language semantics.
+
+Static strings should use deterministic catalogs or source resources. Dynamic
+human-readable content may use a shared provider-independent GiadaWare AI
+Translation capability only when runtime translation is genuinely required.
+Such translation must preserve meaning, must not summarize, rewrite, enrich,
+materially simplify, or correct domain content, and must fall back to canonical
+English on failure. Dynamic translation is optional integration behavior, not a
+core LeLe Manager runtime dependency.
+
+User-authored knowledge, canonical Markdown, structured API/CLI results, JSON
+keys, error codes, enum values, routes, IDs, fingerprints, paths, and other
+machine-readable contracts are not translated.
+
 ## Naming and navigation
 
 - Root documents use `.it.md` for their Italian mirror:
@@ -106,6 +138,11 @@ must use English.
 
 ## Non-goals
 
-This policy does not introduce GUI internationalization, CLI or API
-localization, runtime language selection, automatic translation, a
-documentation-site generator, or a translation-management platform.
+This policy does not introduce CLI or API runtime language selection, automatic
+translation, a documentation-site generator, or a translation-management
+platform. It also does not make GiadaWare AI a core runtime, network, cloud,
+account, telemetry, or provider dependency of LeLe Manager.
+
+Repository-specific exceptions may remain for legal, externally imposed,
+educational, upstream, archival, generated, historical, or explicitly documented
+compatibility reasons.
