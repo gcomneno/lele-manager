@@ -87,7 +87,9 @@ def _freeze_json(value: object, name: str, active: set[int]) -> object:
     if isinstance(value, Mapping):
         identity = id(value)
         if identity in active:
-            raise ValueError(f"{name} must contain only JSON-compatible values (no cycles)")
+            raise ValueError(
+                f"{name} must contain only JSON-compatible values (no cycles)"
+            )
         active.add(identity)
         try:
             frozen: dict[str, object] = {}
@@ -102,7 +104,9 @@ def _freeze_json(value: object, name: str, active: set[int]) -> object:
     if isinstance(value, (list, tuple)):
         identity = id(value)
         if identity in active:
-            raise ValueError(f"{name} must contain only JSON-compatible values (no cycles)")
+            raise ValueError(
+                f"{name} must contain only JSON-compatible values (no cycles)"
+            )
         active.add(identity)
         try:
             return tuple(_freeze_json(item, name, active) for item in value)
@@ -147,7 +151,9 @@ class CandidateReviewEvent:
             raise TypeError("review event resulting state must be a CandidateState")
         if self.reason is not None:
             if type(self.reason) is not str or not self.reason.strip():
-                raise ValueError("review event reason must be None or a non-empty string")
+                raise ValueError(
+                    "review event reason must be None or a non-empty string"
+                )
             _validate_unicode(self.reason, "review event reason")
 
         allowed = {
@@ -160,10 +166,14 @@ class CandidateReviewEvent:
                 CandidateState.IN_REVIEW,
             ),
         }
-        if self.action in allowed and (
-            self.previous_state,
-            self.resulting_state,
-        ) != allowed[self.action]:
+        if (
+            self.action in allowed
+            and (
+                self.previous_state,
+                self.resulting_state,
+            )
+            != allowed[self.action]
+        ):
             raise ValueError("review event action does not match its state transition")
         if self.action is CandidateReviewAction.REJECTED and (
             self.previous_state not in (CandidateState.STAGED, CandidateState.IN_REVIEW)
@@ -178,6 +188,20 @@ class CandidateReviewEvent:
 
 
 @dataclass(frozen=True)
+class CandidateSourceEvidence:
+    chunk_index: int
+    source_span: SourceSpan
+
+    def __post_init__(self) -> None:
+        if type(self.chunk_index) is not int or self.chunk_index < 0:
+            raise ValueError(
+                "supporting evidence chunk index must be a non-negative integer"
+            )
+        if type(self.source_span) is not SourceSpan:
+            raise TypeError("supporting evidence source span must be a SourceSpan")
+
+
+@dataclass(frozen=True)
 class CandidateProvenance:
     source_kind: SourceKind
     source_logical_name: str
@@ -187,11 +211,16 @@ class CandidateProvenance:
     source_span: SourceSpan | None = None
     run_metadata: Mapping[str, object] = field(default_factory=dict)
     transformations: tuple[Mapping[str, object], ...] = ()
+    supporting_evidence: tuple[CandidateSourceEvidence, ...] = ()
+    derivation_id: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.source_kind, SourceKind):
             raise TypeError("source kind must be a SourceKind")
-        if not isinstance(self.source_logical_name, str) or not self.source_logical_name:
+        if (
+            not isinstance(self.source_logical_name, str)
+            or not self.source_logical_name
+        ):
             raise ValueError("source logical name must not be empty")
         _validate_unicode(self.source_logical_name, "source logical name")
         if not isinstance(self.source_fingerprint, str) or not self.source_fingerprint:
@@ -211,7 +240,9 @@ class CandidateProvenance:
             or self.chunk_index < 0
         ):
             raise ValueError("chunk index must be a non-negative integer or None")
-        if self.source_span is not None and not isinstance(self.source_span, SourceSpan):
+        if self.source_span is not None and not isinstance(
+            self.source_span, SourceSpan
+        ):
             raise TypeError("source span must be a SourceSpan or None")
         object.__setattr__(
             self, "run_metadata", _freeze_metadata("run metadata", self.run_metadata)
@@ -227,6 +258,33 @@ class CandidateProvenance:
             ),
         )
 
+        if not isinstance(self.supporting_evidence, tuple):
+            raise TypeError("supporting evidence must be a tuple")
+
+        evidence_keys: list[tuple[int, int, int]] = []
+        for evidence in self.supporting_evidence:
+            if type(evidence) is not CandidateSourceEvidence:
+                raise TypeError(
+                    "supporting evidence must contain CandidateSourceEvidence values"
+                )
+            evidence_keys.append(
+                (
+                    evidence.source_span.start,
+                    evidence.source_span.end,
+                    evidence.chunk_index,
+                )
+            )
+
+        if len(evidence_keys) != len(set(evidence_keys)):
+            raise ValueError("supporting evidence must not contain duplicates")
+        if evidence_keys != sorted(evidence_keys):
+            raise ValueError("supporting evidence must be in source order")
+
+        if self.derivation_id is not None:
+            if type(self.derivation_id) is not str or not self.derivation_id.strip():
+                raise ValueError("derivation ID must be None or a non-empty string")
+            _validate_unicode(self.derivation_id, "derivation ID")
+
 
 @dataclass(frozen=True)
 class LessonCandidate:
@@ -237,6 +295,7 @@ class LessonCandidate:
     proposed_text: str | None = None
     revision: int = 0
     review_history: tuple[CandidateReviewEvent, ...] = ()
+    proposal_rationale: str | None = None
     candidate_id: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -247,7 +306,9 @@ class LessonCandidate:
             raise TypeError("candidate provenance must be CandidateProvenance")
         if self.proposed_text is not None:
             if type(self.proposed_text) is not str or not self.proposed_text.strip():
-                raise ValueError("proposed text must be None or a non-whitespace string")
+                raise ValueError(
+                    "proposed text must be None or a non-whitespace string"
+                )
             _validate_unicode(self.proposed_text, "proposed text")
             object.__setattr__(
                 self, "proposed_text", normalize_line_endings(self.proposed_text)
@@ -257,6 +318,23 @@ class LessonCandidate:
                 self,
                 "proposed_metadata",
                 _freeze_metadata("proposed metadata", self.proposed_metadata),
+            )
+        if self.proposal_rationale is not None:
+            if (
+                type(self.proposal_rationale) is not str
+                or not self.proposal_rationale.strip()
+            ):
+                raise ValueError(
+                    "proposal rationale must be None or a non-whitespace string"
+                )
+            _validate_unicode(
+                self.proposal_rationale,
+                "proposal rationale",
+            )
+            object.__setattr__(
+                self,
+                "proposal_rationale",
+                normalize_line_endings(self.proposal_rationale),
             )
         if not isinstance(self.state, CandidateState):
             raise TypeError("candidate state must be a CandidateState")
@@ -277,7 +355,9 @@ class LessonCandidate:
             if len(self.review_history) != self.revision:
                 raise ValueError("review event revisions must be exactly 1..revision")
             if self.review_history[-1].resulting_state is not self.state:
-                raise ValueError("review history final state must equal candidate state")
+                raise ValueError(
+                    "review history final state must equal candidate state"
+                )
         elif self.revision != 0:
             raise ValueError("empty review history requires revision zero")
 
@@ -289,9 +369,13 @@ class LessonCandidate:
             "source_fingerprint": self.provenance.source_fingerprint,
             "source_kind": self.provenance.source_kind.value,
             "source_logical_name": self.provenance.source_logical_name,
-            "source_span": None if span is None else {"end": span.end, "start": span.start},
+            "source_span": None
+            if span is None
+            else {"end": span.end, "start": span.start},
             "text": normalized_text,
         }
+        if self.provenance.derivation_id is not None:
+            identity["derivation_id"] = self.provenance.derivation_id
         digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()
         object.__setattr__(self, "candidate_id", f"sha256:{digest}")
 

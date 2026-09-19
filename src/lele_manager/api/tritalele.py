@@ -64,6 +64,16 @@ from lele_manager.application.raw_source_ingestion import (
     RawSourceIngestionResult,
     RawSourceIngestionService,
 )
+from lele_manager.application.semantic_lesson_extraction import (
+    SemanticExtractionError,
+    SemanticIngestionResult,
+    SemanticRawSourceIngestionService,
+)
+from lele_manager.semantic_composition import (
+    SemanticRuntimeConfigurationError,
+    SemanticRuntimeDependencyError,
+    resolve_semantic_runtime,
+)
 from lele_manager.api.vault_danger import router as vault_danger_router
 from lele_manager.core.vault_registry import ActiveVaultContext, active_vault_context
 
@@ -118,6 +128,11 @@ class SourceSpanResponse(BaseModel):
     end: int
 
 
+class CandidateSourceEvidenceResponse(BaseModel):
+    chunk_index: int
+    source_span: SourceSpanResponse
+
+
 class CandidateProvenanceResponse(BaseModel):
     source_kind: str
     source_logical_name: str
@@ -127,6 +142,8 @@ class CandidateProvenanceResponse(BaseModel):
     source_span: SourceSpanResponse | None
     run_metadata: dict[str, Any]
     transformations: list[dict[str, Any]]
+    supporting_evidence: list[CandidateSourceEvidenceResponse]
+    derivation_id: str | None
 
 
 class CandidateReviewEventResponse(BaseModel):
@@ -151,6 +168,7 @@ class CandidateResponse(BaseModel):
     proposed_text: str | None
     effective_text: str
     proposed_metadata: dict[str, Any] | None
+    proposal_rationale: str | None
     approval_destination: ApprovalDestinationResponse | None
     provenance: CandidateProvenanceResponse
     review_history: list[CandidateReviewEventResponse]
@@ -251,11 +269,17 @@ def get_active_vault_context() -> ActiveVaultContext:
     try:
         return active_vault_context()
     except (OSError, RuntimeError):
-        _raise_api_error(503, "candidate_storage_unavailable", "Candidate staging storage is unavailable.")
+        _raise_api_error(
+            503,
+            "candidate_storage_unavailable",
+            "Candidate staging storage is unavailable.",
+        )
 
 
 def get_candidate_repository(
-    context: Annotated[ActiveVaultContext | None, Depends(get_active_vault_context)] = None,
+    context: Annotated[
+        ActiveVaultContext | None, Depends(get_active_vault_context)
+    ] = None,
 ) -> CandidateRepository:
     """Build a fresh repository for the configured local staging document."""
     try:
@@ -275,6 +299,40 @@ def get_ingestion_service(
 ) -> RawSourceIngestionService:
     return RawSourceIngestionService(
         DeterministicRawSourceChunker(), repository, _utc_now
+    )
+
+
+def get_semantic_ingestion_service(
+    repository: Annotated[CandidateRepository, Depends(get_candidate_repository)],
+) -> SemanticRawSourceIngestionService:
+    try:
+        runtime = resolve_semantic_runtime()
+    except SemanticRuntimeConfigurationError:
+        _raise_api_error(
+            503,
+            "semantic_configuration_invalid",
+            "Semantic extraction configuration is invalid.",
+        )
+    except SemanticRuntimeDependencyError:
+        _raise_api_error(
+            503,
+            "semantic_dependency_unavailable",
+            "Optional GiadaWare AI dependency is unavailable.",
+        )
+
+    if runtime is None:
+        _raise_api_error(
+            503,
+            "semantic_disabled",
+            "Semantic extraction is not configured.",
+        )
+
+    return SemanticRawSourceIngestionService(
+        DeterministicRawSourceChunker(),
+        runtime.extractor,
+        repository,
+        _utc_now,
+        extraction_metadata=runtime.extraction_metadata,
     )
 
 
@@ -348,6 +406,7 @@ def _candidate_response(candidate: LessonCandidate) -> CandidateResponse:
         proposed_text=candidate.proposed_text,
         effective_text=candidate.effective_text,
         proposed_metadata=proposed_metadata,
+        proposal_rationale=candidate.proposal_rationale,
         approval_destination=approval_destination,
         provenance=CandidateProvenanceResponse(
             source_kind=provenance.source_kind.value,
@@ -356,10 +415,23 @@ def _candidate_response(candidate: LessonCandidate) -> CandidateResponse:
             ingested_at=provenance.ingested_at.isoformat(),
             chunk_index=provenance.chunk_index,
             source_span=(
-                None if span is None else SourceSpanResponse(start=span.start, end=span.end)
+                None
+                if span is None
+                else SourceSpanResponse(start=span.start, end=span.end)
             ),
             run_metadata=run_metadata,
             transformations=transformations,
+            supporting_evidence=[
+                CandidateSourceEvidenceResponse(
+                    chunk_index=item.chunk_index,
+                    source_span=SourceSpanResponse(
+                        start=item.source_span.start,
+                        end=item.source_span.end,
+                    ),
+                )
+                for item in provenance.supporting_evidence
+            ],
+            derivation_id=provenance.derivation_id,
         ),
         review_history=[
             CandidateReviewEventResponse(
@@ -376,7 +448,7 @@ def _candidate_response(candidate: LessonCandidate) -> CandidateResponse:
 
 
 def _ingestion_response(
-    result: RawSourceIngestionResult,
+    result: RawSourceIngestionResult | SemanticIngestionResult,
     source: RawSource,
     settings: ChunkingSettings,
 ) -> IngestionResultResponse:
@@ -606,7 +678,7 @@ def _raise_approval_error(error: CandidateApprovalError) -> NoReturn:
 
 def _run_ingestion(
     body: RawSourceRequest,
-    service: RawSourceIngestionService,
+    service: RawSourceIngestionService | SemanticRawSourceIngestionService,
     *,
     preview: bool,
 ) -> IngestionResultResponse:
@@ -628,6 +700,12 @@ def _run_ingestion(
         )
     try:
         result = service.ingest(source, settings, preview=preview)
+    except SemanticExtractionError:
+        _raise_api_error(
+            503,
+            "semantic_extraction_failed",
+            "Semantic extraction failed.",
+        )
     except RawSourceIngestionError as error:
         _raise_ingestion_error(error)
     return _ingestion_response(result, source, settings)
@@ -659,6 +737,48 @@ def preview_ingestion(
 def stage_ingestion(
     body: RawSourceRequest,
     service: Annotated[RawSourceIngestionService, Depends(get_ingestion_service)],
+) -> IngestionResultResponse:
+    return _run_ingestion(body, service, preview=False)
+
+
+@router.post(
+    "/semantic/preview",
+    response_model=IngestionResultResponse,
+    responses=_error_responses(400, 409, 500, 503),
+    summary="Preview semantic Lesson Learned extraction",
+    description=(
+        "Extract advisory semantic candidates from bounded source chunks "
+        "without mutating staging, vault, or projection storage."
+    ),
+    operation_id="tritalele_preview_semantic_ingestion",
+)
+def preview_semantic_ingestion(
+    body: RawSourceRequest,
+    service: Annotated[
+        SemanticRawSourceIngestionService,
+        Depends(get_semantic_ingestion_service),
+    ],
+) -> IngestionResultResponse:
+    return _run_ingestion(body, service, preview=True)
+
+
+@router.post(
+    "/semantic/stage",
+    response_model=IngestionResultResponse,
+    responses=_error_responses(400, 409, 500, 503),
+    summary="Stage semantic Lesson Learned candidates",
+    description=(
+        "Extract and stage advisory semantic candidates without approval "
+        "or canonical publication."
+    ),
+    operation_id="tritalele_stage_semantic_ingestion",
+)
+def stage_semantic_ingestion(
+    body: RawSourceRequest,
+    service: Annotated[
+        SemanticRawSourceIngestionService,
+        Depends(get_semantic_ingestion_service),
+    ],
 ) -> IngestionResultResponse:
     return _run_ingestion(body, service, preview=False)
 
@@ -731,9 +851,7 @@ def revise_candidate(
     try:
         current = service.get_candidate(candidate_id)
         proposed_text = (
-            current.proposed_text
-            if body.proposed_text is None
-            else body.proposed_text
+            current.proposed_text if body.proposed_text is None else body.proposed_text
         )
         proposed_metadata: Mapping[str, object] | None = (
             current.proposed_metadata
@@ -814,12 +932,11 @@ def approve_candidate(
     service: Annotated[CandidateApprovalService, Depends(get_approval_service)],
 ) -> ApprovalResultResponse:
     try:
-        result = service.approve(
-            candidate_id, expected_revision=body.expected_revision
-        )
+        result = service.approve(candidate_id, expected_revision=body.expected_revision)
     except CandidateApprovalError as error:
         _raise_approval_error(error)
     return _approval_response(result)
+
 
 # `server.py` historically imports this module's `router` as the application
 # extension router. Keep the versioned TritaLeLe paths intact while aggregating

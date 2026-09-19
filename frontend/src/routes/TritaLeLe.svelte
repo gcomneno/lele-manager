@@ -10,6 +10,7 @@
     type CanonicalMetadata,
     type IngestionResult,
     type RawSourceInput,
+    type SimilarItem,
     type SourceKind,
     type VaultTreeNode,
   } from '../lib/api'
@@ -18,6 +19,7 @@
   import CandidateCard from '../components/CandidateCard.svelte'
 
   type ReadBackState = 'idle' | 'loading' | 'ok' | 'error'
+  type IngestionMode = 'deterministic' | 'semantic'
 
   function candidateStateLabel(state: CandidateState): string {
     switch (state) {
@@ -75,6 +77,7 @@
     }
   }
 
+  let ingestionMode = $state<IngestionMode>('deterministic')
   let sourceContent = $state('')
   let sourceKind = $state<SourceKind>('plain_text')
   let logicalName = $state('pasted-note.txt')
@@ -112,6 +115,10 @@
   let actionMessage = $state('')
   let actionError = $state('')
   let transitionReason = $state('')
+  let similarItems = $state<SimilarItem[]>([])
+  let similarLoading = $state(false)
+  let similarError = $state('')
+  let similarRequest = 0
 
   let proposedText = $state('')
   let metadataTopic = $state('')
@@ -157,6 +164,10 @@
   function sourceChanged() {
     fileRequest += 1
     loadedFileName = ''
+    invalidatePreview()
+  }
+
+  function ingestionModeChanged() {
     invalidatePreview()
   }
 
@@ -254,7 +265,9 @@
     ingestionError = ''
     stageResult = null
     try {
-      const result = await api.previewIngestion(sourcePayload())
+      const result = ingestionMode === 'semantic'
+        ? await api.previewSemanticIngestion(sourcePayload())
+        : await api.previewIngestion(sourcePayload())
       if (request !== previewRequest || version !== inputVersion) return
       preview = result
       previewVersion = version
@@ -281,7 +294,9 @@
     staging = true
     ingestionError = ''
     try {
-      const result = await api.stageIngestion(sourcePayload())
+      const result = ingestionMode === 'semantic'
+        ? await api.stageSemanticIngestion(sourcePayload())
+        : await api.stageIngestion(sourcePayload())
       if (request !== stageRequest || version !== inputVersion) return
       stageResult = result
       await loadCandidates()
@@ -366,9 +381,42 @@
     vaultReadBackMessage = ''
   }
 
+  async function loadSimilarity(item: Candidate) {
+    const request = ++similarRequest
+    similarItems = []
+    similarError = ''
+
+    if (item.provenance.derivation_id === null) {
+      similarLoading = false
+      return
+    }
+
+    similarLoading = true
+    try {
+      const result = await api.similarByText(
+        item.effective_text,
+        5,
+        0.1,
+        true,
+      )
+      if (request !== similarRequest || selectedId !== item.candidate_id) return
+      similarItems = result.results
+    } catch {
+      if (request !== similarRequest || selectedId !== item.candidate_id) return
+      similarItems = []
+      similarError = $messages.tritaleleSimilarityUnavailable
+    } finally {
+      if (request === similarRequest) similarLoading = false
+    }
+  }
+
   async function selectCandidate(item: Candidate) {
     selectedId = item.candidate_id
     candidate = null
+    similarRequest += 1
+    similarItems = []
+    similarLoading = false
+    similarError = ''
     detailLoading = true
     detailError = ''
     actionMessage = ''
@@ -380,6 +428,7 @@
       if (request !== detailRequest || selectedId !== item.candidate_id) return
       candidate = result
       populateReviewForm(result)
+      void loadSimilarity(result)
     } catch (error) {
       if (request !== detailRequest || selectedId !== item.candidate_id) return
       detailError = displayError(
@@ -707,6 +756,17 @@
 
     <div class="source-grid">
       <label>
+        {$messages.tritaleleIngestionMode}
+        <select
+          bind:value={ingestionMode}
+          onchange={ingestionModeChanged}
+          data-testid="tritalele-ingestion-mode"
+        >
+          <option value="deterministic">{$messages.tritaleleModeDeterministic}</option>
+          <option value="semantic">{$messages.tritaleleModeSemantic}</option>
+        </select>
+      </label>
+      <label>
         {$messages.tritaleleFileInput}
         <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onchange={loadFile} />
       </label>
@@ -726,6 +786,17 @@
         <input type="number" min="1" bind:value={maxCharacters} oninput={sourceSettingsChanged} />
       </label>
     </div>
+    {#if ingestionMode === 'semantic'}
+      <div
+        class="semantic-advisory"
+        role="note"
+        data-testid="semantic-advisory"
+      >
+        <strong>{$messages.tritaleleSemanticAdvisoryTitle}</strong>
+        <p>{$messages.tritaleleSemanticAdvisoryBody}</p>
+      </div>
+    {/if}
+
     <label class="source-text">
       {$messages.tritaleleSourceText}
       <textarea
@@ -860,6 +931,71 @@
             <span class={`state state-${candidate.state}`}>{candidateStateLabel(candidate.state)} · {$messages.tritaleleRevisionShort} {candidate.revision}</span>
           </div>
 
+          {#if candidate.provenance.derivation_id}
+            <section
+              class="semantic-review"
+              aria-label={$messages.tritaleleSemanticReviewTitle}
+              data-testid="semantic-review"
+            >
+              <h3>{$messages.tritaleleSemanticReviewTitle}</h3>
+              <p class="meta">{$messages.tritaleleSemanticReviewAdvisory}</p>
+
+              <div class="source-passage">
+                <strong>{$messages.tritaleleOriginalPassage}</strong>
+                <pre>{candidate.original_text}</pre>
+              </div>
+
+              {#if candidate.proposal_rationale}
+                <div class="proposal-rationale">
+                  <strong>{$messages.tritaleleProposalRationale}</strong>
+                  <p>{candidate.proposal_rationale}</p>
+                </div>
+              {/if}
+
+              <dl>
+                <dt>{$messages.tritaleleDerivationId}</dt>
+                <dd><code>{candidate.provenance.derivation_id}</code></dd>
+                <dt>{$messages.tritaleleSupportingEvidence}</dt>
+                <dd>
+                  {#if candidate.provenance.supporting_evidence.length}
+                    <ul class="evidence-list">
+                      {#each candidate.provenance.supporting_evidence as evidence}
+                        <li>
+                          {$messages.tritaleleChunk} {evidence.chunk_index}
+                          · {evidence.source_span.start}–{evidence.source_span.end}
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else}
+                    —
+                  {/if}
+                </dd>
+              </dl>
+
+              <div class="similarity-review">
+                <strong>{$messages.tritaleleRelatedKnowledge}</strong>
+                <p class="meta">{$messages.tritaleleSimilarityAdvisory}</p>
+                {#if similarLoading}
+                  <p class="meta">{$messages.tritaleleSimilarityLoading}</p>
+                {:else if similarError}
+                  <p class="warning">{similarError}</p>
+                {:else if similarItems.length}
+                  <ul>
+                    {#each similarItems as item}
+                      <li>
+                        <code>{item.id}</code>
+                        <span>{item.score.toFixed(3)}</span>
+                        <span>{item.text_preview}</span>
+                      </li>
+                    {/each}
+                  </ul>
+                {:else}
+                  <p class="meta">{$messages.tritaleleSimilarityNone}</p>
+                {/if}
+              </div>
+            </section>
+          {/if}
+
           <details open>
             <summary>{$messages.tritaleleProvenance}</summary>
             <dl>
@@ -869,6 +1005,7 @@
               <dt>{$messages.tritaleleChunk}</dt><dd>{candidate.provenance.chunk_index ?? '—'}</dd>
               <dt>Span</dt><dd>{candidate.provenance.source_span ? `${candidate.provenance.source_span.start}–${candidate.provenance.source_span.end}` : '—'}</dd>
               <dt>{$messages.tritaleleIngestedAt}</dt><dd>{candidate.provenance.ingested_at}</dd>
+              <dt>{$messages.tritaleleDerivationId}</dt><dd><code>{candidate.provenance.derivation_id ?? '—'}</code></dd>
             </dl>
             {#if Object.keys(candidate.provenance.run_metadata).length || candidate.provenance.transformations.length}
               <pre>{JSON.stringify({ run_metadata: candidate.provenance.run_metadata, transformations: candidate.provenance.transformations }, null, 2)}</pre>
@@ -1098,7 +1235,9 @@
   .preview-block,
   .destination,
   .approval-result,
-  .readbacks {
+  .readbacks,
+  .semantic-review,
+  .semantic-advisory {
     margin-top: 14px;
     padding: 12px;
     border: 1px solid var(--border);
@@ -1119,6 +1258,43 @@
   .destination {
     display: grid;
     gap: 4px;
+  }
+
+  .semantic-advisory {
+    margin-top: 12px;
+  }
+
+  .semantic-advisory p,
+  .proposal-rationale p {
+    margin: 4px 0 0;
+  }
+
+  .semantic-review {
+    display: grid;
+    gap: 12px;
+  }
+
+  .semantic-review h3 {
+    margin-bottom: 0;
+  }
+
+  .source-passage pre {
+    margin-bottom: 0;
+  }
+
+  .evidence-list,
+  .similarity-review ul {
+    display: grid;
+    gap: 6px;
+    margin: 6px 0 0;
+    padding-left: 20px;
+  }
+
+  .similarity-review li {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
   }
 
   .stage-result {

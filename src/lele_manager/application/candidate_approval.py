@@ -277,12 +277,23 @@ def canonical_lesson_for(candidate: LessonCandidate) -> CanonicalLessonSpec:
     trace: dict[str, object] = {
         "candidate_id": candidate.candidate_id,
         "chunk_index": provenance.chunk_index,
+        "derivation_id": provenance.derivation_id,
         "ingested_at": provenance.ingested_at.isoformat(),
         "run_metadata": _canonical_provenance_value(provenance.run_metadata),
         "source_fingerprint": provenance.source_fingerprint,
         "source_kind": provenance.source_kind.value,
         "source_logical_name": provenance.source_logical_name,
         "source_span": None if span is None else {"end": span.end, "start": span.start},
+        "supporting_evidence": [
+            {
+                "chunk_index": evidence.chunk_index,
+                "source_span": {
+                    "end": evidence.source_span.end,
+                    "start": evidence.source_span.start,
+                },
+            }
+            for evidence in provenance.supporting_evidence
+        ],
         "transformations": _canonical_provenance_value(provenance.transformations),
     }
     return CanonicalLessonSpec(

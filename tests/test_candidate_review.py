@@ -21,12 +21,13 @@ from lele_manager.application.lesson_candidate import (
     CandidateProvenance,
     CandidateRepositoryError,
     CandidateReviewAction,
+    CandidateSourceEvidence,
     CandidateRevisionConflictError,
     CandidateState,
     DuplicateCandidateIdError,
     LessonCandidate,
 )
-from lele_manager.application.raw_source import SourceKind
+from lele_manager.application.raw_source import SourceKind, SourceSpan
 
 
 NOW = datetime(2026, 7, 21, 12, tzinfo=timezone.utc)
@@ -51,6 +52,27 @@ def candidate(
             chunk_index=chunk,
         ),
         state=state,
+    )
+
+
+def semantic_candidate(text: str = "source") -> LessonCandidate:
+    return LessonCandidate(
+        text=text,
+        provenance=CandidateProvenance(
+            source_kind=SourceKind.MARKDOWN,
+            source_logical_name="semantic.md",
+            source_fingerprint="fp-semantic",
+            ingested_at=NOW,
+            chunk_index=None,
+            source_span=None,
+            supporting_evidence=(
+                CandidateSourceEvidence(0, SourceSpan(0, 6)),
+                CandidateSourceEvidence(1, SourceSpan(7, 13)),
+            ),
+            derivation_id="sha256:semantic-derivation",
+        ),
+        proposed_metadata={"topic": "semantic"},
+        proposal_rationale="merged adjacent source evidence",
     )
 
 
@@ -148,6 +170,58 @@ def test_reject_from_staged_with_reason() -> None:
         CandidateState.STAGED,
         CandidateState.REJECTED,
         "not useful",
+    )
+
+
+def test_semantic_provenance_survives_revision_before_acceptance() -> None:
+    original = semantic_candidate()
+    review, _, _ = service(original)
+
+    revised = review.revise_candidate(
+        original.candidate_id,
+        expected_revision=0,
+        proposed_text="reviewed semantic text",
+        proposed_metadata={"topic": "semantic", "tags": ["reviewed"]},
+        reason="clarified",
+    )
+    accepted = review.accept_candidate(
+        original.candidate_id,
+        expected_revision=1,
+        reason="ready",
+    )
+
+    assert (
+        revised.provenance.supporting_evidence
+        == original.provenance.supporting_evidence
+    )
+    assert revised.provenance.derivation_id == original.provenance.derivation_id
+    assert (
+        accepted.provenance.supporting_evidence
+        == original.provenance.supporting_evidence
+    )
+    assert accepted.provenance.derivation_id == original.provenance.derivation_id
+    assert accepted.state is CandidateState.IN_REVIEW
+
+
+def test_semantic_provenance_survives_rejection_without_canonical_state() -> None:
+    original = semantic_candidate()
+    review, _, _ = service(original)
+
+    rejected = review.reject_candidate(
+        original.candidate_id,
+        expected_revision=0,
+        reason="not canonical",
+    )
+
+    assert (
+        rejected.provenance.supporting_evidence
+        == original.provenance.supporting_evidence
+    )
+    assert rejected.provenance.derivation_id == original.provenance.derivation_id
+    assert rejected.state is CandidateState.REJECTED
+    assert all(
+        event.action is not CandidateReviewAction.APPROVED
+        for event in rejected.review_history
     )
 
 

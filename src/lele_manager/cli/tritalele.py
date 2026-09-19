@@ -72,6 +72,16 @@ from lele_manager.application.raw_source_ingestion import (
     RawSourceIngestionResult,
     RawSourceIngestionService,
 )
+from lele_manager.application.semantic_lesson_extraction import (
+    SemanticExtractionError,
+    SemanticIngestionResult,
+    SemanticRawSourceIngestionService,
+)
+from lele_manager.semantic_composition import (
+    SemanticRuntimeConfigurationError,
+    SemanticRuntimeDependencyError,
+    resolve_semantic_runtime,
+)
 from lele_manager.core.vault_registry import active_vault_context
 
 
@@ -142,7 +152,9 @@ def register_commands(subparsers: Any) -> None:
         help="Prepara o mette in staging candidati da una sorgente locale.",
     )
     ingest_subparsers = ingest.add_subparsers(
-        dest="ingest_command", required=True, metavar="{preview,create}"
+        dest="ingest_command",
+        required=True,
+        metavar="{preview,create,semantic-preview,semantic-create}",
     )
     preview = _add_ingestion_leaf(
         ingest_subparsers,
@@ -156,6 +168,22 @@ def register_commands(subparsers: Any) -> None:
         help_text="Mette in staging i candidati mancanti, senza approvarli.",
     )
     create.set_defaults(tritalele_command="ingest_create")
+    semantic_preview = _add_ingestion_leaf(
+        ingest_subparsers,
+        "semantic-preview",
+        help_text=(
+            "Estrae proposte semantiche advisory senza scrivere candidati o lesson."
+        ),
+    )
+    semantic_preview.set_defaults(tritalele_command="ingest_semantic_preview")
+    semantic_create = _add_ingestion_leaf(
+        ingest_subparsers,
+        "semantic-create",
+        help_text=(
+            "Estrae e mette in staging proposte semantiche advisory, senza approvarle."
+        ),
+    )
+    semantic_create.set_defaults(tritalele_command="ingest_semantic_create")
 
     candidates = subparsers.add_parser(
         "candidates",
@@ -273,6 +301,17 @@ def _provenance_dict(candidate: LessonCandidate) -> dict[str, object]:
         "source_span": None if span is None else {"start": span.start, "end": span.end},
         "run_metadata": _plain_json(provenance.run_metadata),
         "transformations": _plain_json(provenance.transformations),
+        "supporting_evidence": [
+            {
+                "chunk_index": item.chunk_index,
+                "source_span": {
+                    "start": item.source_span.start,
+                    "end": item.source_span.end,
+                },
+            }
+            for item in provenance.supporting_evidence
+        ],
+        "derivation_id": provenance.derivation_id,
     }
 
 
@@ -286,6 +325,7 @@ def candidate_to_dict(candidate: LessonCandidate) -> dict[str, object]:
         "proposed_text": candidate.proposed_text,
         "effective_text": candidate.effective_text,
         "proposed_metadata": _plain_json(candidate.proposed_metadata),
+        "proposal_rationale": candidate.proposal_rationale,
         "provenance": _provenance_dict(candidate),
         "review_history": [
             {
@@ -314,7 +354,7 @@ def _approval_dict(result: ApprovalResult) -> dict[str, object]:
 
 
 def _ingestion_dict(
-    result: RawSourceIngestionResult,
+    result: RawSourceIngestionResult | SemanticIngestionResult,
     source: RawSource,
     settings: ChunkingSettings,
 ) -> dict[str, object]:
@@ -400,7 +440,9 @@ def _chunking_settings(raw_max_characters: int) -> ChunkingSettings:
         ) from None
 
 
-def _print_ingestion_human(result: RawSourceIngestionResult) -> None:
+def _print_ingestion_human(
+    result: RawSourceIngestionResult | SemanticIngestionResult,
+) -> None:
     if result.preview:
         print(
             f"[info] Anteprima: {len(result.planned_candidates)} candidati; "
@@ -423,9 +465,15 @@ def _print_ingestion_human(result: RawSourceIngestionResult) -> None:
             outcome = "skipped"
         else:
             outcome = "pending"
+        provenance = candidate.provenance
+        semantic = (
+            f" | derivation={provenance.derivation_id}"
+            if provenance.derivation_id is not None
+            else ""
+        )
         print(
             f"- {candidate.candidate_id} | "
-            f"chunk={candidate.provenance.chunk_index} | {outcome}"
+            f"chunk={provenance.chunk_index} | {outcome}{semantic}"
         )
 
 
@@ -435,6 +483,41 @@ def _run_ingest(args: argparse.Namespace, *, preview: bool) -> int:
     result = RawSourceIngestionService(
         DeterministicRawSourceChunker(), _candidate_repository(), _utc_now
     ).ingest(source, settings, preview=preview)
+    payload = _ingestion_dict(result, source, settings)
+    if args.json:
+        _print_json(payload)
+    else:
+        _print_ingestion_human(result)
+    return 0
+
+
+def _run_semantic_ingest(
+    args: argparse.Namespace,
+    *,
+    preview: bool,
+) -> int:
+    runtime = resolve_semantic_runtime()
+    if runtime is None:
+        return _emit_error(
+            args,
+            error_code="semantic_disabled",
+            message=(
+                "L'estrazione semantica non è configurata. "
+                "Impostare LELE_SEMANTIC_PROVIDER=ollama e LELE_SEMANTIC_MODEL."
+            ),
+            exit_code=2,
+        )
+
+    source = _load_source(args.source_path)
+    settings = _chunking_settings(args.max_characters)
+    result = SemanticRawSourceIngestionService(
+        DeterministicRawSourceChunker(),
+        runtime.extractor,
+        _candidate_repository(),
+        _utc_now,
+        extraction_metadata=runtime.extraction_metadata,
+    ).ingest(source, settings, preview=preview)
+
     payload = _ingestion_dict(result, source, settings)
     if args.json:
         _print_json(payload)
@@ -495,18 +578,36 @@ def _print_candidate_human(candidate: LessonCandidate) -> None:
     print(f"  fingerprint: {provenance.source_fingerprint}")
     print(f"  acquisito: {provenance.ingested_at.isoformat()}")
     print(f"  chunk: {provenance.chunk_index}")
-    print(
-        "  intervallo: "
-        + ("-" if span is None else f"{span.start}:{span.end}")
-    )
+    print("  intervallo: " + ("-" if span is None else f"{span.start}:{span.end}"))
     print("  run metadata: " + json.dumps(_plain_json(provenance.run_metadata)))
     print("  trasformazioni: " + json.dumps(_plain_json(provenance.transformations)))
+    print(
+        "  evidence: "
+        + json.dumps(
+            _plain_json(
+                [
+                    {
+                        "chunk_index": item.chunk_index,
+                        "source_span": {
+                            "start": item.source_span.start,
+                            "end": item.source_span.end,
+                        },
+                    }
+                    for item in provenance.supporting_evidence
+                ]
+            ),
+            ensure_ascii=False,
+        )
+    )
+    print(f"  derivation: {provenance.derivation_id or '-'}")
     print("[info] Testo originale")
     print(candidate.text)
     print("[info] Testo proposto")
     print(candidate.proposed_text if candidate.proposed_text is not None else "-")
     print("[info] Testo effettivo")
     print(candidate.effective_text)
+    print("[info] Rationale proposta")
+    print(candidate.proposal_rationale or "-")
     print("[info] Metadati proposti")
     print(
         json.dumps(
@@ -594,9 +695,7 @@ def _run_candidates_update(args: argparse.Namespace) -> int:
         args.candidate_id,
         expected_revision=args.revision,
         proposed_text=current.proposed_text if not text_requested else proposed_text,
-        proposed_metadata=(
-            current.proposed_metadata if metadata is None else metadata
-        ),
+        proposed_metadata=(current.proposed_metadata if metadata is None else metadata),
         reason=args.reason,
     )
     if args.json:
@@ -654,10 +753,7 @@ def _run_candidates_approve(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(payload)
     else:
-        print(
-            f"[ok] {result.candidate_id} | "
-            f"revisione={result.candidate_revision}"
-        )
+        print(f"[ok] {result.candidate_id} | revisione={result.candidate_revision}")
         print(f"[info] lesson ID: {result.lesson_id}")
         print(f"[info] path vault: {result.relative_vault_path}")
         print(f"[info] scrittura vault: {result.vault_write_outcome.value}")
@@ -711,9 +807,7 @@ def _raw_source_error(args: argparse.Namespace, error: RawSourceError) -> int:
         code, message = "source_unavailable", "Impossibile leggere la sorgente."
     else:
         code, message = "invalid_source", "La sorgente non è valida."
-    return _emit_error(
-        args, error_code=code, message=message, exit_code=2
-    )
+    return _emit_error(args, error_code=code, message=message, exit_code=2)
 
 
 def _ingestion_error(args: argparse.Namespace, error: RawSourceIngestionError) -> int:
@@ -809,9 +903,7 @@ def _review_error(args: argparse.Namespace, error: CandidateReviewError) -> int:
             "Operazione di revisione non completata.",
             1,
         )
-    return _emit_error(
-        args, error_code=code, message=message, exit_code=exit_code
-    )
+    return _emit_error(args, error_code=code, message=message, exit_code=exit_code)
 
 
 def _approval_error(args: argparse.Namespace, error: CandidateApprovalError) -> int:
@@ -917,14 +1009,14 @@ def _approval_error(args: argparse.Namespace, error: CandidateApprovalError) -> 
             "Approvazione non completata.",
             1,
         )
-    return _emit_error(
-        args, error_code=code, message=message, exit_code=exit_code
-    )
+    return _emit_error(args, error_code=code, message=message, exit_code=exit_code)
 
 
 _HANDLERS = {
     "ingest_preview": lambda args: _run_ingest(args, preview=True),
     "ingest_create": lambda args: _run_ingest(args, preview=False),
+    "ingest_semantic_preview": lambda args: _run_semantic_ingest(args, preview=True),
+    "ingest_semantic_create": lambda args: _run_semantic_ingest(args, preview=False),
     "candidates_list": _run_candidates_list,
     "candidates_show": _run_candidates_show,
     "candidates_update": _run_candidates_update,
@@ -955,6 +1047,27 @@ def run_command(args: argparse.Namespace) -> int:
             error_code="local_configuration_unavailable",
             message=str(error),
             exit_code=2,
+        )
+    except SemanticRuntimeConfigurationError:
+        return _emit_error(
+            args,
+            error_code="semantic_configuration_invalid",
+            message="La configurazione dell'estrazione semantica non è valida.",
+            exit_code=2,
+        )
+    except SemanticRuntimeDependencyError:
+        return _emit_error(
+            args,
+            error_code="semantic_dependency_unavailable",
+            message="La dipendenza opzionale GiadaWare AI non è disponibile.",
+            exit_code=2,
+        )
+    except SemanticExtractionError:
+        return _emit_error(
+            args,
+            error_code="semantic_extraction_failed",
+            message="L'estrazione semantica non è riuscita.",
+            exit_code=1,
         )
     except RawSourceError as error:
         return _raw_source_error(args, error)

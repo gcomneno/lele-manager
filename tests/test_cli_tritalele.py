@@ -28,9 +28,7 @@ def run_cli(argv: list[str]) -> int:
 
 
 @pytest.fixture
-def local_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Path]:
+def local_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     paths = {"data": tmp_path / "data", "vault": tmp_path / "vault"}
     monkeypatch.setenv("LELE_DATA_DIR", str(paths["data"]))
     monkeypatch.setenv("LELE_CACHE_DIR", str(tmp_path / "cache"))
@@ -106,21 +104,25 @@ def prepare_candidate_for_approval(
         name=name,
         content=content,
     )
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "0",
-            *complete_metadata_args(),
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "0",
+                *complete_metadata_args(),
+                "--json",
+            ]
+        )
+        == 0
+    )
     assert parsed_stdout(capsys)["revision"] == 1
-    assert run_cli(
-        ["candidates", "accept", candidate_id, "--revision", "1", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "accept", candidate_id, "--revision", "1", "--json"])
+        == 0
+    )
     assert parsed_stdout(capsys)["revision"] == 2
     return candidate_id
 
@@ -130,6 +132,16 @@ def test_parser_exposes_every_nested_leaf() -> None:
     invocations = {
         "ingest_preview": ["ingest", "preview", "source.md"],
         "ingest_create": ["ingest", "create", "source.txt"],
+        "ingest_semantic_preview": [
+            "ingest",
+            "semantic-preview",
+            "source.md",
+        ],
+        "ingest_semantic_create": [
+            "ingest",
+            "semantic-create",
+            "source.txt",
+        ],
         "candidates_list": ["candidates", "list"],
         "candidates_show": ["candidates", "show", "candidate"],
         "candidates_update": [
@@ -173,7 +185,10 @@ def test_parser_exposes_every_nested_leaf() -> None:
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        (["ingest", "--help"], ("preview", "create")),
+        (
+            ["ingest", "--help"],
+            ("preview", "create", "semantic-preview", "semantic-create"),
+        ),
         (
             ["candidates", "--help"],
             ("list", "show", "update", "accept", "reject", "approve"),
@@ -202,19 +217,22 @@ def test_update_rejects_inline_and_file_text_before_dispatch(
     proposed = tmp_path / "proposal.txt"
     proposed.write_text("proposal", encoding="utf-8")
 
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            "candidate",
-            "--revision",
-            "0",
-            "--text",
-            "inline",
-            "--text-file",
-            str(proposed),
-        ]
-    ) == 2
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                "candidate",
+                "--revision",
+                "0",
+                "--text",
+                "inline",
+                "--text-file",
+                str(proposed),
+            ]
+        )
+        == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "not allowed with argument" in captured.err
@@ -222,7 +240,11 @@ def test_update_rejects_inline_and_file_text_before_dispatch(
 
 @pytest.mark.parametrize(
     ("name", "source_kind"),
-    [("notes.md", "markdown"), ("notes.markdown", "markdown"), ("notes.txt", "plain_text")],
+    [
+        ("notes.md", "markdown"),
+        ("notes.markdown", "markdown"),
+        ("notes.txt", "plain_text"),
+    ],
 )
 def test_preview_file_sources_is_read_only_and_deterministic(
     tmp_path: Path,
@@ -266,9 +288,9 @@ def test_preview_file_sources_is_read_only_and_deterministic(
     assert first["candidate_ids"] == [
         item["candidate_id"] for item in first["candidates"]
     ]
-    assert [
-        item["provenance"]["chunk_index"] for item in first["candidates"]
-    ] == list(range(len(first["candidates"])))
+    assert [item["provenance"]["chunk_index"] for item in first["candidates"]] == list(
+        range(len(first["candidates"]))
+    )
     assert not local_paths["candidates"].exists()
     assert not local_paths["vault"].exists()
     assert not local_paths["lessons"].exists()
@@ -344,7 +366,9 @@ def test_preview_preserves_existing_staging_vault_and_projection_bytes(
     assert {
         path: (path.read_bytes(), path.stat().st_mtime_ns) for path in protected
     } == before
-    assert {path.relative_to(tmp_path) for path in tmp_path.rglob("*")} == existing_paths
+    assert {
+        path.relative_to(tmp_path) for path in tmp_path.rglob("*")
+    } == existing_paths
 
 
 def test_create_is_idempotent_and_never_writes_vault(
@@ -387,6 +411,7 @@ def test_candidate_path_uses_data_dir_and_ignores_deprecated_lessons_path(
     other = tmp_path / "other"
     other.mkdir()
     from lele_manager.core.vault_registry import VaultRegistryStore
+
     second = VaultRegistryStore().register("Other", other)
     assert VaultRegistryStore().context_for(second).candidates_path != candidates_path()
 
@@ -427,9 +452,7 @@ def test_partial_ingestion_reports_exact_recovery_ids(
     original_create = JsonCandidateRepository.create
     calls = 0
 
-    def fail_second_create(
-        self: JsonCandidateRepository, candidate: object
-    ) -> object:
+    def fail_second_create(self: JsonCandidateRepository, candidate: object) -> object:
         nonlocal calls
         calls += 1
         if calls == 2:
@@ -437,9 +460,10 @@ def test_partial_ingestion_reports_exact_recovery_ids(
         return original_create(self, candidate)  # type: ignore[arg-type]
 
     monkeypatch.setattr(JsonCandidateRepository, "create", fail_second_create)
-    assert run_cli(
-        ["ingest", "create", str(source), "--max-characters", "6", "--json"]
-    ) == 1
+    assert (
+        run_cli(["ingest", "create", str(source), "--max-characters", "6", "--json"])
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     error = json.loads(captured.err)["error"]
@@ -459,7 +483,11 @@ def test_partial_ingestion_reports_exact_recovery_ids(
 @pytest.mark.parametrize(
     ("repository_error", "expected_exit", "expected_code"),
     [
-        (CandidateStorageError("private storage path"), 2, "candidate_storage_unavailable"),
+        (
+            CandidateStorageError("private storage path"),
+            2,
+            "candidate_storage_unavailable",
+        ),
         (DuplicateCandidateIdError("private identity"), 1, "ingestion_conflict"),
     ],
 )
@@ -510,9 +538,20 @@ def test_list_show_filters_empty_and_malformed_storage_are_controlled(
         [markdown_id, text_id]
     )
 
-    assert run_cli(
-        ["candidates", "list", "--source-kind", "plain_text", "--chunk-index", "0", "--json"]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "list",
+                "--source-kind",
+                "plain_text",
+                "--chunk-index",
+                "0",
+                "--json",
+            ]
+        )
+        == 0
+    )
     filtered = parsed_stdout(capsys)
     assert isinstance(filtered, dict)
     assert [item["candidate_id"] for item in filtered["candidates"]] == [text_id]
@@ -572,18 +611,21 @@ def test_update_revises_once_preserves_source_and_enforces_inputs(
     }
     provenance = updated["provenance"]
 
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "1",
-            "--text",
-            "Final text.",
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "1",
+                "--text",
+                "Final text.",
+                "--json",
+            ]
+        )
+        == 0
+    )
     text_only = parsed_stdout(capsys)
     assert isinstance(text_only, dict)
     assert text_only["revision"] == 2
@@ -592,35 +634,41 @@ def test_update_revises_once_preserves_source_and_enforces_inputs(
     assert text_only["original_text"] == updated["original_text"]
 
     before = local_paths["candidates"].read_bytes()
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "2",
-            "--topic",
-            "incomplete",
-            "--json",
-        ]
-    ) == 2
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "2",
+                "--topic",
+                "incomplete",
+                "--json",
+            ]
+        )
+        == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "invalid_cli_input"
     assert local_paths["candidates"].read_bytes() == before
 
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "0",
-            "--text",
-            "stale",
-            "--json",
-        ]
-    ) == 1
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "0",
+                "--text",
+                "stale",
+                "--json",
+            ]
+        )
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "stale_candidate_revision"
@@ -634,33 +682,39 @@ def test_metadata_only_update_and_noop_updates_preserve_storage_and_clock(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     candidate_id = create_one_candidate(tmp_path, capsys)
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "0",
-            "--text",
-            "A reviewed proposal.",
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "0",
+                "--text",
+                "A reviewed proposal.",
+                "--json",
+            ]
+        )
+        == 0
+    )
     text_only = parsed_stdout(capsys)
     assert text_only["revision"] == 1
     assert text_only["proposed_metadata"] is None
 
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "1",
-            *complete_metadata_args(),
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "1",
+                *complete_metadata_args(),
+                "--json",
+            ]
+        )
+        == 0
+    )
     metadata_only = parsed_stdout(capsys)
     assert metadata_only["revision"] == 2
     assert metadata_only["proposed_text"] == text_only["proposed_text"]
@@ -676,42 +730,49 @@ def test_metadata_only_update_and_noop_updates_preserve_storage_and_clock(
     clock = CountingClock()
     monkeypatch.setattr(tritalele, "_utc_now", clock)
 
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "2",
-            *complete_metadata_args(),
-            "--json",
-        ]
-    ) == 2
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "2",
+                *complete_metadata_args(),
+                "--json",
+            ]
+        )
+        == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "invalid_candidate_input"
     assert local_paths["candidates"].read_bytes() == before
 
-    assert run_cli(
-        ["candidates", "update", candidate_id, "--revision", "2", "--json"]
-    ) == 2
+    assert (
+        run_cli(["candidates", "update", candidate_id, "--revision", "2", "--json"])
+        == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "invalid_cli_input"
     assert local_paths["candidates"].read_bytes() == before
 
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "0",
-            "--text",
-            "stale",
-            "--json",
-        ]
-    ) == 1
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "0",
+                "--text",
+                "stale",
+                "--json",
+            ]
+        )
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "stale_candidate_revision"
@@ -726,9 +787,10 @@ def test_accept_reject_transitions_and_revisions_are_explicit(
 ) -> None:
     candidate_id = create_one_candidate(tmp_path, capsys)
 
-    assert run_cli(
-        ["candidates", "accept", candidate_id, "--revision", "0", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "accept", candidate_id, "--revision", "0", "--json"])
+        == 0
+    )
     accepted = parsed_stdout(capsys)
     assert accepted == {
         "candidate_id": candidate_id,
@@ -737,26 +799,30 @@ def test_accept_reject_transitions_and_revisions_are_explicit(
     }
     before = local_paths["candidates"].read_bytes()
 
-    assert run_cli(
-        ["candidates", "accept", candidate_id, "--revision", "1", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "accept", candidate_id, "--revision", "1", "--json"])
+        == 1
+    )
     assert json.loads(capsys.readouterr().err)["error"]["code"] == (
         "invalid_candidate_transition"
     )
     assert local_paths["candidates"].read_bytes() == before
 
-    assert run_cli(
-        [
-            "candidates",
-            "reject",
-            candidate_id,
-            "--revision",
-            "1",
-            "--reason",
-            "not suitable",
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "reject",
+                candidate_id,
+                "--revision",
+                "1",
+                "--reason",
+                "not suitable",
+                "--json",
+            ]
+        )
+        == 0
+    )
     rejected = parsed_stdout(capsys)
     assert rejected == {
         "candidate_id": candidate_id,
@@ -764,9 +830,10 @@ def test_accept_reject_transitions_and_revisions_are_explicit(
         "state": "rejected",
     }
 
-    assert run_cli(
-        ["candidates", "reject", candidate_id, "--revision", "1", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "reject", candidate_id, "--revision", "1", "--json"])
+        == 1
+    )
     assert json.loads(capsys.readouterr().err)["error"]["code"] == (
         "stale_candidate_revision"
     )
@@ -810,23 +877,27 @@ def test_full_happy_path_approval_refresh_and_idempotency(
 
     proposal_file = tmp_path / "proposal.txt"
     proposal_file.write_text("Keep domain logic behind ports.\n", encoding="utf-8")
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "0",
-            "--text-file",
-            str(proposal_file),
-            *complete_metadata_args(),
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "0",
+                "--text-file",
+                str(proposal_file),
+                *complete_metadata_args(),
+                "--json",
+            ]
+        )
+        == 0
+    )
     assert parsed_stdout(capsys)["revision"] == 1
-    assert run_cli(
-        ["candidates", "accept", candidate_id, "--revision", "1", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "accept", candidate_id, "--revision", "1", "--json"])
+        == 0
+    )
     assert parsed_stdout(capsys)["state"] == "in_review"
 
     original_refresh = tritalele.VaultJsonlRefresh.refresh
@@ -839,9 +910,10 @@ def test_full_happy_path_approval_refresh_and_idempotency(
         return original_refresh(self)  # type: ignore[arg-type]
 
     monkeypatch.setattr(tritalele.VaultJsonlRefresh, "refresh", checked_refresh)
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "2", "--json"])
+        == 0
+    )
     approved = parsed_stdout(capsys)
     assert approved["candidate_id"] == candidate_id
     assert approved["candidate_revision"] == 3
@@ -859,23 +931,26 @@ def test_full_happy_path_approval_refresh_and_idempotency(
         for line in local_paths["lessons"].read_text(encoding="utf-8").splitlines()
     ]
     assert [row["id"] for row in projection_rows] == [approved["lesson_id"]]
-    assert JsonCandidateRepository(local_paths["candidates"]).get(
-        candidate_id
-    ).state is CandidateState.APPROVED
+    assert (
+        JsonCandidateRepository(local_paths["candidates"]).get(candidate_id).state
+        is CandidateState.APPROVED
+    )
 
     before_markdown = vault_path.read_bytes()
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "3", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "3", "--json"])
+        == 0
+    )
     repeated = parsed_stdout(capsys)
     assert repeated["candidate_revision"] == 3
     assert repeated["vault_write_outcome"] == "identical"
     assert repeated["candidate_state_changed"] is False
     assert vault_path.read_bytes() == before_markdown
 
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "2", "--json"])
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "stale_candidate_revision"
@@ -893,9 +968,12 @@ def test_partial_approval_reports_recovery_data_and_retry_is_idempotent(
     )
     local_paths["candidates"].parent.chmod(0o500)
     try:
-        assert run_cli(
-            ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
-        ) == 1
+        assert (
+            run_cli(
+                ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
+            )
+            == 1
+        )
     finally:
         local_paths["candidates"].parent.chmod(0o700)
     captured = capsys.readouterr()
@@ -915,9 +993,10 @@ def test_partial_approval_reports_recovery_data_and_retry_is_idempotent(
     assert staged.revision == 2
     assert not local_paths["lessons"].exists()
 
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "2", "--json"])
+        == 0
+    )
     recovered = parsed_stdout(capsys)
     assert recovered["candidate_revision"] == 3
     assert recovered["vault_write_outcome"] == "identical"
@@ -958,9 +1037,10 @@ def test_partial_approval_lost_response_does_not_claim_candidate_state(
         "update",
         persist_then_lose_response,
     )
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "2", "--json"])
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     error = json.loads(captured.err)["error"]
@@ -975,9 +1055,10 @@ def test_partial_approval_lost_response_does_not_claim_candidate_state(
     assert not local_paths["lessons"].exists()
 
     monkeypatch.setattr(JsonCandidateRepository, "update", original_update)
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "3", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "3", "--json"])
+        == 0
+    )
     recovered = parsed_stdout(capsys)
     assert recovered["candidate_state_changed"] is False
     assert recovered["vault_write_outcome"] == "identical"
@@ -996,9 +1077,10 @@ def test_partial_refresh_json_and_human_output_expose_stable_recovery_data(
     )
     local_paths["lessons"].mkdir()
 
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "2", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "2", "--json"])
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     error = json.loads(captured.err)["error"]
@@ -1016,9 +1098,7 @@ def test_partial_refresh_json_and_human_output_expose_stable_recovery_data(
     assert persisted.revision == 3
     assert (local_paths["vault"] / details["relative_vault_path"]).is_file()
 
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "3"]
-    ) == 1
+    assert run_cli(["candidates", "approve", candidate_id, "--revision", "3"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "[errore]" in captured.err
@@ -1034,9 +1114,10 @@ def test_partial_refresh_json_and_human_output_expose_stable_recovery_data(
     assert str(local_paths["vault"]) not in captured.err
 
     local_paths["lessons"].rmdir()
-    assert run_cli(
-        ["candidates", "approve", candidate_id, "--revision", "3", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "approve", candidate_id, "--revision", "3", "--json"])
+        == 0
+    )
     recovered = parsed_stdout(capsys)
     assert recovered["candidate_revision"] == 3
     assert recovered["vault_write_outcome"] == "identical"
@@ -1050,27 +1131,33 @@ def test_approval_missing_metadata_and_vault_collision_are_controlled(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     missing_metadata_id = create_one_candidate(tmp_path, capsys, name="missing.md")
-    assert run_cli(
-        [
-            "candidates",
-            "accept",
-            missing_metadata_id,
-            "--revision",
-            "0",
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "accept",
+                missing_metadata_id,
+                "--revision",
+                "0",
+                "--json",
+            ]
+        )
+        == 0
+    )
     parsed_stdout(capsys)
-    assert run_cli(
-        [
-            "candidates",
-            "approve",
-            missing_metadata_id,
-            "--revision",
-            "1",
-            "--json",
-        ]
-    ) == 2
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "approve",
+                missing_metadata_id,
+                "--revision",
+                "1",
+                "--json",
+            ]
+        )
+        == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "invalid_approval_metadata"
@@ -1079,32 +1166,35 @@ def test_approval_missing_metadata_and_vault_collision_are_controlled(
     collision_id = create_one_candidate(
         tmp_path, capsys, name="collision.md", content="Collision candidate.\n"
     )
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            collision_id,
-            "--revision",
-            "0",
-            *complete_metadata_args(),
-            "--json",
-        ]
-    ) == 0
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                collision_id,
+                "--revision",
+                "0",
+                *complete_metadata_args(),
+                "--json",
+            ]
+        )
+        == 0
+    )
     parsed_stdout(capsys)
     before_lifecycle = local_paths["candidates"].read_bytes()
-    assert run_cli(
-        ["candidates", "approve", collision_id, "--revision", "1", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "approve", collision_id, "--revision", "1", "--json"])
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert json.loads(captured.err)["error"]["code"] == (
-        "invalid_candidate_transition"
-    )
+    assert json.loads(captured.err)["error"]["code"] == ("invalid_candidate_transition")
     assert local_paths["candidates"].read_bytes() == before_lifecycle
     assert not local_paths["vault"].exists()
-    assert run_cli(
-        ["candidates", "accept", collision_id, "--revision", "1", "--json"]
-    ) == 0
+    assert (
+        run_cli(["candidates", "accept", collision_id, "--revision", "1", "--json"])
+        == 0
+    )
     parsed_stdout(capsys)
 
     repository = JsonCandidateRepository(local_paths["candidates"])
@@ -1114,9 +1204,10 @@ def test_approval_missing_metadata_and_vault_collision_are_controlled(
     occupied.write_text("occupied", encoding="utf-8")
     before = local_paths["candidates"].read_bytes()
 
-    assert run_cli(
-        ["candidates", "approve", collision_id, "--revision", "2", "--json"]
-    ) == 1
+    assert (
+        run_cli(["candidates", "approve", collision_id, "--revision", "2", "--json"])
+        == 1
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "vault_path_collision"
@@ -1154,7 +1245,9 @@ def test_invalid_ingestion_inputs_have_controlled_json_errors(
     expected_code: str,
 ) -> None:
     create_source(tmp_path)
-    resolved_argv = [str(tmp_path / item) if item == "source.md" else item for item in argv]
+    resolved_argv = [
+        str(tmp_path / item) if item == "source.md" else item for item in argv
+    ]
 
     assert run_cli(resolved_argv) == 2
     captured = capsys.readouterr()
@@ -1183,19 +1276,115 @@ def test_invalid_utf8_sources_and_proposed_text_files_are_controlled(
     before = local_paths["candidates"].read_bytes()
     invalid_proposal = tmp_path / "invalid-proposal.txt"
     invalid_proposal.write_bytes(b"\xff")
-    assert run_cli(
-        [
-            "candidates",
-            "update",
-            candidate_id,
-            "--revision",
-            "0",
-            "--text-file",
-            str(invalid_proposal),
-            "--json",
-        ]
-    ) == 2
+    assert (
+        run_cli(
+            [
+                "candidates",
+                "update",
+                candidate_id,
+                "--revision",
+                "0",
+                "--text-file",
+                str(invalid_proposal),
+                "--json",
+            ]
+        )
+        == 2
+    )
     captured = capsys.readouterr()
     assert captured.out == ""
     assert json.loads(captured.err)["error"]["code"] == "invalid_cli_input"
     assert local_paths["candidates"].read_bytes() == before
+
+
+def test_semantic_cli_disabled_is_controlled_and_deterministic_path_still_works(
+    tmp_path: Path,
+    local_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("LELE_SEMANTIC_PROVIDER", raising=False)
+    monkeypatch.delenv("LELE_SEMANTIC_MODEL", raising=False)
+    source = create_source(tmp_path, content="A useful semantic lesson.\n")
+
+    assert run_cli(["ingest", "semantic-preview", str(source), "--json"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    error = json.loads(captured.err)["error"]
+    assert error["code"] == "semantic_disabled"
+    assert not local_paths["candidates"].exists()
+
+    assert run_cli(["ingest", "preview", str(source), "--json"]) == 0
+    payload = parsed_stdout(capsys)
+    assert payload["preview"] is True
+
+
+def test_semantic_cli_configuration_error_is_sanitized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = create_source(tmp_path)
+    monkeypatch.setenv("LELE_SEMANTIC_PROVIDER", "openai")
+    monkeypatch.setenv("LELE_SEMANTIC_MODEL", "secret-model")
+
+    assert run_cli(["ingest", "semantic-preview", str(source), "--json"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    error = json.loads(captured.err)["error"]
+    assert error["code"] == "semantic_configuration_invalid"
+    assert "openai" not in captured.err.lower()
+    assert "secret-model" not in captured.err
+
+
+def test_semantic_candidate_public_representation_exposes_evidence_and_rationale(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from lele_manager.application.semantic_lesson_extraction import (
+        SemanticLessonExtractionResult,
+        SemanticLessonProposal,
+    )
+    from lele_manager.semantic_composition import SemanticRuntime
+
+    class FakeExtractor:
+        def execute(self, value):
+            index = value.chunks[0].index
+            return SemanticLessonExtractionResult(
+                (
+                    SemanticLessonProposal(
+                        title="Boundary",
+                        body="Keep authority in deterministic application code.",
+                        rationale="The source explicitly describes that boundary.",
+                        supporting_chunk_indexes=(index,),
+                        topic="architecture",
+                        tags=("authority",),
+                        source_label="test",
+                        importance=4,
+                    ),
+                )
+            )
+
+    runtime = SemanticRuntime(
+        extractor=FakeExtractor(),
+        strategy="semantic",
+        provider="ollama",
+        model="test-model",
+        locality="local",
+        endpoint="http://127.0.0.1:11434",
+    )
+    monkeypatch.setattr(tritalele, "resolve_semantic_runtime", lambda: runtime)
+
+    source = create_source(
+        tmp_path,
+        content="Keep authority in deterministic application code.\n",
+    )
+    assert run_cli(["ingest", "semantic-preview", str(source), "--json"]) == 0
+    payload = parsed_stdout(capsys)
+    candidate = payload["candidates"][0]
+
+    assert candidate["proposal_rationale"].startswith("The source explicitly")
+    assert candidate["provenance"]["derivation_id"].startswith("sha256:")
+    assert len(candidate["provenance"]["supporting_evidence"]) == 1
+    assert candidate["provenance"]["chunk_index"] is None

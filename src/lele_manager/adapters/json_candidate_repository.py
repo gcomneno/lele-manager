@@ -14,6 +14,7 @@ from lele_manager.application.lesson_candidate import (
     CandidateNotFoundError,
     CandidateProvenance,
     CandidateReviewAction,
+    CandidateSourceEvidence,
     CandidateReviewEvent,
     CandidateRevisionConflictError,
     CandidateState,
@@ -27,22 +28,47 @@ from lele_manager.application.lesson_candidate import (
 from lele_manager.application.raw_source import SourceKind
 from lele_manager.core.json_compat import canonical_json
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ROOT_FIELDS = {"candidates", "schema_version"}
 CANDIDATE_FIELDS_V1 = {
-    "candidate_id", "proposed_metadata", "provenance", "state", "text",
+    "candidate_id",
+    "proposed_metadata",
+    "provenance",
+    "state",
+    "text",
 }
 CANDIDATE_FIELDS_V2 = CANDIDATE_FIELDS_V1 | {
-    "proposed_text", "revision", "review_history",
+    "proposed_text",
+    "revision",
+    "review_history",
+}
+CANDIDATE_FIELDS_V3 = CANDIDATE_FIELDS_V2 | {
+    "proposal_rationale",
 }
 REVIEW_EVENT_FIELDS = {
-    "action", "occurred_at", "previous_state", "reason", "resulting_state", "revision",
+    "action",
+    "occurred_at",
+    "previous_state",
+    "reason",
+    "resulting_state",
+    "revision",
 }
-PROVENANCE_FIELDS = {
-    "chunk_index", "ingested_at", "run_metadata", "source_fingerprint",
-    "source_kind", "source_logical_name", "source_span", "transformations",
+PROVENANCE_FIELDS_V1_V2 = {
+    "chunk_index",
+    "ingested_at",
+    "run_metadata",
+    "source_fingerprint",
+    "source_kind",
+    "source_logical_name",
+    "source_span",
+    "transformations",
+}
+PROVENANCE_FIELDS_V3 = PROVENANCE_FIELDS_V1_V2 | {
+    "supporting_evidence",
+    "derivation_id",
 }
 SOURCE_SPAN_FIELDS = {"end", "start"}
+SOURCE_EVIDENCE_FIELDS = {"chunk_index", "source_span"}
 
 
 def _json_value(value: object) -> object:
@@ -60,6 +86,7 @@ def _candidate_to_dict(candidate: LessonCandidate) -> dict[str, object]:
     return {
         "candidate_id": candidate.candidate_id,
         "proposed_text": candidate.proposed_text,
+        "proposal_rationale": candidate.proposal_rationale,
         "proposed_metadata": _json_value(candidate.proposed_metadata),
         "provenance": {
             "chunk_index": provenance.chunk_index,
@@ -68,8 +95,21 @@ def _candidate_to_dict(candidate: LessonCandidate) -> dict[str, object]:
             "source_fingerprint": provenance.source_fingerprint,
             "source_kind": provenance.source_kind.value,
             "source_logical_name": provenance.source_logical_name,
-            "source_span": None if span is None else {"end": span.end, "start": span.start},
+            "source_span": None
+            if span is None
+            else {"end": span.end, "start": span.start},
             "transformations": _json_value(provenance.transformations),
+            "supporting_evidence": [
+                {
+                    "chunk_index": evidence.chunk_index,
+                    "source_span": {
+                        "end": evidence.source_span.end,
+                        "start": evidence.source_span.start,
+                    },
+                }
+                for evidence in provenance.supporting_evidence
+            ],
+            "derivation_id": provenance.derivation_id,
         },
         "state": candidate.state.value,
         "revision": candidate.revision,
@@ -117,12 +157,26 @@ def _candidate_from_dict(
 ) -> LessonCandidate:
     try:
         record = _object(value, f"candidate {position}")
-        expected_fields = (
-            CANDIDATE_FIELDS_V1 if schema_version == 1 else CANDIDATE_FIELDS_V2
-        )
+        if schema_version == 1:
+            expected_fields = CANDIDATE_FIELDS_V1
+        elif schema_version == 2:
+            expected_fields = CANDIDATE_FIELDS_V2
+        else:
+            expected_fields = CANDIDATE_FIELDS_V3
         _exact_fields(record, expected_fields, f"candidate {position}")
-        provenance_data = _object(record["provenance"], f"candidate {position} provenance")
-        _exact_fields(provenance_data, PROVENANCE_FIELDS, f"candidate {position} provenance")
+
+        provenance_data = _object(
+            record["provenance"],
+            f"candidate {position} provenance",
+        )
+        provenance_fields = (
+            PROVENANCE_FIELDS_V3 if schema_version == 3 else PROVENANCE_FIELDS_V1_V2
+        )
+        _exact_fields(
+            provenance_data,
+            provenance_fields,
+            f"candidate {position} provenance",
+        )
         raw_span = provenance_data["source_span"]
         span_data = None if raw_span is None else _object(raw_span, "source span")
         if span_data is not None:
@@ -139,17 +193,81 @@ def _candidate_from_dict(
             _object(item, "transformation metadata") for item in raw_transformations
         )
         run_metadata = _object(provenance_data["run_metadata"], "run metadata")
+
+        supporting_evidence: tuple[CandidateSourceEvidence, ...] = ()
+        derivation_id: str | None = None
+        if schema_version == 3:
+            raw_evidence = provenance_data["supporting_evidence"]
+            if not isinstance(raw_evidence, list):
+                raise MalformedStagingDataError("supporting evidence must be an array")
+            parsed_evidence: list[CandidateSourceEvidence] = []
+            for evidence_position, raw_item in enumerate(
+                raw_evidence,
+                start=1,
+            ):
+                item = _object(
+                    raw_item,
+                    f"supporting evidence {evidence_position}",
+                )
+                _exact_fields(
+                    item,
+                    SOURCE_EVIDENCE_FIELDS,
+                    f"supporting evidence {evidence_position}",
+                )
+                evidence_span_data = _object(
+                    item["source_span"],
+                    f"supporting evidence {evidence_position} source span",
+                )
+                _exact_fields(
+                    evidence_span_data,
+                    SOURCE_SPAN_FIELDS,
+                    f"supporting evidence {evidence_position} source span",
+                )
+                parsed_evidence.append(
+                    CandidateSourceEvidence(
+                        chunk_index=item["chunk_index"],  # type: ignore[arg-type]
+                        source_span=SourceSpan(
+                            start=evidence_span_data["start"],  # type: ignore[arg-type]
+                            end=evidence_span_data["end"],  # type: ignore[arg-type]
+                        ),
+                    )
+                )
+            supporting_evidence = tuple(parsed_evidence)
+            raw_derivation_id = provenance_data["derivation_id"]
+            if raw_derivation_id is not None and not isinstance(
+                raw_derivation_id,
+                str,
+            ):
+                raise MalformedStagingDataError(
+                    "derivation ID must be a string or null"
+                )
+            derivation_id = raw_derivation_id
+
         proposed_raw = record["proposed_metadata"]
-        proposed = None if proposed_raw is None else _object(proposed_raw, "proposed metadata")
+        proposed = (
+            None if proposed_raw is None else _object(proposed_raw, "proposed metadata")
+        )
+        proposal_rationale: str | None = None
+        if schema_version == 3:
+            raw_proposal_rationale = record["proposal_rationale"]
+            if raw_proposal_rationale is not None and not isinstance(
+                raw_proposal_rationale, str
+            ):
+                raise MalformedStagingDataError(
+                    "proposal rationale must be a string or null"
+                )
+            proposal_rationale = raw_proposal_rationale
         review_history: tuple[CandidateReviewEvent, ...] = ()
-        if schema_version == 2:
+        if schema_version >= 2:
             raw_history = record["review_history"]
             if not isinstance(raw_history, list):
                 raise MalformedStagingDataError("review history must be an array")
             events: list[CandidateReviewEvent] = []
             for event_position, raw_event in enumerate(raw_history, start=1):
                 event = _object(raw_event, f"review event {event_position}")
-                _exact_fields(event, REVIEW_EVENT_FIELDS, f"review event {event_position}")
+                _exact_fields(
+                    event, REVIEW_EVENT_FIELDS, f"review event {event_position}"
+                )
                 events.append(
                     CandidateReviewEvent(
                         revision=event["revision"],  # type: ignore[arg-type]
@@ -170,15 +288,18 @@ def _candidate_from_dict(
             source_span=span,
             run_metadata=run_metadata,
             transformations=transformations,
+            supporting_evidence=supporting_evidence,
+            derivation_id=derivation_id,
         )
         candidate = LessonCandidate(
             text=record["text"],  # type: ignore[arg-type]
             provenance=provenance,
-            proposed_text=record["proposed_text"] if schema_version == 2 else None,  # type: ignore[arg-type]
+            proposed_text=record["proposed_text"] if schema_version >= 2 else None,  # type: ignore[arg-type]
             proposed_metadata=proposed,
             state=CandidateState(record["state"]),
-            revision=record["revision"] if schema_version == 2 else 0,  # type: ignore[arg-type]
+            revision=record["revision"] if schema_version >= 2 else 0,  # type: ignore[arg-type]
             review_history=review_history,
+            proposal_rationale=proposal_rationale,
         )
         stored_id = record["candidate_id"]
         if not isinstance(stored_id, str) or stored_id != candidate.candidate_id:
@@ -214,7 +335,11 @@ class JsonCandidateRepository:
         root = _object(document, "staging data")
         _exact_fields(root, ROOT_FIELDS, "staging data")
         schema_version = root["schema_version"]
-        if type(schema_version) is not int or schema_version not in (1, SCHEMA_VERSION):
+        if type(schema_version) is not int or schema_version not in (
+            1,
+            2,
+            SCHEMA_VERSION,
+        ):
             raise MalformedStagingDataError("unsupported staging schema version")
         records = root["candidates"]
         if not isinstance(records, list):
@@ -233,9 +358,12 @@ class JsonCandidateRepository:
 
     def _write(self, candidates: Sequence[LessonCandidate]) -> None:
         document = {
-            "candidates": [_candidate_to_dict(item) for item in sorted(
-                candidates, key=lambda candidate: candidate.candidate_id
-            )],
+            "candidates": [
+                _candidate_to_dict(item)
+                for item in sorted(
+                    candidates, key=lambda candidate: candidate.candidate_id
+                )
+            ],
             "schema_version": SCHEMA_VERSION,
         }
         temporary_path: Path | None = None
@@ -335,17 +463,21 @@ class JsonCandidateRepository:
                     "candidate text, identity and provenance are immutable"
                 )
             if validated_candidate.revision != expected_revision + 1:
-                raise CandidateRevisionConflictError("candidate revision must increment once")
+                raise CandidateRevisionConflictError(
+                    "candidate revision must increment once"
+                )
             candidate_history_data = candidate_data["review_history"]
             existing_history_data = existing_data["review_history"]
             assert isinstance(candidate_history_data, list)
             assert isinstance(existing_history_data, list)
-            if (
-                len(validated_candidate.review_history) != len(existing.review_history) + 1
-                or canonical_json(candidate_history_data[:-1])
-                != canonical_json(existing_history_data)
+            if len(validated_candidate.review_history) != len(
+                existing.review_history
+            ) + 1 or canonical_json(candidate_history_data[:-1]) != canonical_json(
+                existing_history_data
             ):
-                raise CandidateRevisionConflictError("candidate review history must append once")
+                raise CandidateRevisionConflictError(
+                    "candidate review history must append once"
+                )
             candidates[position] = validated_candidate
             self._write(candidates)
             return validated_candidate
