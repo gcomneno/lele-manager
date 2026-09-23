@@ -97,6 +97,18 @@ export interface ExportSearchResponse {
   n_lessons: number;
 }
 
+export interface AssistantContextRequest {
+  lesson_ids?: string[] | null;
+  search?: LessonSearchRequest | null;
+  context_pack_id?: string | null;
+}
+
+export interface AssistantContextResponse {
+  markdown: string;
+  n_lessons: number;
+  lesson_ids: string[];
+}
+
 export interface ContextPack {
   id: string;
   name: string;
@@ -1000,6 +1012,13 @@ export const api = {
     }
     return resp.text();
   },
+
+  assistantContext: (body: AssistantContextRequest) =>
+    request<AssistantContextResponse>("/assistant-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 
   listContextPacks: () =>
     request<ContextPack[]>("/context-packs"),

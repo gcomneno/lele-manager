@@ -17,6 +17,7 @@
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
   import BulkDeleteLessonsDialog from '../components/BulkDeleteLessonsDialog.svelte'
   import ContextPacksManager from '../components/ContextPacksManager.svelte'
+  import AssistantContextActions from '../components/AssistantContextActions.svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
     Button,
@@ -478,6 +479,20 @@
   />
 
   <section class="results">
+    {#if lessons.length > 0}
+      <div class="assistant-results-scope">
+        <strong>{$messages.assistantCurrentResults}</strong>
+        <AssistantContextActions
+          request={{
+            lesson_ids: lessons.map((lesson) => lesson.id),
+          }}
+          count={lessons.length}
+          filename="lele-assistant-results.md"
+          testId="assistant-context-results"
+        />
+      </div>
+    {/if}
+
     {#if loading}
       <p class="meta">{$messages.commonLoading}</p>
     {:else if lessons.length === 0}
@@ -530,6 +545,20 @@
               style="--giu-form-status-padding: var(--space-2) var(--space-3)"
             />
           {/if}
+
+          <div class="assistant-selected-scope">
+            <strong>{$messages.assistantSelectedResults}</strong>
+            <AssistantContextActions
+              request={{
+                lesson_ids: selectedVisibleLessons().map(
+                  (lesson) => lesson.id,
+                ),
+              }}
+              count={selectedIds.size}
+              filename="lele-assistant-selected.md"
+              testId="assistant-context-selected"
+            />
+          </div>
         {/if}
       </div>
       {#each lessons as lesson}
@@ -738,6 +767,16 @@
     .browse-filter-grid {
       width: 100%;
     }
+  }
+
+  .assistant-results-scope,
+  .assistant-selected-scope {
+    display: grid;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
   }
 
   .context-pack-create {
