@@ -12,6 +12,7 @@
     Button,
     FieldLabel,
   } from 'giadaware-ui-components/studio'
+  import AssistantContextActions from './AssistantContextActions.svelte'
 
   type Props = {
     selectedLessonIds: string[]
@@ -348,6 +349,13 @@
           </Button>
         </div>
       </div>
+
+      <AssistantContextActions
+        request={{ context_pack_id: detail.id }}
+        count={detail.lesson_ids.length}
+        filename="lele-assistant-context-pack.md"
+        testId="assistant-context-pack"
+      />
 
       <div class="context-pack-edit-row">
         <label>

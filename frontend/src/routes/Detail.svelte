@@ -24,6 +24,7 @@
   import SimilarPanel from '../components/SimilarPanel.svelte'
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
   import RevisionHistoryPanel from '../components/RevisionHistoryPanel.svelte'
+  import AssistantContextActions from '../components/AssistantContextActions.svelte'
 
   interface Props {
     id: string
@@ -248,6 +249,13 @@
           onclick={() => { deleteTarget = lesson }}
         >{$messages.deleteLessonDelete}</button>
       {/snippet}
+
+      <AssistantContextActions
+        request={{ lesson_ids: [lesson.id] }}
+        count={1}
+        filename="lele-assistant-context.md"
+        testId="assistant-context-detail"
+      />
 
       {#if deleteError}
         <FormStatus

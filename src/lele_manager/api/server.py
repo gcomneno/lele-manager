@@ -41,6 +41,11 @@ from lele_manager.application.contradiction_resolution import (
     CorrectsResolutionIntent,
     SupersededByResolutionIntent,
 )
+from lele_manager.application.assistant_context import (
+    AssistantContextBrokenReferencesError,
+    resolve_assistant_context_lesson_ids,
+    resolve_assistant_context_pack,
+)
 from lele_manager.application.context_packs import (
     add_context_pack_members,
     create_context_pack,
@@ -136,6 +141,7 @@ from lele_manager.core.projection_store import (
 )
 from lele_manager.core.deduplication import DEFAULT_MIN_SCORE, find_duplicates
 from lele_manager.core.doctor import DoctorOperationalError, check_markdown_files
+from lele_manager.core.assistant_context import render_assistant_context
 from lele_manager.core.export import search_results_to_markdown
 from lele_manager.core.vault import (
     build_vault_tree,
@@ -496,6 +502,18 @@ class ExportSearchRequest(LessonSearchRequest):
 class ExportSearchResponse(BaseModel):
     markdown: str
     n_lessons: int
+
+
+class AssistantContextRequest(BaseModel):
+    lesson_ids: Optional[List[str]] = None
+    search: Optional[LessonSearchRequest] = None
+    context_pack_id: Optional[str] = None
+
+
+class AssistantContextResponse(BaseModel):
+    markdown: str
+    n_lessons: int
+    lesson_ids: List[str]
 
 
 class SimilarMeta(BaseModel):
@@ -2920,6 +2938,128 @@ def _export_filters_summary(body: ExportSearchRequest) -> str:
         parts.append(f"ids_in={len(body.ids_in)} ids")
     parts.append(f"limit={body.limit}")
     return ", ".join(parts) if parts else "(nessun filtro)"
+
+
+@app.post(
+    "/assistant-context",
+    response_model=AssistantContextResponse,
+)
+def assistant_context(
+    body: AssistantContextRequest,
+) -> AssistantContextResponse:
+    """Render explicit assistant-ready scope from current canonical knowledge."""
+
+    scopes = (
+        body.lesson_ids is not None,
+        body.search is not None,
+        body.context_pack_id is not None,
+    )
+    if sum(scopes) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "assistant_context_scope_invalid",
+                "message": (
+                    "Exactly one assistant context scope must be provided."
+                ),
+            },
+        )
+
+    context = get_active_vault_context()
+
+    try:
+        if body.lesson_ids is not None:
+            if not body.lesson_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "assistant_context_scope_invalid",
+                        "message": "lesson_ids must not be empty.",
+                    },
+                )
+
+            if len(body.lesson_ids) != len(set(body.lesson_ids)):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "assistant_context_scope_invalid",
+                        "message": "lesson_ids must not contain duplicates.",
+                    },
+                )
+
+            lessons = resolve_assistant_context_lesson_ids(
+                lesson_ids=body.lesson_ids,
+                context=context,
+            )
+
+        elif body.search is not None:
+            search_results = search_lessons(body.search)
+            lessons = resolve_assistant_context_lesson_ids(
+                lesson_ids=[result.id for result in search_results],
+                context=context,
+            )
+
+        else:
+            assert body.context_pack_id is not None
+            lessons = resolve_assistant_context_pack(
+                pack_id=body.context_pack_id,
+                context=context,
+                store=ContextPackStore(context_pack_store_path()),
+            )
+
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "assistant_context_lesson_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "lesson_identity_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "lesson_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except AssistantContextBrokenReferencesError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "assistant_context_has_broken_references",
+                "message": (
+                    "Assistant context cannot be rendered while canonical "
+                    "references are missing."
+                ),
+                "lesson_ids": list(exc.lesson_ids),
+            },
+        ) from exc
+    except ContextPackStoreError as exc:
+        _context_pack_store_error(
+            exc,
+            status_code=404,
+            code="context_pack_not_found",
+        )
+
+    markdown = render_assistant_context(lessons)
+
+    return AssistantContextResponse(
+        markdown=markdown,
+        n_lessons=len(lessons),
+        lesson_ids=[
+            lesson.lesson_id
+            for lesson in lessons
+        ],
+    )
 
 
 @app.post("/export/search")
