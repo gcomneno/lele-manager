@@ -109,6 +109,50 @@ export interface AssistantContextResponse {
   lesson_ids: string[];
 }
 
+export type FactualVerificationClaimClassification =
+  | "stable-factual"
+  | "time-sensitive"
+  | "domain-specific"
+  | "subjective";
+
+export type FactualVerificationOutcome =
+  | "supported"
+  | "contradicted"
+  | "outdated"
+  | "insufficient-evidence"
+  | "not-verifiable";
+
+export interface FactualVerificationClaim {
+  claim_id: string;
+  text: string;
+  classification: FactualVerificationClaimClassification;
+}
+
+export interface FactualVerificationEvidence {
+  source_id: string;
+  source_uri: string;
+  source_title: string;
+  retrieved_at: string;
+  excerpt: string;
+}
+
+export interface FactualVerificationAssessment {
+  lesson_id: string;
+  canonical_revision: string;
+  claim: FactualVerificationClaim;
+  outcome: FactualVerificationOutcome;
+  evidence: FactualVerificationEvidence[];
+  checked_at: string;
+  explanation: string;
+  stale: boolean;
+}
+
+export interface FactualVerificationResponse {
+  lesson_id: string;
+  remote_processing_approved: boolean;
+  assessments: FactualVerificationAssessment[];
+}
+
 export interface ContextPack {
   id: string;
   name: string;
@@ -1019,6 +1063,23 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+
+  factualVerification: (id: string) =>
+    request<FactualVerificationResponse>(
+      `/lessons/${encodeURIComponent(id)}/factual-verification`,
+    ),
+
+  verifyFactualClaims: (id: string) =>
+    request<FactualVerificationResponse>(
+      `/lessons/${encodeURIComponent(id)}/factual-verification`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          remote_processing_approved: true,
+        }),
+      },
+    ),
 
   listContextPacks: () =>
     request<ContextPack[]>("/context-packs"),
