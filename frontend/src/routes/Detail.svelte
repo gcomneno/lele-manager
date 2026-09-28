@@ -25,6 +25,7 @@
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
   import RevisionHistoryPanel from '../components/RevisionHistoryPanel.svelte'
   import AssistantContextActions from '../components/AssistantContextActions.svelte'
+  import FactualVerificationPanel from '../components/FactualVerificationPanel.svelte'
 
   interface Props {
     id: string
@@ -255,6 +256,10 @@
         count={1}
         filename="lele-assistant-context.md"
         testId="assistant-context-detail"
+      />
+
+      <FactualVerificationPanel
+        lessonId={lesson.id}
       />
 
       {#if deleteError}

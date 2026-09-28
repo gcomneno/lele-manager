@@ -9,7 +9,7 @@ from typing import Annotated, Any, Callable, Dict, List, Literal, Mapping, NoRet
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pathlib import Path
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from threading import Lock
@@ -57,6 +57,24 @@ from lele_manager.core.context_pack_store import (
     ContextPackStoreError,
     context_pack_store_path,
 )
+from lele_manager.application.factual_verification import (
+    FactualVerificationService,
+)
+from lele_manager.factual_verification_composition import (
+    FactualVerificationConfigurationError,
+    resolve_factual_verification_runtime,
+)
+from lele_manager.core.factual_verification import (
+    VerificationAssessment,
+    VerificationValidationError,
+    assessment_is_stale,
+)
+from lele_manager.core.factual_verification_store import (
+    FACTUAL_VERIFICATION_STORE_FILENAME,
+    FactualVerificationStore,
+    FactualVerificationStoreError,
+)
+
 from lele_manager.application.lesson_writing import (
     CanonicalLessonSnapshot,
     CanonicalLessonWriteAmbiguousError,
@@ -514,6 +532,125 @@ class AssistantContextResponse(BaseModel):
     markdown: str
     n_lessons: int
     lesson_ids: List[str]
+
+
+class FactualVerificationRequest(BaseModel):
+    remote_processing_approved: bool = False
+
+
+class FactualVerificationClaimResponse(BaseModel):
+    claim_id: str
+    text: str
+    classification: str
+
+
+class FactualVerificationEvidenceResponse(BaseModel):
+    source_id: str
+    source_uri: str
+    source_title: str
+    retrieved_at: str
+    excerpt: str
+
+
+class FactualVerificationAssessmentResponse(BaseModel):
+    lesson_id: str
+    canonical_revision: str
+    claim: FactualVerificationClaimResponse
+    outcome: str
+    evidence: List[FactualVerificationEvidenceResponse]
+    checked_at: str
+    explanation: str
+    stale: bool
+
+
+class FactualVerificationResponse(BaseModel):
+    lesson_id: str
+    remote_processing_approved: bool
+    assessments: List[FactualVerificationAssessmentResponse]
+
+
+FACTUAL_VERIFICATION_MAX_AGE_DAYS = 90
+
+
+def _factual_verification_service(
+    context: ActiveVaultContext,
+) -> FactualVerificationService:
+    """Resolve the explicitly configured factual-verification runtime."""
+
+    try:
+        runtime = resolve_factual_verification_runtime(
+            store=_factual_verification_store(context),
+        )
+    except FactualVerificationConfigurationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": (
+                    "factual_verification_provider_configuration_invalid"
+                ),
+                "message": str(exc),
+            },
+        ) from exc
+
+    if runtime is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "factual_verification_provider_unavailable",
+                "message": (
+                    "External factual verification is not configured."
+                ),
+            },
+        )
+
+    return runtime
+
+
+def _factual_verification_store(
+    context: ActiveVaultContext,
+) -> FactualVerificationStore:
+    return FactualVerificationStore(
+        context.candidates_path.parent
+        / FACTUAL_VERIFICATION_STORE_FILENAME
+    )
+
+
+def _factual_verification_assessment_response(
+    assessment: VerificationAssessment,
+    *,
+    current_canonical_revision: str,
+    as_of: datetime,
+) -> FactualVerificationAssessmentResponse:
+    return FactualVerificationAssessmentResponse(
+        lesson_id=assessment.lesson_id,
+        canonical_revision=assessment.canonical_revision,
+        claim=FactualVerificationClaimResponse(
+            claim_id=assessment.claim.claim_id,
+            text=assessment.claim.text,
+            classification=assessment.claim.classification,
+        ),
+        outcome=assessment.outcome,
+        evidence=[
+            FactualVerificationEvidenceResponse(
+                source_id=item.source_id,
+                source_uri=item.source_uri,
+                source_title=item.source_title,
+                retrieved_at=item.retrieved_at.isoformat(),
+                excerpt=item.excerpt,
+            )
+            for item in assessment.evidence
+        ],
+        checked_at=assessment.checked_at.isoformat(),
+        explanation=assessment.explanation,
+        stale=assessment_is_stale(
+            assessment,
+            current_canonical_revision=current_canonical_revision,
+            as_of=as_of,
+            max_age=timedelta(
+                days=FACTUAL_VERIFICATION_MAX_AGE_DAYS
+            ),
+        ),
+    )
 
 
 class SimilarMeta(BaseModel):
@@ -2938,6 +3075,185 @@ def _export_filters_summary(body: ExportSearchRequest) -> str:
         parts.append(f"ids_in={len(body.ids_in)} ids")
     parts.append(f"limit={body.limit}")
     return ", ".join(parts) if parts else "(nessun filtro)"
+
+
+@app.post(
+    "/lessons/{lesson_id:path}/factual-verification",
+    response_model=FactualVerificationResponse,
+)
+def verify_lesson_facts(
+    lesson_id: str,
+    body: FactualVerificationRequest,
+) -> FactualVerificationResponse:
+    """Run explicit evidence-backed factual verification for one LeLe."""
+
+    if not body.remote_processing_approved:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": (
+                    "factual_verification_remote_consent_required"
+                ),
+                "message": (
+                    "Explicit approval is required before external "
+                    "factual verification may run."
+                ),
+            },
+        )
+
+    context = get_active_vault_context()
+
+    try:
+        snapshot = read_canonical_lesson_snapshot(
+            vault_dir=context.vault_dir,
+            lesson_id=lesson_id,
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "factual_verification_lesson_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "factual_verification_lesson_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "factual_verification_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+
+    service = _factual_verification_service(context)
+
+    try:
+        assessments = service.verify(
+            scope=context.vault_id,
+            lesson=snapshot,
+        )
+    except FactualVerificationStoreError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "factual_verification_store_failed",
+                "message": (
+                    "Factual-verification state could not be "
+                    "saved safely."
+                ),
+            },
+        ) from exc
+    except VerificationValidationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "factual_verification_invalid_result",
+                "message": str(exc),
+            },
+        ) from exc
+
+    now = datetime.now(timezone.utc)
+
+    return FactualVerificationResponse(
+        lesson_id=snapshot.lesson_id,
+        remote_processing_approved=True,
+        assessments=[
+            _factual_verification_assessment_response(
+                assessment,
+                current_canonical_revision=(
+                    snapshot.canonical_revision
+                ),
+                as_of=now,
+            )
+            for assessment in assessments
+        ],
+    )
+
+
+@app.get(
+    "/lessons/{lesson_id:path}/factual-verification",
+    response_model=FactualVerificationResponse,
+)
+def get_lesson_factual_verification(
+    lesson_id: str,
+) -> FactualVerificationResponse:
+    """Read persisted advisory verification state for one canonical LeLe."""
+
+    context = get_active_vault_context()
+
+    try:
+        snapshot = read_canonical_lesson_snapshot(
+            vault_dir=context.vault_dir,
+            lesson_id=lesson_id,
+        )
+    except CanonicalLessonWriteNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "factual_verification_lesson_not_found",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteAmbiguousError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "factual_verification_lesson_ambiguous",
+                "message": str(exc),
+            },
+        ) from exc
+    except CanonicalLessonWriteStorageError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "factual_verification_canonical_read_failed",
+                "message": str(exc),
+            },
+        ) from exc
+
+    try:
+        assessments = _factual_verification_store(
+            context
+        ).list_assessments(
+            scope=context.vault_id,
+            lesson_id=snapshot.lesson_id,
+        )
+    except FactualVerificationStoreError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "factual_verification_store_failed",
+                "message": (
+                    "Factual-verification state could not be "
+                    "read safely."
+                ),
+            },
+        ) from exc
+
+    now = datetime.now(timezone.utc)
+
+    return FactualVerificationResponse(
+        lesson_id=snapshot.lesson_id,
+        remote_processing_approved=False,
+        assessments=[
+            _factual_verification_assessment_response(
+                assessment,
+                current_canonical_revision=(
+                    snapshot.canonical_revision
+                ),
+                as_of=now,
+            )
+            for assessment in assessments
+        ],
+    )
 
 
 @app.post(
