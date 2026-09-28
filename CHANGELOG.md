@@ -11,6 +11,59 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-09-28
+
+### Added
+- Multi-Vault registry and active-Vault management with persistent workspace
+  authority.
+- First-class Vault snapshots, preview-before-restore, bounded rollback and
+  derived-state rebuild after restore.
+- Safe Vault merge, transfer and explicit per-Vault destructive Danger Zone
+  workflows.
+- Canonical single-LeLe and Browse bulk actions with explicit deletion and
+  duplicate-resolution authority.
+- Explicit lesson lifecycle, supersession, revision history and rollback.
+- Typed lesson relationships with maintained directional semantics.
+- Explainable knowledge freshness and review-needed signals.
+- Advisory potential-contradiction review with human-controlled resolution.
+- Explainable hybrid search combining lexical, semantic and metadata evidence.
+- Semantic Lesson Learned extraction into the governed TritaLeLe staging
+  boundary.
+- Task-focused Context Packs.
+- Assistant-ready context export grounded in canonical maintained knowledge.
+- Evidence-backed factual-verification contracts with explicit provider and
+  privacy boundaries.
+- Bounded Ask-this-Vault contracts, canonical citation authority, explicit
+  insufficient-support behavior and provider-independent synthesis boundary.
+
+### Changed
+- Search, assistant export and Ask-this-Vault now share maintained grounding
+  boundaries so derived retrieval selects identity/order while canonical
+  Markdown remains the content authority.
+- Product language and commercial-readiness documentation now center the
+  maintained-knowledge promise: technical knowledge that stays accountable
+  over time.
+- Main-branch protection and release supply-chain controls were strengthened.
+- Native release builds now use a frozen release toolchain, normalized
+  reproducibility verification and GitHub artifact attestations.
+- PyPI publication uses an explicit protected environment, tag/version
+  verification and pinned publication actions.
+
+### Security
+- Native release provenance is attested independently for Linux, macOS and
+  Windows artifacts.
+- Release integrity documentation distinguishes immutability, asset digests,
+  reproducibility and provenance.
+- Main protection requires the maintained PR/CI gates before integration.
+
+### Compatibility
+- No intentional breaking changes are introduced in canonical Markdown,
+  public CLI/API contracts, persistent Vault data, TritaLeLe approval
+  authority or native installation layout.
+- Remote AI/provider use remains optional and fail-closed; no implicit cloud
+  knowledge dependency is introduced.
+
+
 ## [1.11.1] - 2026-08-09
 
 ### Fixed
@@ -324,7 +377,8 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - Date parsing (YAML → JSON).
 - NaN/NaT handling in the API layer.
 
-[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/gcomneno/lele-manager/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/gcomneno/lele-manager/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/gcomneno/lele-manager/compare/v1.10.1...v1.11.0
 [1.10.1]: https://github.com/gcomneno/lele-manager/compare/v1.10.0...v1.10.1
