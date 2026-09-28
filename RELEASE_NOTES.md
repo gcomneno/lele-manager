@@ -1,3 +1,85 @@
+## v1.12.0 — Governed maintained knowledge
+
+LeLe Manager v1.12.0 consolidates the post-v1.11 maintained-knowledge
+architecture into a release candidate centered on one product promise:
+
+> **Technical knowledge that stays accountable over time.**
+
+This release preserves the local-first Markdown Vault as canonical authority
+while expanding the workflows used to govern, recover, relate, retrieve and
+reuse maintained knowledge.
+
+### Maintained knowledge
+
+- explicit lifecycle and supersession semantics;
+- per-LeLe revision history and rollback;
+- typed lesson relationships;
+- explainable freshness and review-needed signals;
+- advisory potential-contradiction review;
+- explainable hybrid search;
+- semantic Lesson Learned extraction through governed staging;
+- task-focused Context Packs;
+- assistant-ready context export;
+- bounded Ask-this-Vault grounding and citation contracts;
+- evidence-backed factual-verification boundaries.
+
+Derived search, similarity, freshness, contradiction and AI/provider signals
+remain advisory. They do not silently mutate canonical LeLe.
+
+### Vault governance and recovery
+
+- persistent multi-Vault registry and active-Vault management;
+- first-class snapshots and explicit restore preview;
+- safe Vault merge and transfer workflows;
+- per-Vault destructive Danger Zone operations;
+- canonical single-LeLe, bulk deletion and duplicate-resolution workflows.
+
+Authority remains explicit: discovering a path, duplicate, relationship,
+candidate or derived signal does not itself authorize canonical mutation.
+
+### Local-first and AI boundaries
+
+LeLe Manager does not require a hosted account, telemetry, cloud storage or a
+remote AI provider.
+
+Assistant-ready export, Ask-this-Vault and factual-verification capabilities
+preserve provider-independent knowledge boundaries.
+
+Ask-this-Vault fails closed when a non-empty scope has no configured synthesis
+provider. No remote provider is enabled implicitly.
+
+### Release and supply-chain hardening
+
+- frozen native-release dependency/toolchain authority;
+- normalized native reproducibility verification;
+- Linux, macOS and Windows published-style native smoke tests;
+- GitHub artifact attestations for native release archives;
+- documented separation of release immutability, digest verification,
+  reproducibility and build provenance;
+- hardened PyPI publication environment and pinned publication actions;
+- strengthened main-branch PR/CI protection.
+
+### Compatibility
+
+No intentional breaking changes are introduced in the public CLI/API,
+canonical Markdown contract, persistent Vault data, TritaLeLe approval
+boundary or native installation layout.
+
+Persistent runtime data remains outside replaceable installation bundles.
+
+### Release-candidate verification
+
+Before publication, v1.12.0 must complete the maintained release-readiness
+sequence:
+
+1. frontend dependency security triage;
+2. clean wheel/sdist and native release rehearsal;
+3. tag and release publication only after those gates pass;
+4. post-publication verification of immutable release state, asset digests,
+   native attestations and published-style smoke behavior.
+
+---
+
 ## v1.11.1 — Graceful native launcher shutdown
 
 LeLe Manager v1.11.1 is a focused patch release fixing the shutdown behavior

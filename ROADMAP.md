@@ -112,8 +112,13 @@ LeLe Manager currently provides:
   candidates, without pre-approval vault or projection writes;
 - deterministic tests across domain, storage, API, CLI, and GUI boundaries.
 
-The project is usable as a personal production tool, while storage migration
-and a few architectural cleanups remain active work.
+The project is usable as a personal production tool. The maintained-knowledge
+workflow, multi-Vault governance, recovery workflows, lifecycle, relationships,
+freshness, contradiction review, explainable hybrid search, Context Packs and
+assistant grounding boundaries are integrated.
+
+Remaining work is primarily release/commercial operations and optional future
+architecture evolution rather than a missing core product workflow.
 
 ## 4. Completed quality and product work
 
@@ -226,30 +231,30 @@ excluded only through an explicit classification and rationale.
    - maintain green lint, typing, tests, packaging, security, and E2E checks;
    - keep documentation pairs synchronized.
 
-2. **Complete storage evolution**
-   - reconcile vault-only and JSONL-only records;
-   - introduce and validate the SQLite adapter;
-   - prove parity with the JSONL compatibility backend;
-   - expose stale projection state explicitly;
-   - cut over gradually without creating a second authority.
+2. **Exercise release readiness**
+   - keep release notes and SemVer aligned with shipped capabilities;
+   - triage frontend dependency findings explicitly;
+   - rehearse clean Python and native artifacts before publication;
+   - verify release immutability, asset digests and attestations after
+     publication.
 
-3. **Complete TritaLeLe product integration**
-   - connect the candidate workflow to the GUI;
-   - preserve explicit review and approval;
-   - keep provenance and failure recovery visible;
-   - avoid direct candidate promotion into canonical datasets.
+3. **Evolve storage only when justified**
+   - JSONL remains the current production compatibility backend;
+   - SQLite remains accepted target architecture rather than a release blocker;
+   - any migration must prove parity and preserve one canonical authority.
 
 4. **Improve maintainability**
-   - split oversized FastAPI modules into focused routers and services;
-   - define dependency pinning or lockfile policy;
-   - keep boundaries between authoring, synchronization, projection, export,
-     and ML explicit.
+   - split oversized FastAPI modules only when a focused change benefits from
+     it;
+   - keep dependency authority and release locks explicit;
+   - preserve boundaries between authoring, synchronization, projection,
+     export and ML.
 
 5. **Expand integrations when justified**
+   - optional synthesis/provider integrations for Ask-this-Vault;
    - editor integrations such as VS Code or Obsidian;
    - external quiz and review consumers;
-   - richer embeddings or ranking only after measurable benefit;
-   - analytical tooling such as DuckDB only for a demonstrated workload.
+   - richer embeddings or ranking only after measurable benefit.
 
 ## 7. Nice-to-have research
 

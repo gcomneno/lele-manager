@@ -78,6 +78,14 @@ normalized-content comparison: repeated builds must resolve from the same
 dependency identities and their extracted payload content must match after
 known container-order and timestamp metadata are excluded.
 
+Windows executables also carry a PE build timestamp.
+`scripts/build-native-app.py` invokes PyInstaller with deterministic
+build-process inputs: an already exported `SOURCE_DATE_EPOCH` is honored,
+otherwise the current Git commit timestamp is used, and `PYTHONHASHSEED` is
+fixed for the PyInstaller process. If neither epoch source is available, the
+native build fails before packaging instead of producing a time-dependent
+executable.
+
 This limitation is explicit rather than silently treating differing native
 archive hashes as dependency drift.
 

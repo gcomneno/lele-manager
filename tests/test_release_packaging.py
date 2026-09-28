@@ -1,4 +1,7 @@
+import runpy
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import tomllib
 
@@ -8,6 +11,12 @@ BUILD_COMMAND = "./scripts/build-release-artifacts.sh"
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def native_build_script() -> dict[str, Any]:
+    return runpy.run_path(
+        str(ROOT / "scripts" / "build-native-app.py")
+    )
 
 
 def test_ci_and_release_share_artifact_build_entrypoint() -> None:
@@ -101,6 +110,117 @@ def test_native_build_rejects_stale_installed_version() -> None:
     assert 'version("lele-manager")' in script
     assert '"project"]["version"]' in script
     assert "metadata lele-manager non allineata" in script
+
+
+
+def test_native_build_prefers_supplied_source_date_epoch(
+    monkeypatch,
+) -> None:
+    script = native_build_script()
+
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "1700000000")
+    monkeypatch.setenv("PYTHONHASHSEED", "random")
+
+    environment = script["pyinstaller_environment"]()
+
+    assert environment["SOURCE_DATE_EPOCH"] == "1700000000"
+    assert environment["PYTHONHASHSEED"] == "0"
+
+
+def test_native_build_derives_source_date_epoch_from_git(
+    monkeypatch,
+) -> None:
+    script = native_build_script()
+    captured: dict[str, Any] = {}
+
+    monkeypatch.delenv("SOURCE_DATE_EPOCH", raising=False)
+
+    def fake_run(
+        command: tuple[str, ...],
+        **kwargs: Any,
+    ) -> SimpleNamespace:
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(stdout="1700000001\n")
+
+    monkeypatch.setattr(
+        script["subprocess"],
+        "run",
+        fake_run,
+    )
+
+    environment = script["pyinstaller_environment"]()
+
+    assert captured["command"] == (
+        "git",
+        "log",
+        "-1",
+        "--format=%ct",
+        "HEAD",
+    )
+    assert captured["kwargs"]["cwd"] == ROOT
+    assert captured["kwargs"]["check"] is True
+    assert captured["kwargs"]["text"] is True
+    assert environment["SOURCE_DATE_EPOCH"] == "1700000001"
+    assert environment["PYTHONHASHSEED"] == "0"
+
+
+def test_native_build_rejects_invalid_source_date_epoch(
+    monkeypatch,
+) -> None:
+    script = native_build_script()
+
+    monkeypatch.setenv(
+        "SOURCE_DATE_EPOCH",
+        "not-an-epoch",
+    )
+
+    try:
+        script["pyinstaller_environment"]()
+    except SystemExit as exc:
+        assert "SOURCE_DATE_EPOCH non valido" in str(exc)
+    else:
+        raise AssertionError(
+            "invalid SOURCE_DATE_EPOCH accepted"
+        )
+
+
+def test_native_build_invokes_pyinstaller_with_deterministic_environment(
+    monkeypatch,
+) -> None:
+    script = native_build_script()
+
+    native_environment = {
+        "SOURCE_DATE_EPOCH": "1700000002",
+        "PYTHONHASHSEED": "0",
+    }
+    captured: dict[str, Any] = {}
+
+    def fake_run(
+        *args: str,
+        env: dict[str, str] | None = None,
+    ) -> None:
+        captured["args"] = args
+        captured["env"] = env
+
+    build_native_bundle = script["build_native_bundle"]
+    namespace = build_native_bundle.__globals__
+
+    monkeypatch.setitem(
+        namespace,
+        "pyinstaller_environment",
+        lambda: native_environment,
+    )
+    monkeypatch.setitem(
+        namespace,
+        "run",
+        fake_run,
+    )
+
+    build_native_bundle()
+
+    assert captured["env"] == native_environment
+    assert "PyInstaller" in captured["args"]
 
 
 def test_linux_native_release_ships_the_user_local_installer() -> None:
