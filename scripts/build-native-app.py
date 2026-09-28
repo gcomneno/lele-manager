@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+import os
 import shutil
-import tomllib
 import subprocess
 import sys
+import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -42,8 +43,73 @@ def verify_installed_version() -> None:
         )
 
 
-def run(*args: str) -> None:
-    subprocess.run(args, cwd=ROOT, check=True)
+def validate_source_date_epoch(value: str, source: str) -> str:
+    if not value or value.strip() != value or not value.isdecimal():
+        raise SystemExit(
+            f"ERRORE: {source} non valido: deve essere un timestamp Unix "
+            "intero non negativo."
+        )
+    return value
+
+
+def git_commit_source_date_epoch() -> str:
+    try:
+        completed = subprocess.run(
+            (
+                "git",
+                "log",
+                "-1",
+                "--format=%ct",
+                "HEAD",
+            ),
+            cwd=ROOT,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(
+            "ERRORE: SOURCE_DATE_EPOCH non impostato e timestamp commit Git "
+            "non disponibile. Imposta SOURCE_DATE_EPOCH a un timestamp Unix "
+            "intero prima della build nativa."
+        ) from exc
+
+    return validate_source_date_epoch(
+        completed.stdout.strip(),
+        "timestamp commit Git",
+    )
+
+
+def deterministic_source_date_epoch() -> str:
+    configured = os.environ.get("SOURCE_DATE_EPOCH")
+    if configured is not None:
+        return validate_source_date_epoch(
+            configured,
+            "SOURCE_DATE_EPOCH",
+        )
+    return git_commit_source_date_epoch()
+
+
+def pyinstaller_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["SOURCE_DATE_EPOCH"] = (
+        deterministic_source_date_epoch()
+    )
+    environment["PYTHONHASHSEED"] = "0"
+    return environment
+
+
+def run(
+    *args: str,
+    env: dict[str, str] | None = None,
+) -> None:
+    subprocess.run(
+        args,
+        cwd=ROOT,
+        check=True,
+        env=env,
+    )
 
 
 def build_gui() -> None:
@@ -79,6 +145,7 @@ def build_native_bundle() -> None:
         "--collect-data",
         "lele_manager",
         str(launcher),
+        env=pyinstaller_environment(),
     )
 
 
