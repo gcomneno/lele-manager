@@ -109,6 +109,29 @@ export interface AssistantContextResponse {
   lesson_ids: string[];
 }
 
+export type AskVaultOutcome =
+  | "answered"
+  | "insufficient-support";
+
+export interface AskVaultRequest extends AssistantContextRequest {
+  question: string;
+}
+
+export interface AskVaultCitation {
+  lesson_id: string;
+  title?: string | null;
+  lifecycle: LessonLifecycleState;
+  superseded_by?: string | null;
+}
+
+export interface AskVaultResponse {
+  outcome: AskVaultOutcome;
+  answer: string;
+  generated_synthesis: boolean;
+  citations: AskVaultCitation[];
+  scope_lesson_ids: string[];
+}
+
 export type FactualVerificationClaimClassification =
   | "stable-factual"
   | "time-sensitive"
@@ -1059,6 +1082,13 @@ export const api = {
 
   assistantContext: (body: AssistantContextRequest) =>
     request<AssistantContextResponse>("/assistant-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+
+  askVault: (body: AskVaultRequest) =>
+    request<AskVaultResponse>("/ask-vault", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

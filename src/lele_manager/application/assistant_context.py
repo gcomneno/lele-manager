@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from lele_manager.application.context_packs import (
     get_resolved_context_pack,
@@ -23,14 +24,30 @@ class AssistantContextBrokenReferencesError(Exception):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedAssistantContext:
+    """One ordered canonical grounding scope.
+
+    This is the maintained authority boundary shared by assistant-ready export
+    and conversational consumers. Search/ranking may choose identity and order,
+    but lesson content is always read again from canonical Markdown.
+    """
+
+    lessons: tuple[CanonicalLessonSnapshot, ...]
+
+    @property
+    def lesson_ids(self) -> tuple[str, ...]:
+        return tuple(lesson.lesson_id for lesson in self.lessons)
+
+
 def resolve_assistant_context_lesson_ids(
     *,
     lesson_ids: Sequence[str],
     context: ActiveVaultContext,
-) -> tuple[CanonicalLessonSnapshot, ...]:
+) -> ResolvedAssistantContext:
     """Resolve an explicit ordered lesson-ID scope canonically."""
 
-    return tuple(
+    lessons = tuple(
         read_canonical_lesson_snapshot(
             vault_dir=context.vault_dir,
             lesson_id=lesson_id,
@@ -38,13 +55,15 @@ def resolve_assistant_context_lesson_ids(
         for lesson_id in lesson_ids
     )
 
+    return ResolvedAssistantContext(lessons=lessons)
+
 
 def resolve_assistant_context_pack(
     *,
     pack_id: str,
     context: ActiveVaultContext,
     store: ContextPackStore,
-) -> tuple[CanonicalLessonSnapshot, ...]:
+) -> ResolvedAssistantContext:
     """Resolve one Context Pack without silently dropping broken refs."""
 
     resolved = get_resolved_context_pack(
@@ -61,8 +80,10 @@ def resolve_assistant_context_pack(
     if missing:
         raise AssistantContextBrokenReferencesError(missing)
 
-    return tuple(
+    lessons = tuple(
         member.lesson
         for member in resolved.members
         if member.lesson is not None
     )
+
+    return ResolvedAssistantContext(lessons=lessons)

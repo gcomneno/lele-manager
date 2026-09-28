@@ -18,6 +18,7 @@
   import BulkDeleteLessonsDialog from '../components/BulkDeleteLessonsDialog.svelte'
   import ContextPacksManager from '../components/ContextPacksManager.svelte'
   import AssistantContextActions from '../components/AssistantContextActions.svelte'
+  import AskVaultPanel from '../components/AskVaultPanel.svelte'
   import { FormStatus } from 'giadaware-ui-components'
   import {
     Button,
@@ -490,6 +491,14 @@
           filename="lele-assistant-results.md"
           testId="assistant-context-results"
         />
+
+        <AskVaultPanel
+          request={{
+            lesson_ids: lessons.map((lesson) => lesson.id),
+          }}
+          count={lessons.length}
+          testId="ask-vault-results"
+        />
       </div>
     {/if}
 
@@ -557,6 +566,16 @@
               count={selectedIds.size}
               filename="lele-assistant-selected.md"
               testId="assistant-context-selected"
+            />
+
+            <AskVaultPanel
+              request={{
+                lesson_ids: selectedVisibleLessons().map(
+                  (lesson) => lesson.id,
+                ),
+              }}
+              count={selectedIds.size}
+              testId="ask-vault-selected"
             />
           </div>
         {/if}

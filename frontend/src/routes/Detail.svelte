@@ -25,6 +25,7 @@
   import DeleteLessonDialog from '../components/DeleteLessonDialog.svelte'
   import RevisionHistoryPanel from '../components/RevisionHistoryPanel.svelte'
   import AssistantContextActions from '../components/AssistantContextActions.svelte'
+  import AskVaultPanel from '../components/AskVaultPanel.svelte'
   import FactualVerificationPanel from '../components/FactualVerificationPanel.svelte'
 
   interface Props {
@@ -256,6 +257,12 @@
         count={1}
         filename="lele-assistant-context.md"
         testId="assistant-context-detail"
+      />
+
+      <AskVaultPanel
+        request={{ lesson_ids: [lesson.id] }}
+        count={1}
+        testId="ask-vault-detail"
       />
 
       <FactualVerificationPanel
