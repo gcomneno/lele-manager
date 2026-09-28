@@ -43,9 +43,16 @@ from lele_manager.application.contradiction_resolution import (
 )
 from lele_manager.application.assistant_context import (
     AssistantContextBrokenReferencesError,
+    ResolvedAssistantContext,
     resolve_assistant_context_lesson_ids,
     resolve_assistant_context_pack,
 )
+from lele_manager.application.ask_vault import (
+    AskVaultGroundingError,
+    AskVaultProviderUnavailableError,
+    AskVaultService,
+)
+from lele_manager.core.ask_vault import AskVaultResult
 from lele_manager.application.context_packs import (
     add_context_pack_members,
     create_context_pack,
@@ -522,16 +529,39 @@ class ExportSearchResponse(BaseModel):
     n_lessons: int
 
 
-class AssistantContextRequest(BaseModel):
+class AssistantContextScopeRequest(BaseModel):
     lesson_ids: Optional[List[str]] = None
     search: Optional[LessonSearchRequest] = None
     context_pack_id: Optional[str] = None
+
+
+class AssistantContextRequest(AssistantContextScopeRequest):
+    pass
 
 
 class AssistantContextResponse(BaseModel):
     markdown: str
     n_lessons: int
     lesson_ids: List[str]
+
+
+class AskVaultRequest(AssistantContextScopeRequest):
+    question: str
+
+
+class AskVaultCitationResponse(BaseModel):
+    lesson_id: str
+    title: Optional[str] = None
+    lifecycle: str
+    superseded_by: Optional[str] = None
+
+
+class AskVaultResponse(BaseModel):
+    outcome: str
+    answer: str
+    generated_synthesis: bool
+    citations: List[AskVaultCitationResponse]
+    scope_lesson_ids: List[str]
 
 
 class FactualVerificationRequest(BaseModel):
@@ -3256,14 +3286,10 @@ def get_lesson_factual_verification(
     )
 
 
-@app.post(
-    "/assistant-context",
-    response_model=AssistantContextResponse,
-)
-def assistant_context(
-    body: AssistantContextRequest,
-) -> AssistantContextResponse:
-    """Render explicit assistant-ready scope from current canonical knowledge."""
+def _resolve_assistant_context_scope(
+    body: AssistantContextScopeRequest,
+) -> ResolvedAssistantContext:
+    """Resolve exactly one bounded assistant scope against canonical knowledge."""
 
     scopes = (
         body.lesson_ids is not None,
@@ -3303,25 +3329,24 @@ def assistant_context(
                     },
                 )
 
-            lessons = resolve_assistant_context_lesson_ids(
+            return resolve_assistant_context_lesson_ids(
                 lesson_ids=body.lesson_ids,
                 context=context,
             )
 
-        elif body.search is not None:
+        if body.search is not None:
             search_results = search_lessons(body.search)
-            lessons = resolve_assistant_context_lesson_ids(
+            return resolve_assistant_context_lesson_ids(
                 lesson_ids=[result.id for result in search_results],
                 context=context,
             )
 
-        else:
-            assert body.context_pack_id is not None
-            lessons = resolve_assistant_context_pack(
-                pack_id=body.context_pack_id,
-                context=context,
-                store=ContextPackStore(context_pack_store_path()),
-            )
+        assert body.context_pack_id is not None
+        return resolve_assistant_context_pack(
+            pack_id=body.context_pack_id,
+            context=context,
+            store=ContextPackStore(context_pack_store_path()),
+        )
 
     except CanonicalLessonWriteNotFoundError as exc:
         raise HTTPException(
@@ -3365,16 +3390,109 @@ def assistant_context(
             status_code=404,
             code="context_pack_not_found",
         )
+        raise AssertionError("unreachable")
 
-    markdown = render_assistant_context(lessons)
+
+def _ask_vault_service() -> AskVaultService:
+    """Resolve the configured Ask-this-Vault synthesis runtime."""
+
+    return AskVaultService(synthesizer=None)
+
+
+def _ask_vault_response(
+    *,
+    result: AskVaultResult,
+    context: ResolvedAssistantContext,
+) -> AskVaultResponse:
+    by_id = {
+        lesson.lesson_id: lesson
+        for lesson in context.lessons
+    }
+
+    return AskVaultResponse(
+        outcome=result.outcome,
+        answer=result.answer,
+        generated_synthesis=True,
+        citations=[
+            AskVaultCitationResponse(
+                lesson_id=citation.lesson_id,
+                title=by_id[citation.lesson_id].title,
+                lifecycle=by_id[citation.lesson_id].lifecycle,
+                superseded_by=by_id[citation.lesson_id].superseded_by,
+            )
+            for citation in result.citations
+        ],
+        scope_lesson_ids=list(context.lesson_ids),
+    )
+
+
+@app.post(
+    "/assistant-context",
+    response_model=AssistantContextResponse,
+)
+def assistant_context(
+    body: AssistantContextRequest,
+) -> AssistantContextResponse:
+    """Render explicit assistant-ready scope from current canonical knowledge."""
+
+    resolved_context = _resolve_assistant_context_scope(body)
+
+    markdown = render_assistant_context(
+        resolved_context.lessons,
+    )
 
     return AssistantContextResponse(
         markdown=markdown,
-        n_lessons=len(lessons),
-        lesson_ids=[
-            lesson.lesson_id
-            for lesson in lessons
-        ],
+        n_lessons=len(resolved_context.lessons),
+        lesson_ids=list(resolved_context.lesson_ids),
+    )
+
+
+@app.post(
+    "/ask-vault",
+    response_model=AskVaultResponse,
+)
+def ask_vault(
+    body: AskVaultRequest,
+) -> AskVaultResponse:
+    """Answer only from one explicitly resolved canonical Vault scope."""
+
+    resolved_context = _resolve_assistant_context_scope(body)
+    service = _ask_vault_service()
+
+    try:
+        result = service.ask(
+            question=body.question,
+            context=resolved_context,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "ask_vault_question_invalid",
+                "message": str(exc),
+            },
+        ) from exc
+    except AskVaultProviderUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "ask_vault_provider_unavailable",
+                "message": str(exc),
+            },
+        ) from exc
+    except AskVaultGroundingError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "ask_vault_invalid_result",
+                "message": str(exc),
+            },
+        ) from exc
+
+    return _ask_vault_response(
+        result=result,
+        context=resolved_context,
     )
 
 

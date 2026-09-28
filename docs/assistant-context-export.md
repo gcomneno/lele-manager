@@ -123,3 +123,14 @@ The endpoint and GUI actions only generate local content.
 Clipboard copy and local `.md` download are user-initiated actions. No remote
 assistant call, telemetry event, cloud upload, or hidden network transmission
 is part of this workflow.
+
+## Ask-this-Vault relationship
+
+`Ask this Vault` reuses this same canonical scope-resolution boundary rather
+than implementing independent retrieval or Context Pack resolution.
+
+Assistant-ready export renders the resolved snapshots as Markdown.
+Ask-this-Vault supplies the same resolved canonical snapshots to its bounded
+synthesis service, and only LeLe IDs from that exact scope may be cited.
+
+See `docs/ask-this-vault.md`.

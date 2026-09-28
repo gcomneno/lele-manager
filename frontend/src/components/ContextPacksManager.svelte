@@ -13,6 +13,7 @@
     FieldLabel,
   } from 'giadaware-ui-components/studio'
   import AssistantContextActions from './AssistantContextActions.svelte'
+  import AskVaultPanel from './AskVaultPanel.svelte'
 
   type Props = {
     selectedLessonIds: string[]
@@ -355,6 +356,12 @@
         count={detail.lesson_ids.length}
         filename="lele-assistant-context-pack.md"
         testId="assistant-context-pack"
+      />
+
+      <AskVaultPanel
+        request={{ context_pack_id: detail.id }}
+        count={detail.lesson_ids.length}
+        testId="ask-vault-pack"
       />
 
       <div class="context-pack-edit-row">
