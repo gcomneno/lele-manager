@@ -4,6 +4,7 @@
 
 [![Security](https://github.com/gcomneno/lele-manager/actions/workflows/security.yml/badge.svg)](https://github.com/gcomneno/lele-manager/actions/workflows/security.yml)
 [![CI](https://github.com/gcomneno/lele-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/gcomneno/lele-manager/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23037236.svg)](https://doi.org/10.5281/zenodo.23037236)
 
 LeLe Manager è un sistema local-first end-to-end per raccogliere, validare,
 cercare e riutilizzare lesson learned testuali.
@@ -40,6 +41,8 @@ pytest tests/test_documentation.py
 
 - Roadmap completa: [ROADMAP.it.md](ROADMAP.it.md)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Metadati di citazione: [CITATION.cff](CITATION.cff)
+- Archivio Zenodo: [tutte le versioni](https://doi.org/10.5281/zenodo.23037236); [v1.12.0](https://doi.org/10.5281/zenodo.23037237)
 - Guida contributor: [CONTRIBUTING.it.md](CONTRIBUTING.it.md)
 - Politica documentale:
   [docs/it/documentation-policy.md](docs/it/documentation-policy.md)
