@@ -60,12 +60,9 @@
     <rect x="9" y="9" width="11" height="11" rx="2" />
   {:else if name === 'system'}
     <circle cx="12" cy="12" r="3" />
-    <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
-    <path d="m5.6 5.6 1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4" />
+    <path d="M9 3h6l.5 3 2 1.2 2-.6 2 3.4-2 2 2 2-2 3.4-2-.6-2 1.2-.5 3H9l-.5-3-2-1.2-2 .6-2-3.4 2-2-2-2 2-3.4 2 .6 2-1.2z" />
   {:else if name === 'diagnostics'}
-    <circle cx="11" cy="11" r="6" />
-    <path d="m16 16 4 4" />
-    <path d="M8.5 11h5M11 8.5v5" />
+    <path d="M3 12h4l3-8 4 16 3-8h4" />
   {:else if name === 'about'}
     <circle cx="12" cy="12" r="8" />
     <path d="M12 11v5" />
