@@ -7,9 +7,13 @@ import platform
 import shutil
 import sys
 import tarfile
-import tomllib
 import zipfile
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10; supplied by the dev extra.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"

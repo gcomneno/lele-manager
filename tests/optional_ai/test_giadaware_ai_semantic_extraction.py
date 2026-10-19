@@ -4,12 +4,7 @@ import json
 
 import pytest
 
-pytest.importorskip(
-    "giadaware_ai",
-    reason="GiadaWare AI is an optional semantic runtime dependency",
-)
-
-from giadaware_ai import (  # noqa: E402
+from giadaware_ai import (
     AIInvalidResponseError,
     AIUnavailableError,
     CapabilityFamily,

@@ -49,9 +49,12 @@ from lele_manager.application.assistant_context import (
 )
 from lele_manager.application.ask_vault import (
     AskVaultGroundingError,
+    AskVaultProviderTimeoutError,
     AskVaultProviderUnavailableError,
     AskVaultService,
+    normalize_ask_vault_question,
 )
+from lele_manager.ask_vault_composition import resolve_ask_vault_synthesizer
 from lele_manager.core.ask_vault import AskVaultResult
 from lele_manager.application.context_packs import (
     add_context_pack_members,
@@ -2982,7 +2985,16 @@ def list_lessons(
 def search_lessons(body: LessonSearchRequest) -> List[LessonSearchResult]:
     """Explainable hybrid search over the current projection."""
 
-    context = _hybrid_search_context()
+    return _search_lessons(body, context=_hybrid_search_context())
+
+
+def _search_lessons(
+    body: LessonSearchRequest,
+    *,
+    context: ActiveVaultContext | None,
+) -> List[LessonSearchResult]:
+    """Run hybrid search within the caller's captured Vault context."""
+
     df = (
         load_lessons_df(context)
         if context is not None
@@ -3335,7 +3347,7 @@ def _resolve_assistant_context_scope(
             )
 
         if body.search is not None:
-            search_results = search_lessons(body.search)
+            search_results = _search_lessons(body.search, context=context)
             return resolve_assistant_context_lesson_ids(
                 lesson_ids=[result.id for result in search_results],
                 context=context,
@@ -3396,7 +3408,7 @@ def _resolve_assistant_context_scope(
 def _ask_vault_service() -> AskVaultService:
     """Resolve the configured Ask-this-Vault synthesis runtime."""
 
-    return AskVaultService(synthesizer=None)
+    return AskVaultService(synthesizer=resolve_ask_vault_synthesizer())
 
 
 def _ask_vault_response(
@@ -3457,38 +3469,50 @@ def ask_vault(
 ) -> AskVaultResponse:
     """Answer only from one explicitly resolved canonical Vault scope."""
 
-    resolved_context = _resolve_assistant_context_scope(body)
-    service = _ask_vault_service()
-
     try:
-        result = service.ask(
-            question=body.question,
-            context=resolved_context,
-        )
-    except ValueError as exc:
+        question = normalize_ask_vault_question(body.question)
+    except ValueError:
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "ask_vault_question_invalid",
-                "message": str(exc),
+                "message": "Ask-this-Vault question is invalid.",
             },
-        ) from exc
-    except AskVaultProviderUnavailableError as exc:
+        ) from None
+
+    resolved_context = _resolve_assistant_context_scope(body)
+
+    try:
+        service = (
+            _ask_vault_service()
+            if resolved_context.lessons
+            else AskVaultService(synthesizer=None)
+        )
+        result = service.ask(question=question, context=resolved_context)
+    except AskVaultProviderTimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "code": "ask_vault_provider_timeout",
+                "message": "Ask-this-Vault synthesis provider timed out.",
+            },
+        ) from None
+    except AskVaultProviderUnavailableError:
         raise HTTPException(
             status_code=503,
             detail={
                 "code": "ask_vault_provider_unavailable",
-                "message": str(exc),
+                "message": "Ask-this-Vault synthesis provider is unavailable.",
             },
-        ) from exc
-    except AskVaultGroundingError as exc:
+        ) from None
+    except AskVaultGroundingError:
         raise HTTPException(
             status_code=502,
             detail={
                 "code": "ask_vault_invalid_result",
-                "message": str(exc),
+                "message": "Ask-this-Vault synthesis response is invalid.",
             },
-        ) from exc
+        ) from None
 
     return _ask_vault_response(
         result=result,

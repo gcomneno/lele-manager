@@ -7,9 +7,13 @@ import os
 import shutil
 import subprocess
 import sys
-import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10; supplied by the dev extra.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_NAME = "LeLe-Manager"

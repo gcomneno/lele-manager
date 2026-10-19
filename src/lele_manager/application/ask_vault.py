@@ -20,7 +20,24 @@ class AskVaultGroundingError(Exception):
 
 
 class AskVaultProviderUnavailableError(Exception):
-    """No Ask-this-Vault synthesis provider is configured."""
+    """The Ask-this-Vault synthesis provider is unavailable or unconfigured."""
+
+
+class AskVaultProviderTimeoutError(Exception):
+    """The Ask-this-Vault synthesis provider exceeded its configured timeout."""
+
+
+def normalize_ask_vault_question(question: str) -> str:
+    """Validate shared question bounds without importing an optional provider."""
+
+    if type(question) is not str or any(
+        "\ud800" <= character <= "\udfff" for character in question
+    ):
+        raise ValueError("Ask-this-Vault question is invalid.")
+    normalized = question.strip()
+    if not 1 <= len(normalized) <= 4000:
+        raise ValueError("Ask-this-Vault question is invalid.")
+    return normalized
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,9 +71,7 @@ class AskVaultService:
         question: str,
         context: ResolvedAssistantContext,
     ) -> AskVaultResult:
-        normalized_question = question.strip()
-        if not normalized_question:
-            raise ValueError("question must not be blank")
+        normalized_question = normalize_ask_vault_question(question)
 
         if not context.lessons:
             return AskVaultResult(

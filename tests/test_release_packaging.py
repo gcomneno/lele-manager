@@ -3,7 +3,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import tomllib
+import yaml
+
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10; supplied by the dev extra.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD_COMMAND = "./scripts/build-release-artifacts.sh"
@@ -54,6 +60,35 @@ def test_packaging_smoke_rebuilds_wheel_from_sdist() -> None:
     assert "dist/*.tar.gz" in ci
     assert "/tmp/sdist-venv" in ci
     assert "scripts/smoke-installed-package.py" in ci
+
+
+def test_ci_separates_core_and_optional_ai_python_contracts() -> None:
+    jobs = yaml.safe_load(read(".github/workflows/ci.yml"))["jobs"]
+    assert jobs["test"]["strategy"]["matrix"]["python-version"] == ["3.10", "3.12"]
+    assert jobs["optional-ai"]["strategy"]["matrix"]["python-version"] == [
+        "3.11", "3.12"
+    ]
+    core_commands = [step.get("run", "") for step in jobs["test"]["steps"]]
+    assert "python -m pytest -q" in core_commands
+    assert any("find_spec('giadaware_ai') is None" in run for run in core_commands)
+    negative = next(run for run in core_commands if '"--collect-only"' in run)
+    assert (
+        '[sys.executable, "-m", "pytest", "--collect-only", "-q", '
+        '"--optional-ai", "tests/optional_ai"]'
+    ) in negative
+    assert "assert result.returncode == 2" in negative
+    assert 'assert "ERROR collecting" in output' in negative
+    assert "No module named 'giadaware_ai'" in negative
+    assert core_commands.index(negative) < core_commands.index("python -m pytest -q")
+    assert not any("continue-on-error" in step for step in jobs["test"]["steps"])
+    commands = [step.get("run", "") for step in jobs["optional-ai"]["steps"]]
+    acquire = next(i for i, run in enumerate(commands) if " download " in run)
+    install = next(i for i, run in enumerate(commands) if "--no-index --no-deps" in run)
+    contracts = commands.index("python -m pytest -q --optional-ai tests/optional_ai")
+    assert acquire < install < contracts
+    assert "giadaware_ai-0.0.2-py3-none-any.whl" in commands[install]
+    assert "verify-installed" in commands[install]
+    assert not any("continue-on-error" in step for step in jobs["optional-ai"]["steps"])
 
 
 def test_packaging_metadata_uses_current_spdx_license() -> None:

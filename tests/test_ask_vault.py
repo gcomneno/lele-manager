@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -10,6 +11,7 @@ from lele_manager.application.ask_vault import (
     AskVaultProviderUnavailableError,
     AskVaultService,
     AskVaultSynthesis,
+    normalize_ask_vault_question,
 )
 from lele_manager.application.assistant_context import (
     ResolvedAssistantContext,
@@ -235,7 +237,7 @@ def test_blank_question_is_rejected_before_provider() -> None:
     )
     service = AskVaultService(synthesizer=synthesizer)
 
-    with pytest.raises(ValueError, match="question must not be blank"):
+    with pytest.raises(ValueError, match="question is invalid"):
         service.ask(
             question="   ",
             context=ResolvedAssistantContext(
@@ -244,6 +246,37 @@ def test_blank_question_is_rejected_before_provider() -> None:
         )
 
     assert synthesizer.calls == 0
+
+
+@pytest.mark.parametrize(
+    "question",
+    [None, True, 12, [], {}, "", " \t\n", "x" * 4001, "\ud800", "\udfff", "x\ud800 "],
+)
+@pytest.mark.parametrize("empty_scope", [False, True])
+def test_invalid_question_precedes_context_and_provider(
+    question: object,
+    empty_scope: bool,
+) -> None:
+    service = AskVaultService(synthesizer=None)
+    context = (
+        ResolvedAssistantContext(())
+        if empty_scope
+        else cast(ResolvedAssistantContext, None)
+    )
+    with pytest.raises(ValueError, match="question is invalid"):
+        service.ask(question=cast(str, question), context=context)
+
+
+@pytest.mark.parametrize("question", ["?", " 🐒 ", " \t" + "🐒" * 4000 + "\n "])
+def test_shared_question_normalization_counts_unicode_code_points(
+    question: str,
+) -> None:
+    assert normalize_ask_vault_question(question) == question.strip()
+    result = AskVaultService(synthesizer=None).ask(
+        question=question,
+        context=ResolvedAssistantContext(()),
+    )
+    assert result.outcome == "insufficient-support"
 
 
 def test_non_empty_scope_without_provider_fails_closed() -> None:

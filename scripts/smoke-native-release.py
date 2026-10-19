@@ -11,12 +11,16 @@ import sys
 import tarfile
 import tempfile
 import time
-import tomllib
 import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10; supplied by the dev extra.
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
