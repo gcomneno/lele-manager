@@ -75,6 +75,13 @@ independent from the collapsible **Knowledge**, **Capture**, and **Manage**
 groups. Hiding the sidebar never removes the header controls; showing it again
 preserves group disclosure and the current navigation item.
 
+On desktop, drag the sidebar's right boundary to resize it between 220 and
+400 pixels. You can also Tab to the “Resize navigation” separator and use
+Left/Right arrows (10 pixels per press), Home (minimum), or End (maximum).
+The width is saved locally as `lele-manager.sidebar-width.v1`, including across
+reloads and navigation. Hiding the sidebar retains its width; mobile navigation
+keeps its full-width layout.
+
 Use **Search or commands** or **Ctrl+K** to quickly open real destinations,
 including Dashboard, Browse, Timeline, Statistics, Collection, Vault,
 Duplicates, System, Diagnostics, About, and **New LeLe**. Search LeLe opens

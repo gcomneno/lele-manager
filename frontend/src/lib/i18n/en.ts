@@ -70,6 +70,7 @@ export const en = {
   shellWorkspace: "Workspace",
   shellWorkspaceUnavailable: "Unavailable",
   showNavigation: "Show navigation",
+  resizeNavigation: "Resize navigation",
   hideNavigation: "Hide navigation",
   commandPaletteTrigger: "Search or commands",
   commandPaletteShortcut: "Command palette shortcut: Control K",
