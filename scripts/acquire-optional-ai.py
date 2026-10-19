@@ -54,10 +54,16 @@ def validate_wheel(data: bytes) -> None:
 
 
 class HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    # Python 3.10 does not register a handler for permanent 308 redirects.
+    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_302
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         target = urllib.parse.urljoin(req.full_url, newurl)
         if urllib.parse.urlsplit(target).scheme != "https":
             raise ValueError("Canonical wheel redirects require HTTPS")
+        # 308 has the same method policy as 307, supported by Python 3.10.
+        if code == 308:
+            code = 307
         return super().redirect_request(req, fp, code, msg, headers, target)
 
 
