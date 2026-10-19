@@ -31,6 +31,7 @@ lele-manager = "lele_manager.launcher:main"
 dev = [
     "pytest",
     "pytest-cov",
+    "tomli; python_version < '3.11'",
     "pyinstaller>=6.21.0,<7",
     "fastapi",
     "uvicorn",

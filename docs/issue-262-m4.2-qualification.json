@@ -1,0 +1,994 @@
+{
+  "schema_version": 2,
+  "task": "LeLe Manager #262 M4.2 qualification and M4.3 CI integration",
+  "recorded_at_utc": "2026-10-19T10:02:39.233496+00:00",
+  "scope": "Python distribution and deterministic consumer contracts; no real inference or semantic qualification",
+  "overall_status": "UPSTREAM_QUALIFIED_M4_3_IMPLEMENTED_CI_MATRIX_PENDING",
+  "qualified": true,
+  "qualified_scope": "Upstream v0.0.2 Python distribution; not provider/model semantics or full LeLe CI matrix",
+  "m4_3_ready": true,
+  "m4_3_ready_scope": "Upstream distribution prerequisite satisfied; implementation ready for GitHub CI execution",
+  "repository": "https://github.com/gcomneno/giadaware-ai",
+  "source_commit": "daa07b14bfd38ec049619881ea53546f44b2f27c",
+  "release": {
+    "tag": "v0.0.2",
+    "prerelease": true,
+    "immutable": false,
+    "url": "https://github.com/gcomneno/giadaware-ai/releases/tag/v0.0.2",
+    "identity_evidence": "GitHub release API target_commitish, release body and asset metadata match user-supplied pins; repository is public",
+    "qualifying_run": {
+      "id": 39229144633,
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "daa07b14bfd38ec049619881ea53546f44b2f27c",
+      "url": "https://github.com/gcomneno/giadaware-ai/actions/runs/39229144633"
+    },
+    "artifacts": [
+      {
+        "name": "giadaware_ai-0.0.2-py3-none-any.whl",
+        "bytes": 32826,
+        "sha256": "9c0951244f1f43f0b27f6dc4ae3c69150d0c8588f6ac099cbe47ae11e21ed0a2"
+      },
+      {
+        "name": "giadaware_ai-0.0.2.tar.gz",
+        "bytes": 49896,
+        "sha256": "1d54759eb95cc17ddc8b2f01d95cca59ba509af20ba178cc6086df6ab6200d8f"
+      },
+      {
+        "name": "provenance.json",
+        "bytes": 7889,
+        "sha256": "62307c27e66dee144022f813f66f819413ba50f6dd9cde0442f52a5fb319e763"
+      }
+    ],
+    "excluded_assets": "Every local-superseded-* asset; retained upstream for history only",
+    "provenance_checks": {
+      "archive_contents_and_license": "PASS",
+      "both_isolated_installations_and_public_api_tests": "PASS",
+      "byte_identical_wheels": "PASS",
+      "sdist_rebuild": "PASS"
+    },
+    "provenance_evidence": "Hash-verified cached canonical provenance.json; these are upstream-recorded checks, not builds repeated by LeLe in M4.3",
+    "attestation_limit": "Provenance records qualification evidence; it is not an independent cryptographic build attestation"
+  },
+  "m4_3": {
+    "status": "IMPLEMENTED_CI_MATRIX_PENDING",
+    "core_python_requirement": ">=3.10",
+    "optional_ai_python_requirement": ">=3.11",
+    "ci_matrices": {
+      "core": [
+        "3.10",
+        "3.12"
+      ],
+      "optional_ai": [
+        "3.11",
+        "3.12"
+      ]
+    },
+    "collection": {
+      "core": "python -m pytest -q",
+      "optional_ai": "python -m pytest -q --optional-ai tests/optional_ai",
+      "policy": "Optional directory excluded before import by default. Explicit optional selection requires real installed API; no dependency-based skips. Core retains provider-independent checks and forbids optional imports."
+    },
+    "acquisition": {
+      "script": "scripts/acquire-optional-ai.py",
+      "trust_anchor": "Reviewed canonical wheel SHA-256 constant",
+      "order": [
+        "Exact HTTPS release URL download with timeout and size bound",
+        "SHA-256 before archive parse or file publication",
+        "Exact metadata distribution name, version, Python requirement and qualified dev-only build requirement (no extra selected)",
+        "Exclusive file creation; refuse existing output",
+        "pip --no-index --no-deps on exact filename",
+        "Installed name/version, direct_url.json canonical archive SHA-256 and unshadowed import location"
+      ],
+      "fallback": false,
+      "runtime_download_path_added": false
+    },
+    "local_environments": "Temporary venvs outside the checkout; reuse existing dependency files offline. Python isolated mode excludes inherited upstream PYTHONPATH. Existing worktree .venv installation unchanged and rejected as canonical evidence.",
+    "local_artifact_source": "Read-only existing upstream canonical-verification copies; all three byte hashes match the supplied pins and release metadata. No fresh live download succeeded.",
+    "license": {
+      "status": "PASS",
+      "scope": "Matching full wheel/sdist LICENSE bytes inspected without extraction",
+      "bytes": 11924,
+      "sha256": "7c95b99f14be3e3d01dc0cb89ea7b89adee0b4ebacb4a8f8301b80b07a340f82"
+    },
+    "verification": [
+      {
+        "gate": "canonical_cached_artifact_integrity",
+        "status": "PASS",
+        "evidence": "All three exact asset SHA-256 values and sizes verified; canonical wheel also passes acquisition validator."
+      },
+      {
+        "gate": "core_install_without_optional_ai",
+        "status": "PASS",
+        "evidence": "Built LeLe wheel from temporary source copy without destructive cleanup; no-deps/no-index install. GiadaWare AI absent; CLI help, API metadata 1.12.0 and disabled composition pass. GUI assets not built; not full release packaging qualification."
+      },
+      {
+        "gate": "core_collection_python_3_12",
+        "status": "PASS",
+        "collected": 1310,
+        "warnings": 1,
+        "evidence": "Isolated temporary core venv; GiadaWare AI absent."
+      },
+      {
+        "gate": "optional_collection_python_3_12",
+        "status": "PASS",
+        "collected": 182,
+        "warnings": 1,
+        "evidence": "Isolated canonical-wheel installation."
+      },
+      {
+        "gate": "explicit_optional_collection_without_dependency",
+        "status": "PASS",
+        "evidence": "Expected exit 2, four import errors, two collected semantic-runtime tests; no dependency skips."
+      },
+      {
+        "gate": "focused_core_python_3_12",
+        "status": "PASS",
+        "passed": 178,
+        "skipped": 0,
+        "warnings": 1,
+        "seconds": 10.29,
+        "evidence": "Acquisition, Ask service/composition/API/context/coherence, semantic composition, packaging/native smoke contracts and documentation. Temporary synthetic-state runner polls sandbox-blocked selector wakeups."
+      },
+      {
+        "gate": "acquisition_and_ci_script_contracts",
+        "status": "PASS",
+        "passed": 58,
+        "skipped": 0,
+        "warnings": 0,
+        "seconds": 0.87,
+        "command": "python -I -B -m pytest -q tests/test_optional_ai_acquisition.py tests/test_release_packaging.py tests/test_native_release_smoke.py"
+      },
+      {
+        "gate": "optional_ai_python_3_12",
+        "status": "PASS",
+        "passed": 182,
+        "skipped": 0,
+        "warnings": 1,
+        "seconds": 6.04,
+        "evidence": "Verified canonical installed wheel; all optional contracts, fake backends, socket/DNS guard; temporary sandbox selector polling."
+      },
+      {
+        "gate": "optional_ai_python_3_11_selected",
+        "status": "PASS",
+        "passed": 170,
+        "skipped": 0,
+        "warnings": 0,
+        "seconds": 0.53,
+        "evidence": "Python 3.11.15, verified canonical wheel; adapter/composition/semantic contracts only. Reused pure Python dependencies offline and disabled plugin autoload. The 12 API cases were not selected; full 3.11 dependency installation/matrix not run."
+      },
+      {
+        "gate": "core_python_3_10_script_smoke",
+        "status": "PASS",
+        "evidence": "Python 3.10.20: actual tomli fallback and project_version on all three native scripts; acquisition digest rejection; parse all src/tests/scripts Python syntax. Reused existing tomli files offline."
+      },
+      {
+        "gate": "ruff",
+        "status": "PASS",
+        "command": ".venv/bin/ruff check .",
+        "version": "0.15.22"
+      },
+      {
+        "gate": "mypy",
+        "status": "PASS",
+        "command": ".venv/bin/mypy src/lele_manager",
+        "source_files": 95
+      },
+      {
+        "gate": "ci_script_validation",
+        "status": "PASS",
+        "evidence": "YAML parsed; all 10 core/optional-AI run blocks pass bash -n and shellcheck; acquisition script parses as Python 3.10. actionlint unavailable."
+      },
+      {
+        "gate": "existing_noncanonical_installation_rejection",
+        "status": "PASS",
+        "evidence": "verify-installed exits 1 for existing local 0.0.2 wheel. Inherited upstream source path also rejected as shadowed; canonical isolated installation passes."
+      },
+      {
+        "gate": "live_github_download",
+        "status": "BLOCKED",
+        "exit_code": 1,
+        "evidence": "DNS unavailable: urlopen error [Errno -2] Name or service not known. No wheel published; no fallback."
+      },
+      {
+        "gate": "broad_core_python_3_12",
+        "status": "FAIL",
+        "passed": 1292,
+        "failed": 11,
+        "skipped": 7,
+        "warnings": 6,
+        "seconds": 79.09,
+        "evidence": "Final safe temporary runner with synthetic Path.home/XDG paths, selector polling and installed core wheel. All failures are tests/test_launcher.py socket creation denied with EPERM. Seven existing GUI tests skip because packaged GUI is unbuilt. No AI-dependency skips."
+      },
+      {
+        "gate": "full_core_python_3_10_and_full_optional_python_3_11_matrix",
+        "status": "NOT_RUN",
+        "evidence": "Complete compatible dependencies unavailable offline; only explicitly reported smoke/selected tests ran."
+      },
+      {
+        "gate": "github_actions_execution",
+        "status": "NOT_RUN",
+        "evidence": "No remote mutation, commit, push or dispatch authorized/performed."
+      },
+      {
+        "gate": "real_inference",
+        "status": "NOT_RUN",
+        "evidence": "No Ollama or paid/remote inference attempted; outside deterministic qualification scope."
+      },
+      {
+        "gate": "combined_collection_python_3_12",
+        "status": "PASS",
+        "collected": 1492,
+        "warnings": 1,
+        "evidence": "Core and optional modules collect together with --optional-ai, without module-name collisions."
+      }
+    ],
+    "earlier_local_verification_attempts": [
+      {
+        "status": "INTERRUPTED",
+        "evidence": "Initial direct API test invocations hung on sandbox selector wakeups and were interrupted (exit 130); not passes."
+      },
+      {
+        "status": "FAIL",
+        "passed": 1287,
+        "failed": 16,
+        "skipped": 7,
+        "warnings": 6,
+        "seconds": 70.9,
+        "evidence": "First broad run: 11 blocked socket failures, two temporary LELE environment overrides conflicting with tests, three missing installed LeLe subprocess imports. Temporary runner/installation corrected; no application code changed."
+      },
+      {
+        "status": "FAIL",
+        "passed": 1274,
+        "failed": 29,
+        "skipped": 7,
+        "warnings": 6,
+        "seconds": 70.11,
+        "evidence": "XDG-only runner exposed 18 default-home fixture failures plus 11 blocked sockets. Final runner redirects Path.home to synthetic state. No source fix or normal Vault mutation."
+      },
+      {
+        "status": "FAIL_CORRECTED",
+        "evidence": "Initial validator rejected actual canonical wheel because it declares build>=1.2 only under the dev extra. Replaced the blanket dependency ban with the exact qualified dev-only metadata allowlist. Actual canonical wheel and all 58 focused acquisition/CI-script contracts then pass; CI selects no extras and installs --no-index --no-deps."
+      }
+    ],
+    "preservation": "All pre-existing test function contracts retained. Core no-import checks strengthen former backend-constructor spy assertions. Existing M1-M4.2 runtime files and unrelated tests byte-identical to preflight snapshot.",
+    "remaining": [
+      "Execute GitHub matrix on a runner with network/socket access and compatible dependencies",
+      "Confirm live exact-release acquisition and full core 3.10 / optional 3.11 suites",
+      "GUI build/E2E and full release packaging were not run for this Python/CI-only milestone"
+    ],
+    "final_review": {
+      "branch": "feat/262-ask-vault-giadaware-ai",
+      "m4_3_changes_relative_to_preflight": [
+        {
+          "status": "M",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "status": "M",
+          "path": "docs/ask-this-vault.md"
+        },
+        {
+          "status": "M",
+          "path": "docs/issue-262-m4.2-qualification.json"
+        },
+        {
+          "status": "M",
+          "path": "docs/issue-262-m4.2-qualification.md"
+        },
+        {
+          "status": "M",
+          "path": "pyproject.toml"
+        },
+        {
+          "status": "A",
+          "path": "scripts/acquire-optional-ai.py"
+        },
+        {
+          "status": "M",
+          "path": "scripts/build-native-app.py"
+        },
+        {
+          "status": "M",
+          "path": "scripts/package-native-release.py"
+        },
+        {
+          "status": "M",
+          "path": "scripts/smoke-native-release.py"
+        },
+        {
+          "status": "M",
+          "path": "tests/conftest.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/optional_ai/conftest.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/optional_ai/test_api_ask_vault_provider.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/optional_ai/test_ask_vault_provider_composition.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/optional_ai/test_giadaware_ai_ask_vault.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/optional_ai/test_giadaware_ai_semantic_extraction.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/optional_ai/test_semantic_runtime.py"
+        },
+        {
+          "status": "M",
+          "path": "tests/test_api_ask_vault.py"
+        },
+        {
+          "status": "M",
+          "path": "tests/test_ask_vault_composition.py"
+        },
+        {
+          "status": "D",
+          "path": "tests/test_giadaware_ai_ask_vault.py"
+        },
+        {
+          "status": "D",
+          "path": "tests/test_giadaware_ai_semantic_extraction.py"
+        },
+        {
+          "status": "A",
+          "path": "tests/test_optional_ai_acquisition.py"
+        },
+        {
+          "status": "M",
+          "path": "tests/test_release_packaging.py"
+        },
+        {
+          "status": "M",
+          "path": "tests/test_semantic_composition.py"
+        }
+      ],
+      "git_diff_stat": " .github/workflows/ci.yml                       |  50 ++++-\n docs/ask-this-vault.md                         |  94 ++++++++-\n pyproject.toml                                 |   1 +\n scripts/build-native-app.py                    |   6 +-\n scripts/package-native-release.py              |   6 +-\n scripts/smoke-native-release.py                |   6 +-\n src/lele_manager/api/server.py                 |  60 ++++--\n src/lele_manager/application/ask_vault.py      |  23 ++-\n tests/conftest.py                              |  20 ++\n tests/test_api_ask_vault.py                    | 198 ++++++++++++++++++-\n tests/test_api_assistant_context.py            |   4 +-\n tests/test_ask_vault.py                        |  35 +++-\n tests/test_giadaware_ai_semantic_extraction.py | 260 -------------------------\n tests/test_release_packaging.py                |  27 ++-\n tests/test_semantic_composition.py             |  51 -----\n 15 files changed, 493 insertions(+), 348 deletions(-)\n",
+      "git_diff_check": {
+        "exit_code": 0,
+        "output": ""
+      },
+      "git_status_short": " M .github/workflows/ci.yml\n M docs/ask-this-vault.md\n M pyproject.toml\n M scripts/build-native-app.py\n M scripts/package-native-release.py\n M scripts/smoke-native-release.py\n M src/lele_manager/api/server.py\n M src/lele_manager/application/ask_vault.py\n M tests/conftest.py\n M tests/test_api_ask_vault.py\n M tests/test_api_assistant_context.py\n M tests/test_ask_vault.py\n D tests/test_giadaware_ai_semantic_extraction.py\n M tests/test_release_packaging.py\n M tests/test_semantic_composition.py\n?? docs/issue-262-m4.2-qualification.json\n?? docs/issue-262-m4.2-qualification.md\n?? scripts/acquire-optional-ai.py\n?? src/lele_manager/adapters/giadaware_ai_ask_vault.py\n?? src/lele_manager/ask_vault_composition.py\n?? tests/optional_ai/\n?? tests/test_api_assistant_context_coherence.py\n?? tests/test_ask_vault_composition.py\n?? tests/test_optional_ai_acquisition.py\n",
+      "scope_note": "Git diff --stat excludes untracked files and includes protected pre-existing tracked changes. Relocated test files retain their contracts; no staging or commit performed."
+    }
+  },
+  "historical_attempts": [
+    {
+      "schema_version": 1,
+      "task": "LeLe Manager #262 M4.2",
+      "recorded_at_utc": "2026-10-19T07:27:08.212016+00:00",
+      "scope": "Local Python-only distribution qualification; no semantic/provider-model qualification",
+      "overall_status": "BLOCKED",
+      "qualified": false,
+      "m4_3_ready": false,
+      "repository": "https://github.com/gcomneno/giadaware-ai.git",
+      "source_commit": "36a1bb751ec3851d3ceb0a38abe052747984ce5e",
+      "source_tree": {
+        "git_tree": "617cd3ba7473c7501c9e07b82b02d3dcc1890ced",
+        "tracked_entries": [
+          {
+            "path": ".github/workflows/ci.yml",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "41e1876202aeec89b32e68a606f975f9efbe06c3"
+          },
+          {
+            "path": ".gitignore",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "7f66d4b4411e9b41b6ba6ca10f6f2885b6e1adae"
+          },
+          {
+            "path": "AGENTS.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "00737a47a0352efe2a530603aab0bbdf1c478e0a"
+          },
+          {
+            "path": "CHANGELOG.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "ff6cf82e44672fdcba21d837a3faa8184ae4571e"
+          },
+          {
+            "path": "LICENSE",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "32303ed1fc7797600baa34879bec3aa99c12b083"
+          },
+          {
+            "path": "README.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "133aabe80978b0110bd47febc4c3a03b21f93dce"
+          },
+          {
+            "path": "docs/ARCHITECTURE.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "4a67f1691da002018caecb8cbca5dd1f8235843e"
+          },
+          {
+            "path": "docs/BACKEND-CONTRACT.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "52a6db4fd285402e2589a0cf141f40eb7843fe9b"
+          },
+          {
+            "path": "docs/COMMANDS-LAYER.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "2e2f05507e9bcac7dcb9cc1d871185b1c869af8a"
+          },
+          {
+            "path": "docs/EXTENSION-API.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "cb654fd5177e98fdfafb28aebfe4ed115ecd9b84"
+          },
+          {
+            "path": "docs/LEARNING-SOURCE-ANALYSIS.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "7a811f4273b1320aa0812a11ba1bcb2c918bb6a6"
+          },
+          {
+            "path": "docs/PROVIDERS.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "dd275eba205ddc074673211a739a70048138887a"
+          },
+          {
+            "path": "docs/QUALIFICATION-ADMISSION.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "99072286b8e6439e4511e7c98f2d1a07b876d3ed"
+          },
+          {
+            "path": "docs/ROAD-TESTS.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "db485672a129d7219a0f09d9a4ab91346bab0d12"
+          },
+          {
+            "path": "docs/SEMANTIC-CAPABILITY-CONTRACT.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "446ac8ff47923c953f0989cc0dfd84f437614be9"
+          },
+          {
+            "path": "docs/SEMANTIC-READ-QUERY.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "ca37f631a2bea1b90e69a4f83cbbceb9d78ced48"
+          },
+          {
+            "path": "docs/SHARED-LEARNING-VOCABULARY.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "2aaf0801daa3efd3271402c183b3b4a7cbb3db2b"
+          },
+          {
+            "path": "docs/TRANSLATION-CONTRACT.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "ffb770fc80927f092303525a6b62d0816eec2464"
+          },
+          {
+            "path": "docs/qualification/semantic-read-query-qwen2.5-1.5b-2026-09-09.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "98a45ee86845c7a3310e26ff11e206e24a57ae25"
+          },
+          {
+            "path": "docs/qualification/semantic-read-query-qwen3.5-2b-q4_K_M-2026-09-19.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "33323ae206a6c6d5e427abb6a00b59be96e63c0a"
+          },
+          {
+            "path": "docs/research/prose-naturalization-upstream-audit.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "651751d918e7d379b7172396106090b62ece7fc9"
+          },
+          {
+            "path": "experiments/prose_naturalization/README.md",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "550b8bb3a9f54ff203f162a40e0e4e59258ec785"
+          },
+          {
+            "path": "experiments/prose_naturalization/corpus.json",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "67f32c81b5524a00965510fe6cacb098240c9281"
+          },
+          {
+            "path": "experiments/prose_naturalization/policy.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "73f5c45fa2012b9fe275ced3d933aaf4b8a006a2"
+          },
+          {
+            "path": "experiments/prose_naturalization/run_spike.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "0081112a874c0586b83b58553ec5c7ba1d9c1485"
+          },
+          {
+            "path": "experiments/prose_naturalization/tests/test_spike_contract.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "0a466c8d65a5d8e9ec26b6147c116c58ffbd2d74"
+          },
+          {
+            "path": "pyproject.toml",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "b5062e7d3e5389a2b894415a187b7925e6a84d74"
+          },
+          {
+            "path": "src/giadaware_ai/__init__.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "001fb7247895274efafbfa37ca9bb6dd7013ef37"
+          },
+          {
+            "path": "src/giadaware_ai/backend.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "20eea3b7ef7c7aedca030b4d9d15a558febd07b7"
+          },
+          {
+            "path": "src/giadaware_ai/backends/__init__.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "560136ac86578edb6f3e7f42aa46ae3b9246703b"
+          },
+          {
+            "path": "src/giadaware_ai/backends/deepseek.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "1da9293bc3bbdc6ade0d300647b06991dfc0e63e"
+          },
+          {
+            "path": "src/giadaware_ai/backends/ollama.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "003e4885874ec3ea1413940992bfc110b3df2869"
+          },
+          {
+            "path": "src/giadaware_ai/backends/openai.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "ff7a7712ec5240a27a4577bac6313827164c5a26"
+          },
+          {
+            "path": "src/giadaware_ai/capabilities.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "022a04387a29aaad76bf54d3c57efb0407c6086b"
+          },
+          {
+            "path": "src/giadaware_ai/errors.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "47738d5eca2cc2d819ea348b4c1371841be0c322"
+          },
+          {
+            "path": "src/giadaware_ai/extension.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "6e546a5f6977564f32f9fadc7287f221e96e6d3f"
+          },
+          {
+            "path": "src/giadaware_ai/models.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "aef059caffb44ece8eca4aa3c6bcbe4f5fb95e1e"
+          },
+          {
+            "path": "src/giadaware_ai/py.typed",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+          },
+          {
+            "path": "src/giadaware_ai/read_query.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "b024d2135cb43369a596057348d1134011425a5c"
+          },
+          {
+            "path": "src/giadaware_ai/validation.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "2ee7ec7f14fdf43f5de645e7b228428b1d6b7eba"
+          },
+          {
+            "path": "tests/integration/test_ollama.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "0305173dc2abfa9528b045fd256c24c8be713fe0"
+          },
+          {
+            "path": "tests/integration/test_semantic_read_query_ollama.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "40614931ef0fb8ee37eb922ee723e14e2892c0f7"
+          },
+          {
+            "path": "tests/unit/test_capabilities.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "5b5d7c90cc68a3f613a8fb50b5e3ed63a1b5a54a"
+          },
+          {
+            "path": "tests/unit/test_deepseek_backend.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "0206b21b8909b3d44b042a0cd1dbd3a65d37e21d"
+          },
+          {
+            "path": "tests/unit/test_extension_api.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "68773834b9e3288de6cb28eed1a394d20c393383"
+          },
+          {
+            "path": "tests/unit/test_learning_source_capability.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "f748b0554b252f75ae7d9b99a63dfedea48c73fd"
+          },
+          {
+            "path": "tests/unit/test_ollama_backend.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "3f86a20954ecac97bbc8dcd25d373e0bb2aa9019"
+          },
+          {
+            "path": "tests/unit/test_openai_backend.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "3b309f96b5c32e613dd00d6fee1cd0f526bf6e00"
+          },
+          {
+            "path": "tests/unit/test_semantic_read_query.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "2590ca02f59d73fd04f2cfe86137f9a8f5b39bb7"
+          },
+          {
+            "path": "tests/unit/test_translation_capability.py",
+            "mode": "100644",
+            "type": "blob",
+            "git_blob": "cdce201a7942a68d868e1cd9c7211956f1b7a05c"
+          }
+        ],
+        "inspected_blob_sha256": {
+          "pyproject.toml": "c8e99d9fbb51a570cfa6700a1f955f1c4762ef0d85789db0fffc6ab3f33a943f",
+          "LICENSE": "a1c957ad9dac2f360df42dd540ee459000e2122f37df3d6792b1981c45d22daf",
+          "src/giadaware_ai/__init__.py": "62e17df8f0b6814eac5f87ec02053a7cd86e332edd262795e79bd120cd0bc9d9",
+          "src/giadaware_ai/backend.py": "bb7d2dd77a42a589e4bd933b9a3343ce194590909ce93b12cee0b2195071e5ef",
+          "src/giadaware_ai/extension.py": "c7bf5e9275d01562c9798ab59bf81c354312d8b604800ce1a630ccf3acd7a706",
+          "src/giadaware_ai/errors.py": "1944a288ef3c6c0834d63a5180dcbfa3e8b745d26e8cce67107ac2fabb66a26c",
+          "src/giadaware_ai/backends/__init__.py": "2f7b7682fb424f8fb57c56759105dbf37216952bd1371a95d301890a61af1c1e",
+          "src/giadaware_ai/backends/ollama.py": "8ae6675db3281ebbab486fa43a9595d007802e0a0849ac0e884d36df3e634468"
+        }
+      },
+      "source_selection": "Explicit user-supplied candidate; no independent review attestation asserted",
+      "source_declared_metadata": {
+        "name": "giadaware-ai",
+        "version": "0.0.1",
+        "requires_python": ">=3.11",
+        "license": "Apache-2.0",
+        "build_system": {
+          "requires": [
+            "setuptools>=68"
+          ],
+          "build-backend": "setuptools.build_meta"
+        }
+      },
+      "lele_core_requires_python": ">=3.10",
+      "environment": {
+        "python_version": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+        "implementation": "cpython",
+        "tool_distributions": {
+          "pip": "26.2.1",
+          "setuptools": "84.0.0",
+          "packaging": "26.3",
+          "pytest": "9.1.1",
+          "build": null,
+          "pyproject-hooks": null,
+          "wheel": "0.46.3"
+        },
+        "vendored_wheel_version": "0.46.3",
+        "build_tool_versions_used": null,
+        "observed_backend_pin": "setuptools==84.0.0",
+        "build_performed": false,
+        "giadaware_ai_installed": false,
+        "new_network_packages": false
+      },
+      "locations": {
+        "evidence": [
+          "LeLe:docs/issue-262-m4.2-qualification.md",
+          "LeLe:docs/issue-262-m4.2-qualification.json"
+        ],
+        "documented_artifact_root": "GiadaWare AI:dist/",
+        "planned_quarantine_subtree": "GiadaWare AI:dist/qualification/lele-manager-262-m4.2/36a1bb751ec3851d3ceb0a38abe052747984ce5e/<unique-run>/",
+        "quarantine_subtree_status": "Not created; layout-derived proposal within the documented output root, not a pre-existing qualification convention",
+        "release_ready_artifacts": []
+      },
+      "artifacts": {
+        "wheel": {
+          "filename": null,
+          "sha256": null,
+          "size_bytes": null,
+          "status": "BLOCKED"
+        },
+        "sdist": {
+          "filename": null,
+          "sha256": null,
+          "size_bytes": null,
+          "status": "BLOCKED"
+        }
+      },
+      "installed_metadata": null,
+      "installed_public_api_results": null,
+      "static_public_api": {
+        "root_exports_required": [
+          "AIConfigurationError",
+          "AIError",
+          "AIInvalidResponseError",
+          "AITimeoutError",
+          "AIUnavailableError",
+          "AIUnsupportedCapabilityError",
+          "CapabilityFamily",
+          "SynthesizeCapability"
+        ],
+        "root_exports_present": true,
+        "backend_protocol": "giadaware_ai.backend.AIBackend.generate_json(*, system_prompt, user_prompt, response_schema=None)",
+        "ollama_constructor_keyword_parameters": [
+          "model",
+          "base_url",
+          "timeout",
+          "think"
+        ],
+        "import_compatibility_verified": false
+      },
+      "license": {
+        "declared": "Apache-2.0",
+        "source_filename": "LICENSE",
+        "source_size_bytes": 708,
+        "source_sha256": "a1c957ad9dac2f360df42dd540ee459000e2122f37df3d6792b1981c45d22daf",
+        "full_terms_present": false,
+        "tracked_notice_present": false,
+        "notice_obligation_determined": false,
+        "gap": "Full Apache-2.0 terms missing; distribution inclusion unverified. Absence of NOTICE alone is not claimed to be a violation."
+      },
+      "preflight": {
+        "lele": {
+          "head": "a545e63a37ca8632a251b2281024b6ab710a6794",
+          "branch": "feat/262-ask-vault-giadaware-ai",
+          "status_porcelain": " M docs/ask-this-vault.md\n M src/lele_manager/api/server.py\n M src/lele_manager/application/ask_vault.py\n M tests/test_api_ask_vault.py\n M tests/test_api_assistant_context.py\n M tests/test_ask_vault.py\n?? src/lele_manager/adapters/giadaware_ai_ask_vault.py\n?? src/lele_manager/ask_vault_composition.py\n?? tests/test_api_assistant_context_coherence.py\n?? tests/test_ask_vault_composition.py\n?? tests/test_giadaware_ai_ask_vault.py\n",
+          "protected_files": [
+            {
+              "status": " M",
+              "path": "docs/ask-this-vault.md",
+              "sha256": "ac7b387eb2fbf4566cd8a6f25449051be8d570ce4cd4b64ba5076e0ca519f281"
+            },
+            {
+              "status": " M",
+              "path": "src/lele_manager/api/server.py",
+              "sha256": "12d0faacbb43805f8ff12e22614b1ffd5845d61d58ed5dc7770cbccbdc55dcf7"
+            },
+            {
+              "status": " M",
+              "path": "src/lele_manager/application/ask_vault.py",
+              "sha256": "df6f77fe0cb42095699d9e66395b9f56bd504f91d31099259c0bcaa7a0cce3bb"
+            },
+            {
+              "status": " M",
+              "path": "tests/test_api_ask_vault.py",
+              "sha256": "22499dd2f0772f5a845a50d34d901ae05aaea0c14d189ed4b4c5c9a145977aea"
+            },
+            {
+              "status": " M",
+              "path": "tests/test_api_assistant_context.py",
+              "sha256": "c55bd0562983e48dd6d4bcbc255981abb8b7744bc7d8cf0415103f815b938c68"
+            },
+            {
+              "status": " M",
+              "path": "tests/test_ask_vault.py",
+              "sha256": "caedd980784661032cb59da3ea7556c81088f330d18e5cebc0f8e1330c0b9ee3"
+            },
+            {
+              "status": "??",
+              "path": "src/lele_manager/adapters/giadaware_ai_ask_vault.py",
+              "sha256": "de4a16db5d307d77fb1cd608bd7c57107f5c671fcb2852208795463ed6723be6"
+            },
+            {
+              "status": "??",
+              "path": "src/lele_manager/ask_vault_composition.py",
+              "sha256": "8d70cf7824da46a2fb626540b7711ab8454ced931da90abc319263d25d2e901e"
+            },
+            {
+              "status": "??",
+              "path": "tests/test_api_assistant_context_coherence.py",
+              "sha256": "1674be58b5217699fc07f8bf6456beab4dc4e24bf9e62905237cf6a8767dd649"
+            },
+            {
+              "status": "??",
+              "path": "tests/test_ask_vault_composition.py",
+              "sha256": "643ed98557430556f5feb11c1e812c0d0fcd65b071f683deae1bec5b69afcd4f"
+            },
+            {
+              "status": "??",
+              "path": "tests/test_giadaware_ai_ask_vault.py",
+              "sha256": "c188c798aa424218329a296547a96a943889ec73a3efe3f609c429fa74680731"
+            }
+          ],
+          "worktrees": "worktree <workspace>/lele-manager\nHEAD 800ada85de8d0d8fa0372000380283a3366e74a9\nbranch refs/heads/docs/zenodo-v1.12.0-citation\n\nworktree <workspace>/lele-manager-worktrees/issue-262\nHEAD a545e63a37ca8632a251b2281024b6ab710a6794\nbranch refs/heads/feat/262-ask-vault-giadaware-ai\n\nworktree <workspace>/lele-manager-worktrees/release-1.12.0\nHEAD 857b3aed07a43ddc0a7982becd239e2e1da82d62\nbranch refs/heads/release/v1.12.0-readiness\nprunable gitdir file points to non-existent location\n\n"
+        },
+        "giadaware_ai": {
+          "head": "1c7429cbb20a257294bec7888349f9d164a21c2f",
+          "branch": "main",
+          "status_porcelain": "",
+          "protected_files": [],
+          "worktrees": "worktree <workspace>/giadaware-ai\nHEAD 1c7429cbb20a257294bec7888349f9d164a21c2f\nbranch refs/heads/main\n\n"
+        },
+        "permissions": {
+          "writable_roots": [
+            "LeLe worktree",
+            "/tmp"
+          ],
+          "upstream_artifact_write_allowed": false,
+          "blocked_write_attempted": false
+        },
+        "release_policy": {
+          "lele_python": "Explicit version tag/package identity; manually dispatched trusted publishing from main",
+          "lele_cleanup": "scripts/build-release-artifacts.sh removes build/, dist/, src/lele_manager.egg-info; not invoked",
+          "upstream": "CI packaging builds into dist/ and performs installed-wheel import smoke; no separate publication workflow or explicit cleanup script found",
+          "persistent_output_fallback_used": false
+        }
+      },
+      "verification": {
+        "focused_tests": {
+          "command": ".venv/bin/python -I -B -m pytest -q -p no:cacheprovider tests/test_ask_vault.py",
+          "exit_code": 0,
+          "passed": 34,
+          "failed": 0,
+          "skipped": 0,
+          "duration_seconds_reported": 0.13
+        },
+        "disabled_smoke": {
+          "python": "3.12.3",
+          "isolated_mode": true,
+          "giadaware_ai_installed": false,
+          "configuration_cases": [
+            "provider absent",
+            "provider absent with synthetic stray model and invalid timeout"
+          ],
+          "provider_enabled": false,
+          "optional_import_attempts": 0,
+          "network_attempts": 0,
+          "network_guard": "Audit hook rejects socket.connect, socket.getaddrinfo and urllib.Request",
+          "import_guard": "Rejects giadaware_ai and optional LeLe adapter imports",
+          "data": "Synthetic in-memory snapshots only; no Vault access",
+          "outcomes": [
+            "composition returns None",
+            "empty scope insufficient-support",
+            "nonempty scope provider unavailable"
+          ]
+        },
+        "installed_package_gates_passed": [],
+        "real_inference_attempted": false,
+        "broad_tests_run": false
+      },
+      "gates": [
+        {
+          "gate": "repository_preflight",
+          "status": "PASS",
+          "evidence": "Read both working-tree AGENTS.md files and candidate AGENTS.md; inspected branches, status, worktrees, release and cleanup contracts."
+        },
+        {
+          "gate": "candidate_identity",
+          "status": "PASS",
+          "evidence": "Commit and complete tracked tree exist locally; inspection uses git objects, not upstream HEAD."
+        },
+        {
+          "gate": "source_public_api_inspection",
+          "status": "PASS",
+          "evidence": "Required exports, synthesis family/base, backend protocol and Ollama constructor arguments are present in candidate source. Static inspection only."
+        },
+        {
+          "gate": "canonical_evidence_location",
+          "status": "PASS",
+          "evidence": "Existing LeLe docs/ technical and issue-record layout; two new files, outside build/dist cleanup. No new top-level output directory."
+        },
+        {
+          "gate": "canonical_artifact_destination",
+          "status": "BLOCKED",
+          "evidence": "GiadaWare AI dist/ is its documented build-output root. It is outside permitted write roots; no output was attempted there. A commit-specific qualification subtree would separate these candidates from root-level release distributables."
+        },
+        {
+          "gate": "offline_backend_prerequisite",
+          "status": "PASS",
+          "evidence": "Candidate requires setuptools>=68; available setuptools==84.0.0 exposes build_sdist/build_wheel and vendors wheel==0.46.3. Observed tools only; no build performed."
+        },
+        {
+          "gate": "documented_build_frontend_prerequisite",
+          "status": "BLOCKED",
+          "evidence": "The documented python -m build route has no installed build or pyproject-hooks distribution in the inspected LeLe environment. No package download/installation attempted. A direct backend route could avoid this frontend but cannot resolve the destination restriction."
+        },
+        {
+          "gate": "isolated_clean_source_build",
+          "status": "BLOCKED",
+          "evidence": "No build or source extraction performed because the canonical artifact destination is unavailable. No dirty HEAD build and no temporary durable output."
+        },
+        {
+          "gate": "artifact_sha256_integrity",
+          "status": "BLOCKED",
+          "evidence": "No wheel or sdist produced; filenames, sizes and artifact SHA-256 values are null, not inferred."
+        },
+        {
+          "gate": "isolated_installed_metadata",
+          "status": "BLOCKED",
+          "evidence": "No wheel to install into a separate Python>=3.11 environment; declared source metadata is not installed metadata."
+        },
+        {
+          "gate": "installed_public_api_imports",
+          "status": "BLOCKED",
+          "evidence": "No installed candidate distribution. No PYTHONPATH, editable upstream installation or sibling-source import used as a substitute."
+        },
+        {
+          "gate": "source_license_completeness",
+          "status": "FAIL",
+          "evidence": "Candidate LICENSE is a 708-byte short Apache-2.0 notice/link, not the full license terms. No tracked NOTICE exists. Upstream license correction and a new reviewed commit are required; none made here."
+        },
+        {
+          "gate": "distribution_license_material",
+          "status": "BLOCKED",
+          "evidence": "Cannot inspect wheel/sdist license inclusion without artifacts. The source license gap remains even if the existing short LICENSE is included."
+        },
+        {
+          "gate": "installed_fake_backend_adapter_smoke",
+          "status": "BLOCKED",
+          "evidence": "Requires installed wheel; existing fake-backend adapter tests were read but not executed or counted as passing."
+        },
+        {
+          "gate": "installed_fake_backend_composition_smoke",
+          "status": "BLOCKED",
+          "evidence": "Requires installed wheel; existing composition tests were read but not executed or counted as passing."
+        },
+        {
+          "gate": "optional_provider_disabled",
+          "status": "PASS",
+          "evidence": "Independent source-only smoke with GiadaWare AI absent: two configurations, zero optional import attempts, zero network attempts; empty scope returns insufficient-support and nonempty scope fails closed."
+        },
+        {
+          "gate": "focused_lele_service_tests",
+          "status": "PASS",
+          "evidence": "34 passed in 0.13s; tests/test_ask_vault.py. This is source-only service verification, not wheel qualification."
+        },
+        {
+          "gate": "release_promotion",
+          "status": "BLOCKED",
+          "evidence": "No artifacts produced or promoted; all installed-package gates and license remediation must pass before release eligibility or M4.3 readiness."
+        }
+      ]
+    }
+  ]
+}

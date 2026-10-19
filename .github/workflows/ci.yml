@@ -10,7 +10,12 @@ permissions:
 
 jobs:
   test:
+    name: Core / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
 
     steps:
       - name: Checkout
@@ -19,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -37,13 +42,69 @@ jobs:
           python -m pip install -e ".[dev]"
 
       - name: Ruff (lint)
+        if: matrix.python-version == '3.12'
         run: ruff check .
 
       - name: Mypy (type check)
+        if: matrix.python-version == '3.12'
         run: mypy src/lele_manager
 
-      - name: Pytest
-        run: pytest -q
+      - name: Verify core has no optional AI installation
+        run: |
+          python -c "import importlib.util; assert importlib.util.find_spec('giadaware_ai') is None"
+
+      - name: Explicit optional AI collection must fail without the provider
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+
+          result = subprocess.run(
+              [sys.executable, "-m", "pytest", "--collect-only", "-q", "--optional-ai", "tests/optional_ai"],
+              capture_output=True, text=True, check=False,
+          )
+          output = result.stdout + result.stderr
+          print(output)
+          assert result.returncode == 2, f"Expected collection failure, got {result.returncode}"
+          assert "ERROR collecting" in output
+          assert "No module named 'giadaware_ai'" in output
+          PY
+
+      - name: Core pytest (optional AI excluded before import)
+        run: python -m pytest -q
+
+  optional-ai:
+    name: Optional AI / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install LeLe core and test tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Acquire exact qualified GitHub wheel and verify SHA-256 and identity
+        run: python scripts/acquire-optional-ai.py download "$RUNNER_TEMP/optional-ai"
+
+      - name: Install only the verified wheel (no index or dependency fallback)
+        run: |
+          python -m pip install --no-index --no-deps "$RUNNER_TEMP/optional-ai/giadaware_ai-0.0.2-py3-none-any.whl"
+          python scripts/acquire-optional-ai.py verify-installed
+
+      - name: Optional AI contracts (fake backends; network forbidden)
+        run: python -m pytest -q --optional-ai tests/optional_ai
 
   e2e:
     runs-on: ubuntu-latest
@@ -141,3 +202,24 @@ jobs:
           /tmp/sdist-venv/bin/lele --help
           /tmp/sdist-venv/bin/python \
             scripts/smoke-installed-package.py
+
+  required-test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: [test, optional-ai, e2e, packaging-smoke]
+    if: always()
+    steps:
+      - name: Verify required CI jobs succeeded
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          results = json.loads(os.environ["NEEDS_JSON"])
+          failed = {name: job["result"] for name, job in results.items() if job["result"] != "success"}
+          if failed:
+              raise SystemExit(f"Required CI jobs did not all succeed: {failed}")
+          print("All required CI jobs succeeded")
+          PY

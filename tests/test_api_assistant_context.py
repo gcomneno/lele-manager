@@ -96,7 +96,7 @@ def test_assistant_context_search_uses_search_only_for_identity_and_order(
         body="CURRENT CANONICAL BODY",
     )
 
-    def fake_search(_body):
+    def fake_search(_body, *, context):
         return [
             SimpleNamespace(
                 id="python/current",
@@ -106,7 +106,7 @@ def test_assistant_context_search_uses_search_only_for_identity_and_order(
             )
         ]
 
-    monkeypatch.setattr(server, "search_lessons", fake_search)
+    monkeypatch.setattr(server, "_search_lessons", fake_search)
 
     client = TestClient(server.app)
     response = client.post(
