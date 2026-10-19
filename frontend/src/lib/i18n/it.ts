@@ -469,6 +469,8 @@ export const it = {
 
   vaultNotFound: "Vault non trovato: {path}",
   vaultImporting: "Importazione…",
+  vaultExpandAll: "Espandi tutto",
+  vaultCollapseAll: "Comprimi tutto",
   vaultRefresh: "Aggiorna",
   vaultImportJsonl: "Importa → JSONL",
   vaultNew: "+ Nuova",

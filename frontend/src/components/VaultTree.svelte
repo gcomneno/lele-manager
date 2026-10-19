@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import VaultTree from './VaultTree.svelte'
   import type { VaultTreeNode } from '../lib/api'
   import { navigate } from '../lib/router'
@@ -6,13 +7,20 @@
   interface Props {
     node: VaultTreeNode
     depth?: number
+    bulkExpansion?: { open: boolean } | null
   }
 
-  let { node, depth = 0 }: Props = $props()
+  let { node, depth = 0, bulkExpansion = null }: Props = $props()
+  let open = $state(untrack(() => depth < 2))
+
+  // Each command has a new identity so repeating it also resolves mixed states.
+  $effect(() => {
+    if (bulkExpansion) open = bulkExpansion.open
+  })
 </script>
 
 {#if node.type === 'dir'}
-  <details class="dir" open={depth < 2}>
+  <details class="dir" bind:open>
     <summary>
       {#if node.name}
         {node.name}
@@ -23,7 +31,7 @@
     {#if node.children?.length}
       <div class="children">
         {#each node.children as child}
-          <VaultTree node={child} depth={depth + 1} />
+          <VaultTree node={child} depth={depth + 1} {bulkExpansion} />
         {/each}
       </div>
     {/if}

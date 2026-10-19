@@ -457,6 +457,8 @@ export const en = {
 
   vaultNotFound: "Vault not found: {path}",
   vaultImporting: "Importing…",
+  vaultExpandAll: "Expand all",
+  vaultCollapseAll: "Collapse all",
   vaultRefresh: "Refresh",
   vaultImportJsonl: "Import → JSONL",
   vaultNew: "+ New",
