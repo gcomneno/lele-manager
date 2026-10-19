@@ -119,6 +119,11 @@ export const en = {
   aboutTitle: "About",
   aboutLoading: "Loading product information…",
   aboutError: "Unable to load About information: {error}",
+  aboutTagline: "Your local-first lessons learned workspace",
+  aboutLicenseSummary:
+    "Open-source software distributed under the {license} License.",
+  aboutLocalFirstStatement:
+    "{product} itself introduces no account, telemetry, cloud storage, or remote knowledge service.",
   aboutProduct: "Product",
   aboutVersion: "Version",
   aboutLicense: "License",

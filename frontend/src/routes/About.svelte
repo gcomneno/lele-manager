@@ -41,7 +41,7 @@
       <img src="/app/brand/lele-manager-mark.svg" alt="" aria-hidden="true" />
       <div>
         <h2>{about.product_name}</h2>
-        <p>{about.tagline}</p>
+        <p>{$messages.aboutTagline}</p>
         <p class="meta">{about.attribution}</p>
       </div>
     </div>
@@ -55,7 +55,7 @@
       <Surface>
         <span class="label">{$messages.aboutLicense}</span>
         <strong>{about.license_id}</strong>
-        <p>{about.license_summary}</p>
+        <p>{formatMessage($messages.aboutLicenseSummary, { license: about.license_id })}</p>
         <a href={about.license_url}>
           {$messages.aboutLicenseText}
         </a>
@@ -71,7 +71,7 @@
     <div class="local-first">
       <Surface>
         <span class="label">{$messages.aboutLocalFirst}</span>
-        <p>{about.local_first_statement}</p>
+        <p>{formatMessage($messages.aboutLocalFirstStatement, { product: about.product_name })}</p>
       </Surface>
     </div>
 
