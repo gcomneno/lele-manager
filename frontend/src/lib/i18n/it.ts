@@ -73,6 +73,7 @@ export const it = {
   shellWorkspace: "Spazio di lavoro",
   shellWorkspaceUnavailable: "Non disponibile",
   showNavigation: "Mostra navigazione",
+  resizeNavigation: "Ridimensiona navigazione",
   hideNavigation: "Nascondi navigazione",
   commandPaletteTrigger: "Cerca o comandi",
   commandPaletteShortcut: "Scorciatoia palette comandi: Control K",

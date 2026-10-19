@@ -28,6 +28,10 @@
   const SIDEBAR_VISIBILITY_STORAGE_KEY =
     'lele-manager.sidebar-visible.v1'
 
+  const SIDEBAR_WIDTH_STORAGE_KEY = 'lele-manager.sidebar-width.v1'
+  const SIDEBAR_MIN_WIDTH = 220
+  const SIDEBAR_MAX_WIDTH = 400
+
   const navigationGroupIds: NavigationGroupId[] = [
     'knowledge',
     'capture',
@@ -74,6 +78,9 @@
   ]
 
   let workspaceName = $state<string | null>(null)
+  let sidebarWidth = $state(loadSidebarWidth())
+  let resizingSidebar = $state(false)
+  let stopSidebarResize = () => {}
   let sidebarVisible = $state(loadSidebarVisibility())
   let navigationGroupState = $state<NavigationGroupState>(
     loadNavigationGroupState(),
@@ -81,6 +88,9 @@
 
   onMount(() => {
     let active = true
+    const desktop = window.matchMedia('(min-width: 801px)')
+    const onBreakpointChange = () => stopSidebarResize()
+    desktop.addEventListener('change', onBreakpointChange)
 
     void api.vaultStatus().then((vault) => {
       if (!active) return
@@ -92,6 +102,8 @@
 
     return () => {
       active = false
+      stopSidebarResize()
+      desktop.removeEventListener('change', onBreakpointChange)
     }
   })
 
@@ -167,7 +179,85 @@
     }
   }
 
+  function clampSidebarWidth(width: number): number {
+    return Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)))
+  }
+
+  function loadSidebarWidth(): number {
+    if (typeof window === 'undefined') return SIDEBAR_MIN_WIDTH
+    try {
+      const persisted = JSON.parse(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) ?? 'null')
+      return typeof persisted === 'number' && Number.isFinite(persisted)
+        ? clampSidebarWidth(persisted)
+        : SIDEBAR_MIN_WIDTH
+    } catch {
+      return SIDEBAR_MIN_WIDTH
+    }
+  }
+
+  function persistSidebarWidth() {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth))
+    } catch {
+      // Persistence is best-effort; resizing still works in this session.
+    }
+  }
+
+  function startSidebarResize(event: PointerEvent) {
+    if (event.button !== 0 || !event.isPrimary || !sidebarVisible ||
+      !window.matchMedia('(min-width: 801px)').matches) return
+
+    stopSidebarResize()
+    event.preventDefault()
+    const handle = event.currentTarget as HTMLElement
+    handle.focus()
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    const pointerId = event.pointerId
+    const move = (next: PointerEvent) => {
+      if (next.pointerId !== pointerId) return
+      next.preventDefault()
+      sidebarWidth = clampSidebarWidth(startWidth + next.clientX - startX)
+    }
+    const finish = (next: PointerEvent) => {
+      if (next.pointerId === pointerId) stopSidebarResize()
+    }
+    stopSidebarResize = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('blur', stopSidebarResize)
+      handle.removeEventListener('lostpointercapture', finish)
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId)
+      resizingSidebar = false
+      persistSidebarWidth()
+      stopSidebarResize = () => {}
+    }
+    resizingSidebar = true
+    window.addEventListener('pointermove', move, { passive: false })
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    window.addEventListener('blur', stopSidebarResize)
+    handle.addEventListener('lostpointercapture', finish)
+    handle.setPointerCapture(pointerId)
+  }
+
+  function resizeSidebarWithKeyboard(event: KeyboardEvent) {
+    let width = sidebarWidth
+    switch (event.key) {
+      case 'ArrowLeft': width -= 10; break
+      case 'ArrowRight': width += 10; break
+      case 'Home': width = SIDEBAR_MIN_WIDTH; break
+      case 'End': width = SIDEBAR_MAX_WIDTH; break
+      default: return
+    }
+    event.preventDefault()
+    sidebarWidth = clampSidebarWidth(width)
+    persistSidebarWidth()
+  }
+
   function toggleSidebar() {
+    stopSidebarResize()
     sidebarVisible = !sidebarVisible
 
     if (typeof window === 'undefined') return
@@ -207,7 +297,7 @@
 
 </script>
 
-<div class:sidebar-hidden={!sidebarVisible} class="shell">
+<div class:sidebar-hidden={!sidebarVisible} class:resizing-sidebar={resizingSidebar} class="shell" style:--sidebar-width={`${sidebarWidth}px`}>
   <header class="global-header">
     <button
       class="sidebar-toggle"
@@ -330,6 +420,24 @@
     </footer>
   </aside>
 
+  <!-- A focusable ARIA separator is an interactive window splitter. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="sidebar-resize-handle"
+    role="separator"
+    tabindex="0"
+    aria-label={$messages.resizeNavigation}
+    aria-controls="primary-sidebar"
+    aria-orientation="vertical"
+    aria-valuemin={SIDEBAR_MIN_WIDTH}
+    aria-valuemax={SIDEBAR_MAX_WIDTH}
+    aria-valuenow={sidebarWidth}
+    aria-valuetext={`${sidebarWidth} px`}
+    hidden={!sidebarVisible}
+    onpointerdown={startSidebarResize}
+    onkeydown={resizeSidebarWithKeyboard}
+  ></div>
+
   <main class="main">
     <div class="content">
       {@render children()}
@@ -394,7 +502,7 @@
 <style>
   .shell {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     grid-template-areas:
       'sidebar header'
       'sidebar main';
@@ -407,6 +515,35 @@
     grid-template-areas:
       'header'
       'main';
+  }
+
+  .sidebar-resize-handle {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--sidebar-width) - 4px);
+    width: 8px;
+    z-index: 2;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .sidebar-resize-handle[hidden] {
+    display: none;
+  }
+
+  .sidebar-resize-handle:hover,
+  .sidebar-resize-handle:focus-visible,
+  .resizing-sidebar .sidebar-resize-handle {
+    background: var(--color-brand-500);
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: -2px;
+  }
+
+  .resizing-sidebar,
+  .resizing-sidebar :global(*) {
+    user-select: none;
+    cursor: col-resize;
   }
 
   .sidebar {
@@ -675,6 +812,8 @@
   }
 
   @media (max-width: 800px) {
+    .sidebar-resize-handle { display: none; }
+
     .shell {
       grid-template-columns: minmax(0, 1fr);
       grid-template-areas:

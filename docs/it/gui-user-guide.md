@@ -78,6 +78,14 @@ sidebar. Questa preferenza è conservata localmente come
 rimuove i controlli dell’header; quando la riapri, disclosure dei gruppi e
 destinazione corrente restano preservate.
 
+Su desktop, trascina il bordo destro della sidebar per ridimensionarla tra
+220 e 400 pixel. Puoi anche raggiungere con Tab il separatore “Ridimensiona
+navigazione” e usare le frecce sinistra/destra (10 pixel per pressione), Home
+(minimo) o End (massimo). La larghezza è salvata localmente come
+`lele-manager.sidebar-width.v1` e mantenuta dopo ricaricamenti e navigazione.
+Nascondere la sidebar ne conserva la larghezza; su mobile la navigazione
+mantiene il layout a larghezza piena.
+
 Usa **Cerca o comandi** o **Ctrl+K** per aprire rapidamente destinazioni reali,
 incluse Dashboard, Esplora, Cronologia, Statistiche, Raccolta, Vault,
 Duplicati, Sistema, Diagnostica, Informazioni e **Nuova LeLe**. La ricerca di
