@@ -13,6 +13,7 @@
   import VaultTree from '../components/VaultTree.svelte'
 
   let treeData = $state<VaultTreeResponse | null>(null)
+  let bulkExpansion = $state<{ open: boolean } | null>(null)
   let loading = $state(true)
   let error = $state('')
   let importMsg = $state('')
@@ -49,6 +50,7 @@
 
   async function load() {
     loading = true
+    bulkExpansion = null
     error = ''
 
     try {
@@ -513,7 +515,27 @@
       style="--giu-form-status-padding: var(--space-2) var(--space-3)"
     />
   {:else if treeData}
-    <VaultTree node={treeData.tree} />
+    <div class="vault-disclosure-actions">
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={() => bulkExpansion = { open: true }}
+        aria-controls="vault-tree"
+      >
+        {$messages.vaultExpandAll}
+      </Button>
+      <Button
+        variant="secondary"
+        size="compact"
+        onclick={() => bulkExpansion = { open: false }}
+        aria-controls="vault-tree"
+      >
+        {$messages.vaultCollapseAll}
+      </Button>
+    </div>
+    <div id="vault-tree">
+      <VaultTree node={treeData.tree} {bulkExpansion} />
+    </div>
   {/if}
 
   {#if importMsg}
@@ -524,3 +546,12 @@
     />
   {/if}
 </Panel>
+
+<style>
+  .vault-disclosure-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+</style>

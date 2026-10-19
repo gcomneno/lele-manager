@@ -349,6 +349,14 @@ fixture Playwright isolata. Non contengono vault o dati personali.
 
 ![Albero del vault Markdown canonico](../images/gui/vault.png)
 
+Usa **Espandi tutto** e **Comprimi tutto** sopra l’albero del Vault per aprire o
+chiudere tutte le directory, incluse quelle annidate e vuote. Ogni directory può
+ancora essere aperta o chiusa in modo indipendente dal suo riepilogo con il mouse
+o la tastiera. La radice e le sue sottodirectory immediate sono inizialmente
+aperte; le directory più profonde sono chiuse. Aggiornando l’albero o uscendo e
+rientrando nella vista Vault si ripristina questa disposizione iniziale. Lo stato
+di apertura non viene salvato.
+
 ![Revisione dei duplicati](../images/gui/duplicates.png)
 
 ### Risolvere con consapevolezza le coppie candidate

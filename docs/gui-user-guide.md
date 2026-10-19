@@ -328,6 +328,13 @@ Playwright fixture. They contain no personal vault or runtime data.
 
 ![Canonical Markdown vault tree](images/gui/vault.png)
 
+Use **Expand all** and **Collapse all** above the Vault tree to open or close
+all directories, including nested and empty directories. Each directory can
+still be toggled independently with its summary using the mouse or keyboard.
+The root and its immediate subdirectories start open; deeper directories start
+closed. Refreshing the tree or leaving and returning to Vault restores this
+initial layout. Disclosure state is not persisted.
+
 ![Duplicate review](images/gui/duplicates.png)
 
 ### Resolve duplicate candidates deliberately
