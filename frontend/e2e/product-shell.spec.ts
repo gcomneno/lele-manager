@@ -44,6 +44,36 @@ test.describe('product shell hierarchy', () => {
     }
   })
 
+  for (const width of [1280, 390]) {
+    test(`keeps System, Diagnostics and About icons distinct at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto('/app/#/')
+      const navigation = page.getByRole('navigation', { name: 'Primary' })
+      const shapes: string[] = []
+
+      for (const [label, route, iconName] of [
+        ['System', 'ops', 'system'],
+        ['Diagnostics', 'settings', 'diagnostics'],
+        ['About', 'about', 'about'],
+      ]) {
+        const link = navigation.getByRole('link', { name: label, exact: true })
+        await expect(link).toHaveAttribute('href', `#/${route}`)
+        const icon = link.locator('svg')
+        await expect(icon).toBeVisible()
+        await expect(icon).toHaveAttribute('data-icon', iconName)
+        await expect(icon).toHaveAttribute('aria-hidden', 'true')
+        await expect(icon).toHaveAttribute('viewBox', '0 0 24 24')
+        shapes.push(await icon.innerHTML())
+        await link.click()
+        await expect(page).toHaveURL(new RegExp(`#/${route}$`))
+        await expect(link).toHaveAttribute('aria-current', 'page')
+      }
+
+      // Compare rendered geometry, so distinct names cannot mask identical icons.
+      expect(new Set(shapes).size).toBe(3)
+    })
+  }
+
   test('toggles independent inactive groups with native disclosure semantics', async ({ page }) => {
     await page.goto('/app/#/settings')
 
