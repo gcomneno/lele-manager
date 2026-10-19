@@ -117,7 +117,7 @@ test('keeps localized labels, keyboard operation, focus and controls usable at a
   await expectState(page, [true, false, false, false, false, false])
   await expect(summary(page, 'vault')).toBeFocused()
 
-  await page.getByLabel('Language', { exact: true }).selectOption('it')
+  await page.getByLabel('Language').selectOption('it')
   const expandIt = page.getByRole('button', { name: 'Espandi tutto', exact: true })
   const collapseIt = page.getByRole('button', { name: 'Comprimi tutto', exact: true })
   for (const control of [expandIt, collapseIt]) {
