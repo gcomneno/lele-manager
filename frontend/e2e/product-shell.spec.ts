@@ -354,7 +354,39 @@ test.describe('global application header', () => {
 
     await page.keyboard.press('Meta+k')
     await expect(dialog).toBeVisible()
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Meta+k')
+      await expect(dialog).toBeVisible()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      await expect(input).toBeFocused()
+    }
     await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+  })
+
+  test('reopens before the queued native dialog close event is delivered', async ({ page }) => {
+    await page.goto('/app/#/')
+    const trigger = page.getByTestId('command-palette-trigger')
+    await trigger.click()
+    const dialog = page.getByRole('dialog', { name: 'Search or commands' })
+    await dialog.getByPlaceholder('Filter commands…').fill('Diagnostics')
+    await dialog.evaluate(async (element) => {
+      const closed = new Promise<void>((resolve) => element.addEventListener('close', () => resolve(), { once: true }))
+      // Reproduce Escape's cancel action and Meta+K in the same task, before
+      // the browser can deliver close. No timing-dependent delay is involved.
+      const nativeDefault = element.dispatchEvent(new Event('cancel', { cancelable: true }))
+      if (nativeDefault) (element as HTMLDialogElement).close()
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))
+      await closed
+    })
+    await expect(dialog).toBeVisible()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await expect(dialog.getByPlaceholder('Filter commands…')).toHaveValue('')
+    await expect(dialog.getByPlaceholder('Filter commands…')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await expect(trigger).toBeFocused()
   })
 
   test('offers New LeLe as a command without restoring a permanent CTA', async ({ page }) => {

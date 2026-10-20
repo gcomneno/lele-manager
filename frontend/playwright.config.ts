@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: 'bash ../scripts/e2e-serve.sh',
     url: `http://127.0.0.1:${e2ePort}/health`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 })
