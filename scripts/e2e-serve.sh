@@ -21,18 +21,17 @@ fi
 export LELE_SKIP_FRONTEND_INSTALL=1
 ./scripts/build-gui.sh
 
-"$PYTHON_BIN" scripts/e2e-prepare.py
-
+# Set isolation before preparation as well as server startup. No inherited
+# deprecated file override may redirect fixture initialization or runtime state.
 export LELE_DATA_DIR="$ROOT/.e2e-fixture/data"
 export LELE_CACHE_DIR="$ROOT/.e2e-fixture/cache"
 export LELE_VAULT_DIR="$ROOT/.e2e-fixture/vault"
-# The shared validation virtualenv is editable from the main checkout.  Keep
-# this worktree's source first so Playwright always exercises the code it just
-# built, rather than a stale sibling checkout.
-export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-
+# The validation virtualenv may be editable from a sibling checkout.
+export PYTHONPATH="$ROOT/src"
 unset LELE_DATA_PATH
 unset LELE_MODEL_PATH
+
+"$PYTHON_BIN" scripts/e2e-prepare.py
 
 exec "$PYTHON_BIN" -m uvicorn lele_manager.api.server:app \
   --host 127.0.0.1 \

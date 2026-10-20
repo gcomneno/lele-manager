@@ -11,6 +11,49 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
+## [1.13.0] - Unpublished
+
+Release candidate prepared from integrated main commit `7c02a53`.
+Production readiness remains subject to G1, G2 and G3 qualification.
+
+### Added
+- Opt-in Ask-this-Vault synthesis through the optional GiadaWare AI v0.0.2
+  integration and a local Ollama endpoint, with bounded canonical grounding,
+  scope-validated citations and redacted provider errors (#262, #269).
+- Accessible desktop sidebar resizing with pointer and keyboard controls and
+  locally persisted width (#268).
+- Expand-all and collapse-all controls for Vault tree folders (#265).
+- Software citation metadata and links to the Zenodo concept archive and
+  published v1.12.0 archive (#263).
+
+### Changed
+- CI separates Python 3.10/3.12 core tests from Python 3.11/3.12 optional-AI
+  contracts, with verified optional-wheel acquisition and an aggregate test
+  gate (#262, #269).
+
+### Fixed
+- Italian About localization now covers the maintained product text (#266).
+- Sidebar navigation icons now distinguish their destinations (#267).
+
+### Security
+- Registered Vault roots and scoped artifacts reject unsafe filesystem
+  redirection, hard links and special nodes; registry validation rejects
+  ambiguous UUID identities and overlap with managed state namespaces (#264).
+- Canonical reads, authoring, import, approval, projection/model access and
+  snapshot operations share strengthened filesystem ownership checks. CLI
+  approval uses one coherent Vault context (#264).
+
+### Compatibility
+- Existing personal Vaults require no migration. Invalid or unsafe layouts
+  fail closed without automatic relocation, UUID rewriting or cleanup.
+- Markdown remains canonical, JSONL remains the production projection backend,
+  and TritaLeLe publication still requires explicit approval.
+- Ask-this-Vault synthesis is disabled by default and requires explicit local
+  provider configuration and the separately installed optional dependency.
+  No implicit remote provider or model download is introduced.
+- Canonical mutation success and derived refresh failure remain separate
+  outcomes. Persistent user data stays outside installation bundles.
+
 ## [1.12.0] - 2026-09-28
 
 ### Added
@@ -378,6 +421,7 @@ _See [1.2.0] — same commit tag point; version marker for milestone tracking._
 - NaN/NaT handling in the API layer.
 
 [Unreleased]: https://github.com/gcomneno/lele-manager/compare/v1.12.0...HEAD
+[1.13.0]: https://github.com/gcomneno/lele-manager/compare/v1.12.0...7c02a53
 [1.12.0]: https://github.com/gcomneno/lele-manager/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/gcomneno/lele-manager/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/gcomneno/lele-manager/compare/v1.10.1...v1.11.0

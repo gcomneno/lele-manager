@@ -5,11 +5,10 @@ type: software
 authors:
   - family-names: "Cicellyn Comneno"
     given-names: "Giancarlo"
-version: "1.12.0"
-doi: "10.5281/zenodo.23037237"
-date-released: "2026-09-28"
+# Unpublished candidate: no release date or version-specific DOI is assigned.
+version: "1.13.0"
 repository-code: "https://github.com/gcomneno/lele-manager"
-url: "https://doi.org/10.5281/zenodo.23037237"
+url: "https://github.com/gcomneno/lele-manager"
 license: MIT
 abstract: >-
   LeLe Manager is an end-to-end local-first system for collecting,
@@ -21,3 +20,14 @@ keywords:
   - local-first
   - Markdown
   - semantic search
+references:
+  - type: software
+    title: "LeLe Manager"
+    authors:
+      - family-names: "Cicellyn Comneno"
+        given-names: "Giancarlo"
+    version: "1.12.0"
+    doi: "10.5281/zenodo.23037237"
+    date-released: "2026-09-28"
+    repository-code: "https://github.com/gcomneno/lele-manager"
+    url: "https://doi.org/10.5281/zenodo.23037237"

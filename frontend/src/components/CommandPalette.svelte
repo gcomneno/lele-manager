@@ -53,12 +53,20 @@
     isOpen = true
     query = ''
     await tick()
+    if (!isOpen) return
     dialog?.showModal()
     input?.focus()
   }
 
   function closePalette() {
+    isOpen = false
     dialog?.close()
+    trigger?.focus()
+  }
+
+  function onDialogCancel(event: Event) {
+    event.preventDefault()
+    closePalette()
   }
 
   function runCommand(command: Command) {
@@ -67,6 +75,8 @@
   }
 
   function onDialogClose() {
+    // Native close events are queued; an earlier close may arrive after reopen.
+    if (dialog?.open) return
     isOpen = false
     trigger?.focus()
   }
@@ -122,6 +132,7 @@
   id="global-command-palette"
   aria-labelledby="command-palette-title"
   onclose={onDialogClose}
+  oncancel={onDialogCancel}
 >
   <div class="palette">
     <div class="palette-heading">

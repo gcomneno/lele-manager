@@ -42,10 +42,13 @@
   let selectedTransferLessonIds = $state<string[]>([])
   let transferResolutions = $state<Record<string, VaultTransferResolution>>({})
   let transferPreview = $state<VaultTransferPreview | null>(null)
-  let transferBusy = $state(false)
+  let transferSourceBusy = $state(false)
+  let transferPreviewBusy = $state(false)
   let transferExecuting = $state(false)
+  let transferBusy = $derived(transferSourceBusy || transferPreviewBusy || transferExecuting)
   let transferMessage = $state('')
   let transferTone = $state<FormStatusTone>('info')
+  let transferSourceRequestVersion = $state(0)
   let transferRequestVersion = $state(0)
 
   async function load() {
@@ -236,6 +239,7 @@
 
   function invalidateTransferPlan(message = '') {
     transferRequestVersion += 1
+    transferPreviewBusy = false
     transferPreview = null
     transferMessage = message
   }
@@ -257,19 +261,20 @@
     selectedTransferLessonIds = []
     transferResolutions = {}
     transferLessons = []
+    const version = ++transferSourceRequestVersion
+    transferSourceBusy = false
     if (!transferSourceId) return
     const sourceId = transferSourceId
-    const version = ++transferRequestVersion
-    transferBusy = true
+    transferSourceBusy = true
     try {
       const lessons = await api.vaultTransferSourceLessons(sourceId)
-      if (version === transferRequestVersion && transferSourceId === sourceId) transferLessons = lessons
+      if (version === transferSourceRequestVersion && transferSourceId === sourceId) transferLessons = lessons
     } catch (e) {
-      if (version === transferRequestVersion) {
+      if (version === transferSourceRequestVersion) {
         transferMessage = e instanceof Error ? e.message : $messages.vaultTransferFailed
         transferTone = 'error'
       }
-    } finally { if (version === transferRequestVersion) transferBusy = false }
+    } finally { if (version === transferSourceRequestVersion) transferSourceBusy = false }
   }
 
   function toggleTransferLesson(lessonId: string, checked: boolean) {
@@ -294,7 +299,7 @@
     const operation = transferOperation
     const selections = transferSelections()
     const version = ++transferRequestVersion
-    transferBusy = true
+    transferPreviewBusy = true
     transferMessage = $messages.vaultTransferPreviewing
     transferTone = 'info'
     try {
@@ -309,7 +314,7 @@
         transferMessage = e instanceof Error ? e.message : $messages.vaultTransferFailed
         transferTone = 'error'
       }
-    } finally { if (version === transferRequestVersion) transferBusy = false }
+    } finally { if (version === transferRequestVersion) transferPreviewBusy = false }
   }
 
   function setTransferResolution(lessonId: string, resolution: VaultTransferResolution) {
@@ -354,7 +359,6 @@
       transferTone = 'error'
       return
     }
-    transferBusy = true
     transferExecuting = true
     transferMessage = $messages.vaultTransferExecuting
     transferTone = 'info'
@@ -371,7 +375,7 @@
     } catch (e) {
       transferMessage = e instanceof Error ? e.message : $messages.vaultTransferFailed
       transferTone = 'error'
-    } finally { transferBusy = false; transferExecuting = false }
+    } finally { transferExecuting = false }
   }
 
   onMount(load)
