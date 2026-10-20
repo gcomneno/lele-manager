@@ -20,6 +20,7 @@ from lele_manager.core.canonical_provenance import (
 )
 from lele_manager.core.canonical_mutation import canonical_mutation_boundary
 from lele_manager.core.vault import render_lesson_markdown
+from lele_manager.core.vault_filesystem import owned_destination, owned_markdown_paths
 
 
 def _plain(value: object) -> object:
@@ -43,8 +44,8 @@ class FilesystemCanonicalMarkdownVault:
     def _publish(self, lesson: CanonicalLessonSpec) -> VaultWriteOutcome:
         temporary: Path | None = None
         try:
-            root = self._vault_dir.resolve()
-            destination = (root / lesson.relative_path).resolve()
+            root = self._vault_dir
+            destination = owned_destination(root, lesson.relative_path)
             try:
                 destination.relative_to(root)
             except ValueError:
@@ -67,7 +68,7 @@ class FilesystemCanonicalMarkdownVault:
             ).encode("utf-8")
 
             root.mkdir(parents=True, exist_ok=True)
-            for path in sorted(root.rglob("*.md")):
+            for path in owned_markdown_paths(root):
                 content = path.read_bytes()
                 frontmatter, _ = parse_markdown_with_frontmatter(
                     content.decode("utf-8")
@@ -84,6 +85,7 @@ class FilesystemCanonicalMarkdownVault:
                 return VaultWriteOutcome.IDENTICAL
 
             destination.parent.mkdir(parents=True, exist_ok=True)
+            owned_destination(root, lesson.relative_path)
             with tempfile.NamedTemporaryFile(
                 "wb",
                 dir=destination.parent,
@@ -120,8 +122,8 @@ class FilesystemCanonicalMarkdownVault:
     def verify(self, lesson: CanonicalLessonSpec) -> VaultWriteOutcome:
         """Verify an approved candidate's exact artifact without creating it."""
         try:
-            root = self._vault_dir.resolve()
-            destination = (root / lesson.relative_path).resolve()
+            root = self._vault_dir
+            destination = owned_destination(root, lesson.relative_path)
             destination.relative_to(root)
             rendered = render_lesson_markdown(
                 lesson_id=lesson.lesson_id,
@@ -134,7 +136,7 @@ class FilesystemCanonicalMarkdownVault:
                 title=lesson.title,
                 provenance=_plain(lesson.provenance),  # type: ignore[arg-type]
             ).encode("utf-8")
-            for path in sorted(root.rglob("*.md")):
+            for path in owned_markdown_paths(root):
                 content = path.read_bytes()
                 frontmatter, _ = parse_markdown_with_frontmatter(
                     content.decode("utf-8")

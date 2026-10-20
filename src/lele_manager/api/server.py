@@ -230,11 +230,11 @@ DUPLICATE_DECISIONS_PATH: Path | None = None
 
 
 def get_data_path() -> Path:
-    return DATA_PATH if DATA_PATH is not None else active_vault_context().projection_path
+    return DATA_PATH if DATA_PATH is not None else get_active_vault_context().projection_path
 
 
 def get_model_path() -> Path:
-    return MODEL_PATH if MODEL_PATH is not None else active_vault_context().topic_model_path
+    return MODEL_PATH if MODEL_PATH is not None else get_active_vault_context().topic_model_path
 
 
 def get_active_vault_context() -> ActiveVaultContext:

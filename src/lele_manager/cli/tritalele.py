@@ -403,7 +403,7 @@ def _approval_service() -> CandidateApprovalService:
         raise TritaLeLeCliConfigurationError(
             "La configurazione locale di vault o proiezione non è disponibile."
         ) from None
-    repository = _candidate_repository()
+    repository = JsonCandidateRepository(context.candidates_path)
     return CandidateApprovalService(
         repository,
         FilesystemCanonicalMarkdownVault(vault_dir),

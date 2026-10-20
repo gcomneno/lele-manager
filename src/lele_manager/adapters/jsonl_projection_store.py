@@ -16,6 +16,7 @@ import stat
 from typing import Any
 
 from lele_manager.core.json_compat import canonical_json
+from lele_manager.core.vault_filesystem import assert_owned_path
 from lele_manager.core.projection_store import (
     DuplicateLessonIdError,
     LessonOrder,
@@ -176,6 +177,7 @@ class JsonlProjectionStore:
         self._path = path
 
     def snapshot(self) -> JsonlProjectionSnapshot:
+        self._assert_owned_path()
         if not self._path.exists():
             return _make_snapshot(())
         records: list[LessonRecord] = []
@@ -204,6 +206,7 @@ class JsonlProjectionStore:
         snapshot = _make_snapshot(records)
         ordered = sorted(snapshot.list(), key=lambda row: str(row["id"]))
         snapshot = _make_snapshot(ordered)
+        self._assert_owned_path()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path: Path | None = None
         try:
@@ -225,6 +228,12 @@ class JsonlProjectionStore:
                 temporary_path.unlink(missing_ok=True)
         return snapshot
 
+    def _assert_owned_path(self) -> None:
+        try:
+            assert_owned_path(self._path)
+        except OSError as exc:
+            raise MalformedProjectionError("projection path is unsafe") from exc
+
 
 class JsonlLegacyAppendFacade:
     """JSONL-only compatibility API, deliberately outside ProjectionStore."""
@@ -233,6 +242,7 @@ class JsonlLegacyAppendFacade:
         self._path = path
 
     def append(self, record: LessonRecord) -> None:
+        JsonlProjectionStore(self._path)._assert_owned_path()
         incoming = _make_snapshot((record,)).list()[0]
         existing = JsonlProjectionStore(self._path).snapshot()
         lesson_id = str(incoming["id"])

@@ -19,6 +19,7 @@ from typing import Any, List, cast
 
 from .paths import cache_dir, data_dir, resolved_cache_dir, resolved_data_dir
 from .vault import DEFAULT_VAULT_DIRNAME, resolve_vault_dir
+from .vault_filesystem import assert_owned_path, owned_tree_files
 
 SCHEMA_VERSION = 1
 _LOCK = RLock()
@@ -80,6 +81,15 @@ def _canonical(path: str | Path) -> Path:
     return Path(path).expanduser().resolve()
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate registry field")
+        result[key] = value
+    return result
+
+
 def _record(value: Any) -> RegisteredVault:
     if not isinstance(value, dict):
         raise VaultRegistryCorruptError("vault registry entry is malformed")
@@ -90,9 +100,14 @@ def _record(value: Any) -> RegisteredVault:
         uuid.UUID(vault_id)
     except ValueError as exc:
         raise VaultRegistryCorruptError("vault registry contains an invalid id") from exc
-    return RegisteredVault(
-        cast(str, vault_id), cast(str, name).strip(), _canonical(cast(str, path)), cast(str, registered_at)
-    )
+    stored = Path(cast(str, path))
+    try:
+        if not stored.is_absolute() or stored != stored.resolve():
+            raise VaultRegistryCorruptError("vault registry path is not canonical or has changed")
+        assert_owned_path(stored, directory=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise VaultRegistryCorruptError("vault registry path is unavailable or unsafe") from exc
+    return RegisteredVault(cast(str, vault_id), cast(str, name).strip(), stored, cast(str, registered_at))
 
 
 class VaultRegistryStore:
@@ -114,11 +129,15 @@ class VaultRegistryStore:
         return self.path.exists()
 
     def _load(self) -> dict[str, Any]:
+        try:
+            assert_owned_path(self.path)
+        except OSError as exc:
+            raise VaultRegistryCorruptError("vault registry path is unsafe") from exc
         if not self.path.exists():
             raise VaultNotFoundError("vault registry has not been initialized")
         try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+            raw = json.loads(self.path.read_text(encoding="utf-8"), object_pairs_hook=_unique_json_object)
+        except (OSError, ValueError, UnicodeError) as exc:
             raise VaultRegistryCorruptError("vault registry is unreadable; it was left unchanged") from exc
         if not isinstance(raw, dict) or raw.get("schema_version") != SCHEMA_VERSION:
             raise VaultRegistryCorruptError("vault registry has an unsupported schema")
@@ -128,6 +147,8 @@ class VaultRegistryStore:
         if not vaults or raw["active_vault_id"] not in {item.id for item in vaults}:
             raise VaultRegistryCorruptError("vault registry has no valid active Vault")
         self._validate_unique(vaults)
+        for item in vaults:
+            self._assert_state_separation(item.path)
         migration = raw.get("legacy_migration")
         if migration is not None:
             if not isinstance(migration, dict):
@@ -141,7 +162,7 @@ class VaultRegistryStore:
 
     @staticmethod
     def _validate_unique(vaults: list[RegisteredVault]) -> None:
-        if len({item.id for item in vaults}) != len(vaults):
+        if len({uuid.UUID(item.id) for item in vaults}) != len(vaults):
             raise VaultRegistryCorruptError("vault registry contains duplicate ids")
         names = [item.name.casefold() for item in vaults]
         if len(set(names)) != len(names):
@@ -154,6 +175,10 @@ class VaultRegistryStore:
                     raise VaultRegistryCorruptError("vault registry contains overlapping paths")
 
     def _write(self, data: dict[str, Any]) -> None:
+        try:
+            assert_owned_path(self.path)
+        except OSError as exc:
+            raise VaultRegistryError("vault registry path is unsafe") from exc
         serializable = {
             "schema_version": SCHEMA_VERSION,
             "active_vault_id": data["active_vault_id"],
@@ -190,6 +215,7 @@ class VaultRegistryStore:
                 data = self._load()
             else:
                 source = resolve_vault_dir()  # env is intentionally consulted only here
+                self._assert_state_separation(source)
                 name = source.name or DEFAULT_VAULT_DIRNAME
                 item = RegisteredVault(str(uuid.uuid4()), name, source, datetime.now(timezone.utc).isoformat())
                 data = {
@@ -208,6 +234,8 @@ class VaultRegistryStore:
             if migration is None or migration["completed"]:
                 return next(item for item in data["vaults"] if item.id == data["active_vault_id"])
             item = next(entry for entry in data["vaults"] if entry.id == migration["vault_id"])
+            # Validate before legacy side effects without startup mkdir.
+            self.context_for_roots(item, resolved_data_dir(), resolved_cache_dir())
             if not migration["candidates_completed"]:
                 self._migrate_legacy_candidates(item)
                 migration["candidates_completed"] = True
@@ -236,7 +264,10 @@ class VaultRegistryStore:
 
     @staticmethod
     def context_for(item: RegisteredVault) -> ActiveVaultContext:
-        return VaultRegistryStore.context_for_roots(item, data_dir(), cache_dir())
+        context = VaultRegistryStore.context_for_roots(item, resolved_data_dir(), resolved_cache_dir())
+        data_dir()
+        cache_dir()
+        return context
 
     def safe_context_for_registered(self, vault_id: str) -> ActiveVaultContext:
         """Resolve a registered Vault without following a substituted symlink.
@@ -277,13 +308,19 @@ class VaultRegistryStore:
     def context_for_roots(
         item: RegisteredVault, data_root: Path, cache_root: Path
     ) -> ActiveVaultContext:
-        """Build a managed context from already-resolved roots without I/O.
+        """Build a managed context without creating or changing any state.
 
         Runtime operations use :meth:`context_for`, whose root helpers create
         their directories as part of normal startup behavior.  Transparency
-        and diagnostics instead use this pure constructor so merely reporting
+        and diagnostics instead use this read-only constructor so merely reporting
         paths cannot bootstrap any managed state.
         """
+        try:
+            assert_owned_path(item.path, directory=True)
+            for root in (data_root / "vaults" / item.id, cache_root / "vaults" / item.id):
+                owned_tree_files(root)
+        except OSError as exc:
+            raise VaultPathError("Vault canonical or scoped state path is unsafe") from exc
         return ActiveVaultContext(
             item.id,
             item.name,
@@ -295,6 +332,7 @@ class VaultRegistryStore:
         )
 
     def _assert_new(self, name: str, path: Path, vaults: List[RegisteredVault]) -> None:
+        self._assert_state_separation(path)
         if not name.strip():
             raise VaultConflictError("vault_name_conflict: Vault name must not be blank")
         if any(item.name.casefold() == name.strip().casefold() for item in vaults):
@@ -304,6 +342,14 @@ class VaultRegistryStore:
                 raise VaultConflictError("vault_path_already_registered: Vault path is already registered")
             if item.path in path.parents or path in item.path.parents:
                 raise VaultConflictError("vault_path_overlaps_registered: Vault path overlaps another registered Vault")
+
+    @staticmethod
+    def _assert_state_separation(path: Path) -> None:
+        # A canonical root cannot contain, or live inside, the managed state
+        # namespace shared by registered Vaults. Never relocate existing data.
+        for state in (resolved_data_dir() / "vaults", resolved_cache_dir() / "vaults"):
+            if path == state or path in state.parents or state in path.parents:
+                raise VaultPathError("Vault root overlaps managed Vault state")
 
     def register(self, name: str, path: str | Path) -> RegisteredVault:
         resolved = _canonical(path)
@@ -319,10 +365,13 @@ class VaultRegistryStore:
 
     def create(self, name: str, path: str | Path) -> RegisteredVault:
         resolved = _canonical(path)
-        if resolved.exists() and (not resolved.is_dir() or any(resolved.iterdir())):
-            raise VaultConflictError("vault_path_unavailable: create requires a new or empty directory")
-        resolved.mkdir(parents=True, exist_ok=True)
-        return self.register(name, resolved)
+        with _LOCK:
+            data = self._load()
+            self._assert_new(name, resolved, data["vaults"])
+            if resolved.exists() and (not resolved.is_dir() or any(resolved.iterdir())):
+                raise VaultConflictError("vault_path_unavailable: create requires a new or empty directory")
+            resolved.mkdir(parents=True, exist_ok=True)
+            return self.register(name, resolved)
 
     def rename(self, vault_id: str, name: str) -> RegisteredVault:
         with _LOCK:
@@ -355,6 +404,7 @@ class VaultRegistryStore:
                 raise VaultNotFoundError("Vault was not found")
             if not item.path.is_dir():
                 raise VaultPathError("Vault path is unavailable")
+            self.context_for_roots(item, resolved_data_dir(), resolved_cache_dir())
             data["active_vault_id"] = vault_id
             self._write(data)
             return item
