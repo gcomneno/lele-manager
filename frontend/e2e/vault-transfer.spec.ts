@@ -30,6 +30,7 @@ const test = base.extend<{
     other: TestVault
     delayResponse: (url: string, status?: number) => Promise<{
       intercepted: Promise<void>
+      assertHeld: () => void
       releaseAndSettle: () => Promise<void>
     }>
   }
@@ -39,7 +40,8 @@ const test = base.extend<{
     const cleanup = await playwright.request.newContext({ baseURL })
     const releases: Array<() => void> = []
     const registered: TestVault[] = []
-    const handlers: Promise<void>[] = []
+    const handlers: Array<() => Promise<void>> = []
+    const removeRequestListeners: Array<() => void> = []
     let attemptRoot = ''
     let activeId = ''
     let beforeIds: string[] | undefined
@@ -66,32 +68,112 @@ const test = base.extend<{
       const delayResponse = async (url: string, status?: number) => {
         const gate = deferred()
         const intercepted = deferred()
+        const requestCompleted = deferred()
+        const label = `Delayed response ${releases.length + 1}: ${url} (${status ?? 'upstream success'})`
         releases.push(gate.resolve)
-        let heldRequest: Request
+        let heldRequest: Request | undefined
+        let phase = 'waiting for request'
+        let failure: Error | undefined
+        let released = false
+        let settlementStarted = false
+        let requestFinished = false
+        let drainOwner: (() => Promise<void>) | undefined
         await page.route(url, async (route) => {
           const completed = deferred()
-          handlers.push(completed.promise)
+          let handlerError: Error | undefined
+          const drain = async () => {
+            await completed.promise
+            if (handlerError) throw handlerError
+          }
+          handlers.push(drain)
           try {
+            // Keep the route registered until teardown. `times: 1` removes it
+            // before this callback finishes; completion of another expired
+            // handler can then remove the server interceptor and auto-continue
+            // requests still held here. Claim once, and delegate later matches.
+            if (heldRequest) {
+              await route.fallback()
+              return
+            }
             heldRequest = route.request()
+            drainOwner = drain
+            const onFinished = (request: Request) => {
+              if (request !== heldRequest) return
+              requestFinished = true
+              if (!settlementStarted) {
+                failure = new Error(`${label}: request finished before its owner fulfilled it (${phase})`)
+                gate.resolve()
+              }
+              requestCompleted.resolve()
+            }
+            const onFailed = (request: Request) => {
+              if (request !== heldRequest) return
+              failure = new Error(`${label}: request failed (${phase}): ${request.failure()?.errorText}`)
+              requestCompleted.resolve()
+              gate.resolve()
+            }
+            const onClosed = () => {
+              if (requestFinished) return
+              failure = new Error(`${label}: page closed before request completion (${phase})`)
+              requestCompleted.resolve()
+              gate.resolve()
+            }
+            page.on('requestfinished', onFinished)
+            page.on('requestfailed', onFailed)
+            page.on('close', onClosed)
+            removeRequestListeners.push(() => {
+              page.off('requestfinished', onFinished)
+              page.off('requestfailed', onFailed)
+              page.off('close', onClosed)
+            })
+            phase = 'fetching upstream response'
+            // fetch obtains bytes without settling the browser's routed request.
             const response = await route.fetch()
             try {
+              expect(response.ok(), `${label}: upstream status ${response.status()}`).toBeTruthy()
+              phase = 'held'
               intercepted.resolve()
               await gate.promise
+              if (failure) throw failure
+              phase = 'fulfilling'
+              settlementStarted = true
               if (status) await route.fulfill({ status, json: { detail: 'Delayed obsolete failure' } })
               else await route.fulfill({ response })
+              phase = 'fulfilled'
             } finally {
               await response.dispose()
             }
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error)
+            handlerError = new Error(`${label}: handler failed (${phase}): ${detail}`, { cause: error })
+            failure = handlerError
+            phase = 'failed'
+            intercepted.resolve()
+            throw handlerError
           } finally {
             completed.resolve()
           }
-        }, { times: 1 })
+        })
         return {
-          intercepted: intercepted.promise,
+          get intercepted() {
+            return intercepted.promise.then(() => { if (failure) throw failure })
+          },
+          assertHeld: () => {
+            if (failure) throw failure
+            expect(phase, `${label}: response must remain owned and gated`).toBe('held')
+            expect(requestFinished, `${label}: browser request must remain pending`).toBe(false)
+          },
           releaseAndSettle: async () => {
-            const finished = page.waitForEvent('requestfinished', (request) => request === heldRequest)
+            expect(heldRequest, `${label}: release requires an intercepted request`).toBeDefined()
+            expect(released, `${label}: response must be released only once`).toBe(false)
+            released = true
             gate.resolve()
-            await finished
+            // Drain the owner first: a fulfill/fetch failure must surface before
+            // waiting for a requestfinished event that can never arrive.
+            await drainOwner!()
+            if (failure) throw failure
+            await requestCompleted.promise
+            if (failure) throw failure
             await settleApplication(page)
           },
         }
@@ -112,14 +194,17 @@ const test = base.extend<{
         }
       }
       try {
-        // One-shot routes are removed before their handlers finish. Track and
-        // drain them explicitly as well as releasing gates on test timeout.
+        // Release and drain owners before removing interception. Removing routes
+        // first can auto-continue requests whose owners still intend to fulfill.
         for (const [index, release] of releases.entries()) {
           await attempt(`Release interception gate ${index + 1}`, release)
         }
-        await attempt('Remove page routes', () => page.unrouteAll({ behavior: 'wait' }))
         await Promise.all(handlers.map((handler, index) =>
-          attempt(`Drain interception handler ${index + 1}`, () => handler)))
+          attempt(`Drain interception handler ${index + 1}`, handler)))
+        await attempt('Remove page routes', () => page.unrouteAll({ behavior: 'wait' }))
+        for (const [index, removeListeners] of removeRequestListeners.entries()) {
+          await attempt(`Remove request listeners ${index + 1}`, removeListeners)
+        }
         for (const vault of [...registered].reverse()) {
           await attempt(`Unregister synthetic Vault ${vault.name} (${vault.id})`, async () => {
             expect((await cleanup.delete(`/vaults/${vault.id}`)).status()).toBe(204)
@@ -273,7 +358,9 @@ for (const obsoleteStatus of [undefined, 500]) {
     const current = await delayResponse(`**/vault-transfers/sources/${other.id}/lessons`)
     await transfer.getByLabel('Source Vault').selectOption(other.id)
     await current.intercepted
+    current.assertHeld()
     await old.releaseAndSettle()
+    current.assertHeld()
     await expect(transfer.getByRole('checkbox', { name: /transfer\/old-source/ })).toHaveCount(0)
     await expect(transfer.getByText('Delayed obsolete failure', { exact: true })).toHaveCount(0)
     await current.releaseAndSettle()
@@ -297,7 +384,10 @@ for (const obsoleteStatus of [undefined, 500]) {
     const current = await delayResponse('**/vault-transfers/preview')
     await preview.click()
     await current.intercepted
+    current.assertHeld()
+    await expect(preview).toBeDisabled()
     await old.releaseAndSettle()
+    current.assertHeld()
     await expect(preview).toBeDisabled()
     await expect(transfer.getByRole('heading', { name: 'Transfer preview' })).toHaveCount(0)
     await expect(transfer.getByText('Delayed obsolete failure', { exact: true })).toHaveCount(0)
