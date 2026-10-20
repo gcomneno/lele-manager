@@ -119,7 +119,10 @@ def _resolve_exact_canonical(
     vault_dir: Path,
     lesson_id: str,
 ) -> tuple[Path, str]:
-    matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    try:
+        matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+    except OSError as exc:
+        raise CanonicalLessonWriteStorageError("canonical Vault path is unsafe") from exc
     if not matches:
         raise CanonicalLessonWriteNotFoundError("canonical lesson was not found")
     if len(matches) != 1:

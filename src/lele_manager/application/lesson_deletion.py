@@ -63,7 +63,10 @@ def delete_canonical_lesson_source(
     the real final vault state exactly once.
     """
     with canonical_mutation_boundary():
-        matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+        try:
+            matches = find_markdown_paths_by_id(vault_dir, lesson_id)
+        except OSError as exc:
+            raise LessonDeletionStorageError("canonical Vault path is unsafe") from exc
         if not matches:
             raise LessonDeletionNotFoundError("canonical lesson was not found")
         if len(matches) != 1:

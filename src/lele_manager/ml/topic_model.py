@@ -11,6 +11,7 @@ from sklearn.pipeline import Pipeline
 
 from .features import LessonFeatureExtractor, TextFeatureConfig
 from lele_manager.core.paths import topic_model_path
+from lele_manager.core.vault_filesystem import assert_owned_path
 
 
 @dataclass
@@ -69,7 +70,8 @@ def save_topic_model(pipeline: Pipeline, path: str | Path | None = None) -> Path
     Se path è None, salva nel path XDG di default.
     Ritorna il Path effettivo usato.
     """
-    p = Path(path).expanduser().resolve() if path is not None else topic_model_path()
+    p = Path(path).expanduser() if path is not None else topic_model_path()
+    assert_owned_path(p)
     p.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, p)
     return p
@@ -81,5 +83,6 @@ def load_topic_model(path: str | Path | None = None) -> Pipeline:
 
     Se path è None, carica dal path XDG di default.
     """
-    p = Path(path).expanduser().resolve() if path is not None else topic_model_path()
+    p = Path(path).expanduser() if path is not None else topic_model_path()
+    assert_owned_path(p)
     return joblib.load(p)

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from lele_manager.core.canonical_mutation import canonical_mutation_boundary
+from lele_manager.core.vault_filesystem import owned_destination, owned_markdown_paths, owned_tree_files
 from lele_manager.core.freshness import (
     normalize_review_interval_days,
     normalize_reviewed_at,
@@ -68,6 +69,7 @@ class VaultTreeNode:
 
 def build_vault_tree(vault_dir: Path) -> VaultTreeNode:
     """Build a nested tree of directories and markdown lesson files."""
+    owned_tree_files(vault_dir)
 
     def walk(current: Path) -> VaultTreeNode:
         children: List[VaultTreeNode] = []
@@ -109,7 +111,7 @@ def find_markdown_paths_by_id(vault_dir: Path, lesson_id: str) -> list[Path]:
     """
     target = str(lesson_id)
     matches: list[Path] = []
-    for md_path in sorted(vault_dir.rglob("*.md")):
+    for md_path in owned_markdown_paths(vault_dir):
         try:
             content = md_path.read_text(encoding="utf-8")
         except OSError:
@@ -257,8 +259,6 @@ def write_lesson_markdown(
 ) -> Path:
     """Write or overwrite a lesson markdown file in the vault."""
     with canonical_mutation_boundary():
-        vault_dir.mkdir(parents=True, exist_ok=True)
-
         rel = relative_path or default_relative_path(
             lesson_id=lesson_id,
             topic=topic,
@@ -268,12 +268,10 @@ def write_lesson_markdown(
         if not rel.lower().endswith(".md"):
             rel = f"{rel}.md"
 
-        md_path = (vault_dir / rel).resolve()
-        vault_root = vault_dir.resolve()
         try:
-            md_path.relative_to(vault_root)
-        except ValueError as exc:
-            raise ValueError(f"Refusing to write outside vault: {md_path}") from exc
+            md_path = owned_destination(vault_dir, rel)
+        except OSError as exc:
+            raise ValueError(f"Refusing unsafe vault destination: {rel}") from exc
 
         rendered = render_lesson_markdown(
             lesson_id=lesson_id,
@@ -292,6 +290,7 @@ def write_lesson_markdown(
             review_interval_days=review_interval_days,
         )
         md_path.parent.mkdir(parents=True, exist_ok=True)
+        owned_destination(vault_dir, rel)
         md_path.write_text(rendered, encoding="utf-8")
         return md_path
 

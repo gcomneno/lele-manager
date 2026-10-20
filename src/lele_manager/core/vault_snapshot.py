@@ -27,6 +27,7 @@ from lele_manager.adapters.json_candidate_repository import JsonCandidateReposit
 from lele_manager.core.duplicate_decisions import DuplicateDecisionStore
 from lele_manager.core.json_compat import canonical_json
 from lele_manager.core.vault_registry import ActiveVaultContext
+from lele_manager.core.vault_filesystem import assert_owned_path
 
 
 FORMAT = "lele-vault-snapshot"
@@ -194,6 +195,10 @@ def read_canonical_markdown_files(vault_dir: Path) -> dict[str, bytes]:
     file below the Vault root.  Consequently every such regular file is
     canonical managed state; non-Markdown files are outside this boundary.
     """
+    try:
+        assert_owned_path(vault_dir, directory=True)
+    except OSError as exc:
+        raise SnapshotTargetError("registered Vault directory is unavailable or unsafe") from exc
     if not vault_dir.is_dir() or vault_dir.is_symlink():
         raise SnapshotTargetError("registered Vault directory is unavailable or unsafe")
     result: dict[str, bytes] = {}
@@ -218,6 +223,8 @@ def read_canonical_markdown_files(vault_dir: Path) -> dict[str, bytes]:
                 visit(path, rel)
             elif stat.S_ISREG(node.st_mode):
                 if path.suffix.lower() == ".md":
+                    if node.st_nlink != 1:
+                        raise SnapshotTargetError("Vault contains hard-linked Markdown")
                     if node.st_size > MAX_MEMBER_SIZE or total + node.st_size > MAX_UNCOMPRESSED_SIZE:
                         raise SnapshotTargetError("Vault state exceeds snapshot size limits")
                     try:
@@ -286,6 +293,10 @@ def _assert_safe_scoped_path(path: Path, label: str, *, create_parents: bool = F
     """Check a managed data/cache path without following substituted links."""
     root = _scoped_root(path)
     try:
+        assert_owned_path(root, directory=True)
+    except OSError as exc:
+        raise SnapshotTargetError(f"{label} managed root is unsafe") from exc
+    try:
         root_node = root.lstat()
     except FileNotFoundError:
         if not create_parents:
@@ -316,7 +327,7 @@ def _assert_safe_scoped_path(path: Path, label: str, *, create_parents: bool = F
         return path
     except OSError as exc:
         raise SnapshotTargetError(f"{label} could not be safely inspected") from exc
-    if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode):
+    if stat.S_ISLNK(node.st_mode) or not stat.S_ISREG(node.st_mode) or node.st_nlink != 1:
         raise SnapshotTargetError(f"{label} is unsafe")
     return path
 
@@ -597,6 +608,10 @@ def preview_restore(validated: ValidatedSnapshot, context: ActiveVaultContext, d
 
 
 def _assert_safe_destination(root: Path, rel: str) -> Path:
+    try:
+        assert_owned_path(root, directory=True)
+    except OSError as exc:
+        raise SnapshotTargetError("registered Vault directory is unavailable or unsafe") from exc
     try:
         root_stat = root.lstat()
     except OSError as exc:

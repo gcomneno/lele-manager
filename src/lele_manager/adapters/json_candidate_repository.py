@@ -27,6 +27,7 @@ from lele_manager.application.lesson_candidate import (
 )
 from lele_manager.application.raw_source import SourceKind
 from lele_manager.core.json_compat import canonical_json
+from lele_manager.core.vault_filesystem import assert_owned_path
 
 SCHEMA_VERSION = 3
 ROOT_FIELDS = {"candidates", "schema_version"}
@@ -319,6 +320,7 @@ class JsonCandidateRepository:
 
     def _load(self) -> list[LessonCandidate]:
         try:
+            assert_owned_path(self._path)
             if not self._path.exists():
                 return []
             raw = self._path.read_text(encoding="utf-8")
@@ -368,6 +370,7 @@ class JsonCandidateRepository:
         }
         temporary_path: Path | None = None
         try:
+            assert_owned_path(self._path)
             self._path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 "w",

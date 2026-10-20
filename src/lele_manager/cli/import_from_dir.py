@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from lele_manager.composition import projection_store
+from lele_manager.core.vault_filesystem import owned_destination, owned_markdown_paths
 from lele_manager.core.import_plan import (
     DuplicateId,
     DuplicatePolicy as PlanDuplicatePolicy,
@@ -198,11 +199,7 @@ def compute_frontmatter_hash(frontmatter: Dict[str, object]) -> str:
 # Importer
 # ---------------------------------------------------------------------------
 def _markdown_files(input_dir: Path) -> List[Path]:
-    return sorted(
-        path
-        for path in input_dir.rglob("*")
-        if path.is_file() and path.suffix.lower() == ".md"
-    )
+    return owned_markdown_paths(input_dir)
 
 
 def analyze_import_from_dir(
@@ -637,7 +634,7 @@ def import_from_dir(
             "aggiungere/sincronizzare il frontmatter."
         )
         for pending in plan.pending_source_writes:
-            (input_dir / pending.path).write_text(
+            owned_destination(input_dir, pending.path).write_text(
                 plan.pending_source_contents[pending.path], encoding="utf-8"
             )
     return {

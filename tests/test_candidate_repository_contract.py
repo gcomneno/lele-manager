@@ -359,7 +359,8 @@ def test_storage_failures_are_controlled_and_do_not_leak_paths(tmp_path: Path) -
 
     blocked_parent = tmp_path / "parent-is-a-file"
     blocked_parent.write_text("x", encoding="utf-8")
-    with pytest.raises(CandidateStorageError, match="write staging storage") as caught:
+    # Ownership preflight now rejects the invalid parent before staging reads.
+    with pytest.raises(CandidateStorageError, match="read staging storage") as caught:
         JsonCandidateRepository(blocked_parent / "candidates.json").create(
             candidate("x")
         )
