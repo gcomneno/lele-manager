@@ -11,10 +11,10 @@ The format is based on **Keep a Changelog**.
 
 ## [Unreleased]
 
-## [1.13.0] - Unpublished
+## [1.13.0] - 2026-10-20
 
-Release candidate prepared from integrated main commit `7c02a53`.
-Production readiness remains subject to G1, G2 and G3 qualification.
+Published on GitHub Releases and PyPI.
+Residual post-release qualification is tracked in #276 (G2) and #277 (G3).
 
 ### Added
 - Opt-in Ask-this-Vault synthesis through the optional GiadaWare AI v0.0.2
